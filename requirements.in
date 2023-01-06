@@ -1,6 +1,10 @@
 azure-storage-blob
+bokeh>=2.4.2,<3
+dask-gateway
+geocube
 planetary-computer
 pystac-client
 pystac
 rioxarray
 stackstac
+xarray-spatial

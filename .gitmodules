@@ -1,0 +1,3 @@
+[submodule "dea-coastlines"]
+	path = dea-coastlines
+	url = https://github.com/jessjaco/dea-coastlines

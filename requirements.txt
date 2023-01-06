@@ -5,17 +5,35 @@
 #    pip-compile
 #
 affine==2.3.1
-    # via rasterio
+    # via
+    #   odc-geo
+    #   rasterio
+aiohttp==3.8.3
+    # via dask-gateway
+aiosignal==1.3.1
+    # via aiohttp
+appdirs==1.4.4
+    # via geocube
+async-timeout==4.0.2
+    # via aiohttp
 attrs==22.1.0
-    # via rasterio
+    # via
+    #   aiohttp
+    #   fiona
+    #   rasterio
 azure-core==1.26.1
     # via
     #   azure-storage-blob
     #   msrest
 azure-storage-blob==12.14.1
     # via -r requirements.in
+bokeh==2.4.3
+    # via -r requirements.in
+cachetools==5.2.0
+    # via odc-geo
 certifi==2022.12.7
     # via
+    #   fiona
     #   msrest
     #   pyproj
     #   rasterio
@@ -23,62 +41,159 @@ certifi==2022.12.7
 cffi==1.15.1
     # via cryptography
 charset-normalizer==2.1.1
-    # via requests
+    # via
+    #   aiohttp
+    #   requests
 click==8.1.3
     # via
     #   click-plugins
     #   cligj
     #   dask
+    #   dask-gateway
+    #   distributed
+    #   fiona
+    #   geocube
     #   planetary-computer
     #   rasterio
 click-plugins==1.1.1
-    # via rasterio
+    # via
+    #   fiona
+    #   rasterio
 cligj==0.7.2
-    # via rasterio
+    # via
+    #   fiona
+    #   rasterio
 cloudpickle==2.2.0
-    # via dask
+    # via
+    #   dask
+    #   distributed
+colorcet==3.0.1
+    # via datashader
 cryptography==38.0.4
     # via azure-storage-blob
 dask[array]==2022.12.1
-    # via stackstac
+    # via
+    #   dask-gateway
+    #   datashader
+    #   distributed
+    #   stackstac
+dask-gateway==2022.11.0
+    # via -r requirements.in
+datashader==0.14.3
+    # via xarray-spatial
+datashape==0.5.2
+    # via datashader
+distributed==2022.12.1
+    # via dask-gateway
+fiona==1.8.22
+    # via geopandas
+frozenlist==1.3.3
+    # via
+    #   aiohttp
+    #   aiosignal
 fsspec==2022.11.0
     # via dask
+geocube==0.3.3
+    # via -r requirements.in
+geopandas==0.12.2
+    # via geocube
+heapdict==1.0.1
+    # via zict
 idna==3.4
-    # via requests
+    # via
+    #   requests
+    #   yarl
 isodate==0.6.1
     # via msrest
+jinja2==3.1.2
+    # via
+    #   bokeh
+    #   distributed
+llvmlite==0.39.1
+    # via numba
 locket==1.0.0
-    # via partd
+    # via
+    #   distributed
+    #   partd
+markupsafe==2.1.1
+    # via jinja2
+msgpack==1.0.4
+    # via distributed
 msrest==0.7.1
     # via azure-storage-blob
-numpy==1.24.0
+multidict==6.0.3
     # via
+    #   aiohttp
+    #   yarl
+multipledispatch==0.6.0
+    # via datashape
+munch==2.5.0
+    # via fiona
+numba==0.56.4
+    # via
+    #   datashader
+    #   xarray-spatial
+numpy==1.23.5
+    # via
+    #   bokeh
     #   dask
+    #   datashader
+    #   datashape
+    #   geocube
+    #   numba
+    #   odc-geo
     #   pandas
     #   rasterio
+    #   scipy
+    #   shapely
     #   snuggs
     #   xarray
 oauthlib==3.2.2
     # via requests-oauthlib
+odc-geo==0.3.2
+    # via geocube
 packaging==22.0
     # via
+    #   bokeh
     #   dask
+    #   distributed
+    #   geopandas
     #   rioxarray
     #   xarray
 pandas==1.5.2
-    # via xarray
+    # via
+    #   datashader
+    #   geopandas
+    #   xarray
+param==1.12.3
+    # via
+    #   datashader
+    #   pyct
 partd==1.3.0
     # via dask
+pillow==9.3.0
+    # via
+    #   bokeh
+    #   datashader
 planetary-computer==0.4.9
     # via -r requirements.in
+psutil==5.9.4
+    # via distributed
 pycparser==2.21
     # via cffi
+pyct==0.4.8
+    # via
+    #   colorcet
+    #   datashader
 pydantic[dotenv]==1.10.2
     # via planetary-computer
 pyparsing==3.0.9
     # via snuggs
 pyproj==3.4.1
     # via
+    #   geocube
+    #   geopandas
+    #   odc-geo
     #   rioxarray
     #   stackstac
 pystac==1.6.1
@@ -92,6 +207,7 @@ pystac-client==0.5.1
     #   planetary-computer
 python-dateutil==2.8.2
     # via
+    #   datashape
     #   pandas
     #   pystac
     #   pystac-client
@@ -102,14 +218,20 @@ pytz==2022.7
     #   pandas
     #   planetary-computer
 pyyaml==6.0
-    # via dask
+    # via
+    #   bokeh
+    #   dask
+    #   dask-gateway
+    #   distributed
 rasterio==1.3.4
     # via
+    #   geocube
     #   rioxarray
     #   stackstac
 requests==2.28.1
     # via
     #   azure-core
+    #   datashader
     #   msrest
     #   planetary-computer
     #   pystac-client
@@ -117,30 +239,64 @@ requests==2.28.1
 requests-oauthlib==1.3.1
     # via msrest
 rioxarray==0.13.3
-    # via -r requirements.in
+    # via
+    #   -r requirements.in
+    #   geocube
+scipy==1.9.3
+    # via
+    #   datashader
+    #   geocube
+shapely==2.0.0
+    # via
+    #   geopandas
+    #   odc-geo
 six==1.16.0
     # via
     #   azure-core
+    #   fiona
     #   isodate
     #   python-dateutil
 snuggs==1.4.7
     # via rasterio
+sortedcontainers==2.4.0
+    # via distributed
 stackstac==0.4.3
     # via -r requirements.in
+tblib==1.7.0
+    # via distributed
 toolz==0.12.0
     # via
     #   dask
+    #   datashader
+    #   distributed
     #   partd
+tornado==6.2
+    # via
+    #   bokeh
+    #   dask-gateway
+    #   distributed
 typing-extensions==4.4.0
     # via
     #   azure-core
+    #   bokeh
     #   pydantic
 urllib3==1.26.13
-    # via requests
+    # via
+    #   distributed
+    #   requests
 xarray==2022.12.0
     # via
+    #   datashader
+    #   geocube
     #   rioxarray
     #   stackstac
+    #   xarray-spatial
+xarray-spatial==0.3.5
+    # via -r requirements.in
+yarl==1.8.2
+    # via aiohttp
+zict==2.2.0
+    # via distributed
 
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools

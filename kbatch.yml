@@ -1,0 +1,12 @@
+# Use with e.g. 
+# kbatch job submit -f src/evi_kbatch.yml -e "{\"AZURE_STORAGE_ACCOUNT\":\"$AZURE_STORAGE_ACCOUNT\",\"AZURE_STORAGE_SAS_TOKEN\":\"$AZURE_STORAGE_SAS_TOKEN\"}" --command='["python", "evi2.py", "2015", "-r"]'
+# Note! 
+# 1. escaping of quotes for keys
+# 2. space after -e and -f (but not command?) 
+
+profile: r
+image: "docker.io/numbersandstrings/dep-coastlines:latest"
+code: "process.sh"
+command:
+  - sh
+  - process.sh
