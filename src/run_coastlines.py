@@ -6,8 +6,10 @@ from typing import Callable, List, Union
 
 from azure.storage.blob import ContainerClient
 from coastlines.raster import pixel_tides, tide_cutoffs, export_annual_gapfill
+from coastlines.vector import contours_preprocess, coastal_masking
 from dask.distributed import Client, Lock
 from dask_gateway import GatewayCluster
+from dea_tools.spatial import subpixel_contours
 from geopandas import read_file, GeoDataFrame
 from osgeo import gdal
 from osgeo_utils import gdal2tiles
@@ -24,6 +26,7 @@ from constants import STORAGE_AOI_PREFIX
 from landsat_utils import item_collection_for_pathrow, mask_clouds
 from utils import (
     gpdf_bounds,
+    make_geocube_dask,
     raster_bounds,
     scale_to_int16,
     write_to_blob_storage,
@@ -58,7 +61,11 @@ def filter_by_cutoffs(
     return ds.where(tide_bool)
 
 
-def coastlines_by_year(xr: DataArray) -> DataArray:
+def coastlines_by_year(xr: DataArray, land_areas: GeoDataFrame) -> DataArray:
+
+    # clip input to areas we are focused on first
+    xr = xr.rio.clip(land_areas.boundary.buffer(1000), all_touched=True, from_disk=True)
+
     working_ds = mndwi(xr).to_dataset()
 
     tides_lowres = pixel_tides(working_ds, resample=False).transpose("time", "y", "x")
@@ -69,10 +76,17 @@ def coastlines_by_year(xr: DataArray) -> DataArray:
     tide_cutoff_min, tide_cutoff_max = tide_cutoffs(
         working_ds, tides_lowres, tide_centre=0.0
     )
+
     # Should also filter by land here!
     working_ds = filter_by_cutoffs(working_ds, tide_cutoff_min, tide_cutoff_max).drop(
         "tide_m"
     )
+
+
+    # filter by land
+
+    # okay this is contrived, really we just need the buffer, as
+    # we don't yet have an inland water layer (but could possibly use wofs??)
 
     year_ds = working_ds.sel(time="2015")
     median_ds = year_ds.median(dim="time", keep_attrs=True)
@@ -89,6 +103,69 @@ def coastlines_by_year(xr: DataArray) -> DataArray:
     )
     return median_ds
 
+    # geodata ds (see coastlines.vector) specifies value of 0 for ocean,
+    # 1 for mainland and 2 for island, but I'm not sure 1 vs 2 is being
+    # used for anything
+    like = (
+        working_ds.mndwi.isel(time=0)
+        .squeeze(drop=True)
+        .assign_coords(dict(value=1))
+        .expand_dims("value")
+    )
+
+    land_areas[["value"]] = 1
+    coastal_da = make_geocube_dask(land_areas, ["value"], like, fill=0).sel(value=1)
+
+    year_ds = working_ds.groupby("time.year")
+    yearly_ds = year_ds.median()
+    yearly_ds["stdev"] = year_ds.std(dim="time").to_array().squeeze(drop=True)
+    yearly_ds["count"] = (
+        year_ds.count(dim="time").to_array().squeeze(drop=True).astype("int16")
+    )
+
+    gapfill_ds = working_ds.median(dim="time", keep_attrs=True)
+    gapfill_ds["stdev"] = working_ds.mndwi.std(dim="time", keep_attrs=True)
+    gapfill_ds["count"] = working_ds.mndwi.count(dim="time", keep_attrs=True).astype(
+        "int16"
+    )
+
+    # I believe contours_preprocess needs these loaded
+    # (well I got errors from apply_ufunc when it wasn't)
+    yearly_ds = yearly_ds.load()
+    gapfill_ds = gapfill_ds.load()
+    coastal_da = coastal_da.load()
+
+    # masked_ds, certainty_masks = contours_preprocess(
+    (
+        masked_ds,
+        certainty_masks,
+        all_time,
+        all_time_clean,
+        river_mask,
+        ocean_da,
+        coastal_mask,
+        inland_mask,
+        thresholded_ds,
+        annual_mask,
+    ) = contours_preprocess(
+        yearly_ds.load(),
+        gapfill_ds.load(),
+        water_index="mndwi",
+        index_threshold=0.0,
+        coastal_da=coastal_da.load(),
+        debug=True,
+    )
+
+    # issues above with annual_mask, so try this
+    combined_ds = yearly_ds.where(yearly_ds["count"] > 5, gapfill_ds)
+    best_guess = combined_ds.mndwi.where(coastal_mask)
+
+    return subpixel_contours(
+        da=best_guess,
+        min_vertices=10,
+        dim="year",
+    ).set_index("year")
+
 
 @dataclass
 class Processor:
@@ -104,7 +181,7 @@ class Processor:
     color_ramp_file: Union[str, None] = None
     output_value_multiplier: int = 10000
     output_nodata: int = -32767
-    dask_chunksize: int = 4096
+    dask_chunksize: int = 1024
 
     def __post_init__(self):
         self.container_client = ContainerClient(
@@ -143,6 +220,8 @@ class Processor:
             last_time = time()
             path = row["PATH"]
             row = row["ROW"]
+            #path = 93
+            #row = 62
             these_areas = self.get_areas(path, row)
 
             item_collection = item_collection_for_pathrow(
@@ -165,15 +244,12 @@ class Processor:
             offset = -0.2
             item_xr = scale_and_offset(item_xr, scale=[scale], offset=offset)
 
-            results = self.scene_processor(item_xr)
-#            results = scale_to_int16(results, self.output_value_multiplier, self.output_nodata)
+            results = self.scene_processor(item_xr, these_areas)
+            #            results = scale_to_int16(results, self.output_value_multiplier, self.output_nodata)
 
             try:
                 write_to_blob_storage(
-                    results,
-                    f"{self.prefix}_{path}_{row}.tif",
-#                    dict(driver="COG", compress="LZW", predictor=2),
-                    dict(driver="COG", compress="LZW", predictor=3),
+                    results, f"{self.prefix}_{path}_{row}.gpkg", dict(driver="GPKG")
                 )
             except Exception as e:
                 print(e)

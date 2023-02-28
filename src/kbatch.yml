@@ -6,7 +6,7 @@
 
 profile: r
 image: "docker.io/numbersandstrings/dep-coastlines:latest"
-code: "process.sh"
+code: "src/"
 command:
   - sh
   - process.sh
