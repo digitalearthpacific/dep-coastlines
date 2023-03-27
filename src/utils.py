@@ -14,19 +14,18 @@ import osgeo_utils.gdal2tiles
 import rasterio
 import rioxarray
 from tqdm import tqdm
-import xarray as xr
-from xarray import DataArray
+from xarray import DataArray, Dataset
 
 
 def scale_and_offset(
-    da: xr.DataArray, scale: List[float] = [1], offset: float = 0
-) -> xr.DataArray:
+    da: DataArray, scale: List[float] = [1], offset: float = 0
+) -> DataArray:
     """Apply the given scale and offset to the given DataArray"""
     return da * scale + offset
 
 
 def make_geocube_dask(
-    df: GeoDataFrame, measurements: List[str], like: xr.DataArray, **kwargs
+    df: GeoDataFrame, measurements: List[str], like: DataArray, **kwargs
 ):
     """Dask-enabled geocube.make_geocube. Not completely implemented."""
 
@@ -55,18 +54,22 @@ def write_to_blob_storage(
         credential=credential,
     )
 
-    if isinstance(d, DataArray):
+    if isinstance(d, (DataArray, Dataset)):
         with io.BytesIO() as buffer:
             d.rio.to_raster(buffer, **write_args)
             buffer.seek(0)
             blob_client = container_client.get_blob_client(path)
             blob_client.upload_blob(buffer, overwrite=True)
-    else:
+    elif isinstance(d, GeoDataFrame):
+        # some sort of vector data
         with fiona.io.MemoryFile() as buffer:
             d.to_file(buffer, **write_args)
             buffer.seek(0)
             blob_client = container_client.get_blob_client(path)
             blob_client.upload_blob(buffer, overwrite=True)
+    else:
+        # throw exception
+        print("rn you can only write a DataArray, Dataset, or GDF")
 
 
 def copy_to_blob_storage(
