@@ -11,7 +11,8 @@ from xarray import DataArray, Dataset
 # local submodules
 from coastlines.raster import pixel_tides, tide_cutoffs, export_annual_gapfill
 from coastlines.vector import contours_preprocess, coastal_masking
-from dep_tools import make_geocube_dask, Processor
+from dep_tools.Processor import Processor
+from dep_tools.utils import make_geocube_dask
 
 from constants import STORAGE_AOI_PREFIX
 from landsat_utils import item_collection_for_pathrow, mask_clouds
@@ -44,10 +45,10 @@ def filter_by_cutoffs(
     return ds.where(tide_bool)
 
 
-def coastlines_by_year(xr: DataArray, land_areas: GeoDataFrame) -> DataArray:
-
-    # clip input to areas we are focused on first
-    xr = xr.rio.clip(land_areas.boundary.buffer(1000), all_touched=True, from_disk=True)
+def coastlines_by_year(
+    xr: DataArray,
+) -> DataArray:  # , land_areas: GeoDataFrame) -> DataArray:
+    #    xr = xr.rio.clip(land_areas.boundary.buffer(1000), all_touched=True, from_disk=True)
 
     working_ds = mndwi(xr).to_dataset()
 
@@ -83,6 +84,7 @@ def coastlines_by_year(xr: DataArray, land_areas: GeoDataFrame) -> DataArray:
     median_ds["count_3year"] = working_da.count(dim="time", keep_attrs=True).astype(
         "int16"
     )
+    breakpoint()
     return median_ds
 
     # geodata ds (see coastlines.vector) specifies value of 0 for ocean,
@@ -168,15 +170,10 @@ if __name__ == "__main__":
     STORAGE_AOI_PREFIX = Path(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/"
     )
-    aoi_file = STORAGE_AOI_PREFIX / "aoi.tif"
-    tile_file = STORAGE_AOI_PREFIX / "pathrows_in_aoi.gpkg"
     aoi_by_pathrow_file = STORAGE_AOI_PREFIX / "aoi_split_by_landsat_pathrow.gpkg"
 
     run_processor(
         year=2015,
         scene_processor=coastlines_by_year,
         dataset_id="coastlines",
-        aoi_file=aoi_file,
-        tile_file=tile_file
-        aoi_by_tile_file=aoi_by_pathrow_file
     )
