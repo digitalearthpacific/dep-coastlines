@@ -1,5 +1,14 @@
 # dep-coastlines
 
+## Installation
+
+### Development
+
+1. Pull the submodules with `git submodule update --init`
+2. Install local packages with `source install.sh`
+
+### On Microsoft Planetary Computer Hub Instance
+
 ## Status and Work to Date
 
 This is a work-in-progress attempt to duplicate the Digital Earth Australia

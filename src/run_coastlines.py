@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Callable, Union
+from typing import Callable, Dict, Union
 
 from dask.distributed import Client, Lock
 from dea_tools.spatial import subpixel_contours
@@ -47,12 +47,14 @@ def filter_by_cutoffs(
 
 def coastlines_by_year(
     xr: DataArray,
+    pixel_tides_kwargs : Dict = dict()
+
 ) -> DataArray:  # , land_areas: GeoDataFrame) -> DataArray:
     #    xr = xr.rio.clip(land_areas.boundary.buffer(1000), all_touched=True, from_disk=True)
 
     working_ds = mndwi(xr).to_dataset()
 
-    tides_lowres = pixel_tides(working_ds, resample=False).transpose("time", "y", "x")
+    tides_lowres = pixel_tides(working_ds, resample=False, **pixel_tides_kwargs).transpose("time", "y", "x")
     working_ds["tide_m"] = tides_lowres.rio.reproject_match(
         working_ds, rasterio.enums.Resampling.bilinear
     )
@@ -84,7 +86,6 @@ def coastlines_by_year(
     median_ds["count_3year"] = working_da.count(dim="time", keep_attrs=True).astype(
         "int16"
     )
-    breakpoint()
     return median_ds
 
     # geodata ds (see coastlines.vector) specifies value of 0 for ocean,
@@ -171,9 +172,12 @@ if __name__ == "__main__":
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/"
     )
     aoi_by_pathrow_file = STORAGE_AOI_PREFIX / "aoi_split_by_landsat_pathrow.gpkg"
+    pixel_tides_kwargs = dict(model="TPXO9-atlas-v5", directory="data/tpx09/TPXO9_atlas_nc")
 
     run_processor(
         year=2015,
         scene_processor=coastlines_by_year,
+        scene_processor_kwargs=dict(pixel_tides_kwargs=pixel_tides_kwargs),
         dataset_id="coastlines",
+        convert_output_to_int16=False
     )
