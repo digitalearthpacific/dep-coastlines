@@ -172,7 +172,10 @@ if __name__ == "__main__":
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/"
     )
     aoi_by_pathrow_file = STORAGE_AOI_PREFIX / "aoi_split_by_landsat_pathrow.gpkg"
-    pixel_tides_kwargs = dict(model="TPXO9-atlas-v5", directory="data/tpx09/TPXO9_atlas_nc")
+    pixel_tides_kwargs = dict(
+            model="TPXO9-atlas-v5", 
+#            directory="data/tpx09/TPXO9_atlas_nc"
+            )
 
     run_processor(
         year=2015,
