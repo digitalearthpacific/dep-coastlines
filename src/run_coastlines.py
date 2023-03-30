@@ -1,9 +1,7 @@
-from pathlib import Path
 from typing import Callable, Dict, Union
 
 from dask.distributed import Client, Lock
 from dea_tools.spatial import subpixel_contours
-from geopandas import GeoDataFrame
 import rasterio
 import rioxarray
 from xarray import DataArray, Dataset
@@ -13,9 +11,6 @@ from coastlines.raster import pixel_tides, tide_cutoffs, export_annual_gapfill
 from coastlines.vector import contours_preprocess, coastal_masking
 from dep_tools.Processor import Processor
 from dep_tools.utils import make_geocube_dask
-
-from constants import STORAGE_AOI_PREFIX
-from landsat_utils import item_collection_for_pathrow, mask_clouds
 
 
 def mndwi(xr: DataArray) -> DataArray:
@@ -168,10 +163,6 @@ def run_processor(
 
 
 if __name__ == "__main__":
-    STORAGE_AOI_PREFIX = Path(
-        "https://deppcpublicstorage.blob.core.windows.net/output/aoi/"
-    )
-    aoi_by_pathrow_file = STORAGE_AOI_PREFIX / "aoi_split_by_landsat_pathrow.gpkg"
     pixel_tides_kwargs = dict(
             model="TPXO9-atlas-v5", 
 #            directory="data/tpx09/TPXO9_atlas_nc"
