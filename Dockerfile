@@ -5,4 +5,4 @@ RUN pip install --no-cache-dir --upgrade pip &&  \
   pip install /tmp/src/dep-tools && \
   pip install /tmp/src/deafrica-coastlines && \
   pip install /tmp/src/dea-notebooks/Tools && \
-  pip install odc-geo
+  pip install odc-geo retry

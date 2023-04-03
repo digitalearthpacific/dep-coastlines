@@ -4,6 +4,7 @@ import geopandas as gpd
 from xarray import DataArray, Dataset
 
 # local submodules
+from dea_tools.coastal import pixel_tides
 from dep_tools.Processor import Processor
 
 
