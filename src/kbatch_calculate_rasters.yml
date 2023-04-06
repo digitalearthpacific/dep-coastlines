@@ -4,9 +4,8 @@
 # 1. escaping of quotes for keys
 # 2. space after -e and -f (but not command?) 
 
-profile: r
-image: "docker.io/numbersandstrings/dep-coastlines:latest"
+image: "mcr.microsoft.com/planetary-computer/python:latest"
 code: "src/"
 command:
-  - python
-  - run_coastlines.py
+  - sh
+  - calculate_rasters.sh

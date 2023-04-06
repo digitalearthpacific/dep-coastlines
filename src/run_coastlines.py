@@ -1,26 +1,13 @@
-import os
-from typing import Callable, List, Union
+from typing import Callable, Union
 
-from azure.storage.blob import ContainerClient
-from dask.distributed import Client, Lock
+from dask.distributed import Client
 from dask_gateway import GatewayCluster
-from dea_tools.spatial import subpixel_contours
 import geopandas as gpd
-from pandas import Timestamp
-import rasterio
+from pandas import DatetimeIndex, Timestamp
 import rioxarray
 from xarray import DataArray, Dataset
 
-# local submodules
-from coastlines.raster import (
-    tidal_composite,
-    pixel_tides,
-    tide_cutoffs,
-    export_annual_gapfill,
-)
-from coastlines.vector import contours_preprocess, coastal_masking
 from dep_tools.Processor import Processor
-from dep_tools.utils import make_geocube_dask
 
 
 def mndwi(xr: DataArray) -> DataArray:
@@ -63,12 +50,9 @@ def load_tides(
     dataset_id: str = "tpxo_lowres",
     container_name: str = "output",
 ) -> DataArray:
-    print(os.environ["AZURE_STORAGE_ACCOUNT"])
-    print(os.environ["AZURE_STORAGE_SAS_TOKEN"])
-
     da = rioxarray.open_rasterio(
         f"https://deppcpublicstorage.blob.core.windows.net/output/{dataset_id}/{dataset_id}_{path}_{row}.tif",
-        #        f"/vsiaz/{container_name}/{dataset_id}/{dataset_id}_{path}_{row}.tif",
+        chunks=True,
     )
     return da.assign_coords(
         # this is the original data type produced by pixel_tides
@@ -76,17 +60,45 @@ def load_tides(
     ).rename(band="time")
 
 
+def tide_cutoffs_dask(
+    ds: Dataset, tides_lowres: DataArray, tide_centre=0.0, resampling="linear"
+) -> tuple[DataArray, DataArray]:
+    """A replacement for coastlines.tide_cutoffs that is dask enabled"""
+    # Calculate min and max tides
+    tide_min = tides_lowres.min(dim="time")
+    tide_max = tides_lowres.max(dim="time")
+
+    # Identify cutoffs
+    tide_cutoff_buffer = (tide_max - tide_min) * 0.25
+    tide_cutoff_min = tide_centre - tide_cutoff_buffer
+    tide_cutoff_max = tide_centre + tide_cutoff_buffer
+
+    # Reproject into original geobox
+    tide_cutoff_min = tide_cutoff_min.interp(
+        x=ds.coords["x"].values, y=ds.coords["y"].values, method=resampling
+    )
+
+    tide_cutoff_max = tide_cutoff_max.interp(
+        x=ds.coords["x"].values, y=ds.coords["y"].values, method=resampling
+    )
+
+    return tide_cutoff_min, tide_cutoff_max
+
+
 def coastlines_by_year(xr: DataArray, area) -> Dataset:
     working_ds = mndwi(xr).to_dataset()
     working_ds["ndwi"] = ndwi(xr)
 
     tides_lowres = load_tides(area["PATH"].values[0], area["ROW"].values[0])
-    breakpoint()
-    working_ds["tide_m"] = tides_lowres.rio.reproject_match(
-        working_ds, rasterio.enums.Resampling.bilinear
+    # The deafrica-coastlines code uses rio.reproject_match, but it is not dask
+    # enabled. However, we shouldn't need the reprojection, so we can use
+    # (the dask enabled) DataArray.interp instead. Note that the default resampler
+    # ("linear") is equivalent to bilinear.
+    working_ds["tide_m"] = tides_lowres.interp(
+        dict(x=working_ds.coords["x"].values, y=working_ds.coords["y"].values)
     )
 
-    tide_cutoff_min, tide_cutoff_max = tide_cutoffs(
+    tide_cutoff_min, tide_cutoff_max = tide_cutoffs_dask(
         working_ds, tides_lowres, tide_centre=0.0
     )
 
@@ -97,24 +109,32 @@ def coastlines_by_year(xr: DataArray, area) -> Dataset:
     # This taken from tidal_composites (I would use it directly but it
     # sets different nodata values which our writer can't handle,
     # and adds a year dimension (likewise)
-    median_ds = working_ds.median(dim="time", keep_attrs=True)
-    median_ds["count"] = working_ds.mndwi.count(dim="time", keep_attrs=True).astype(
-        "int16"
+    #    median_ds = working_ds.median(dim="time", keep_attrs=True)
+    #    median_ds["count"] = working_ds.mndwi.count(dim="time", keep_attrs=True).astype(
+    #        "int16"
+    #    )
+    #    median_ds["stdev"] = working_ds.mndwi.std(dim="time", keep_attrs=True)
+    median_ds = working_ds.resample(time="1Y").median(keep_attrs=True)
+    median_ds["count"] = (
+        working_ds.mndwi.resample(time="1Y").count(keep_attrs=True).astype("int16")
     )
-    median_ds["stdev"] = working_ds.mndwi.std(dim="time", keep_attrs=True)
+    median_ds["stdev"] = working_ds.mndwi.resample(time="1Y").std(keep_attrs=True)
+    median_ds = median_ds.assign_coords(
+        time=[f"y{t.year}" for t in DatetimeIndex(median_ds.time)]
+    )
 
+    # return median_ds.ndwi.to_dataset("time")
     return median_ds
 
 
 def run_processor(
     scene_processor: Callable,
     dataset_id: str,
-    year: str,
     **kwargs,
 ) -> None:
-    processor = Processor(scene_processor, dataset_id, year, **kwargs)
+    processor = Processor(scene_processor, dataset_id, **kwargs)
     cluster = GatewayCluster(worker_cores=1, worker_memory=8)
-    cluster.scale(400)
+    cluster.scale(50)
     with cluster.get_client() as client:
         # with Client() as client:
         print(client.dashboard_link)
@@ -123,15 +143,16 @@ def run_processor(
 
 if __name__ == "__main__":
     aoi_by_tile = gpd.read_file(
-        "/tmp/src/data/coastline_split_by_pathrow.gpkg"
+        "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
+        # "/tmp/src/data/coastline_split_by_pathrow.gpkg"
         #        "data/coastline_split_by_pathrow.gpkg"
     ).set_index(["PATH", "ROW"], drop=False)
 
-    year = "2016"
+    # year = "2016"
     run_processor(
-        year=year,
         scene_processor=coastlines_by_year,
         dataset_id="coastlines",
+        # year=year,
         aoi_by_tile=aoi_by_tile,
         convert_output_to_int16=False,
         send_area_to_scene_processor=True,

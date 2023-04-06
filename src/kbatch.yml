@@ -9,4 +9,4 @@ image: "docker.io/numbersandstrings/dep-coastlines:latest"
 code: "src/"
 command:
   - sh
-  - calculate_rasters.sh
+  - process.sh
