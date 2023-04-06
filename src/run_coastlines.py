@@ -1,4 +1,4 @@
-from typing import Callable, Union
+from typing import Callable, Tuple, Union
 
 from dask.distributed import Client
 from dask_gateway import GatewayCluster
@@ -62,7 +62,7 @@ def load_tides(
 
 def tide_cutoffs_dask(
     ds: Dataset, tides_lowres: DataArray, tide_centre=0.0, resampling="linear"
-) -> tuple[DataArray, DataArray]:
+) -> Tuple[DataArray, DataArray]:
     """A replacement for coastlines.tide_cutoffs that is dask enabled"""
     # Calculate min and max tides
     tide_min = tides_lowres.min(dim="time")
@@ -133,10 +133,10 @@ def run_processor(
     **kwargs,
 ) -> None:
     processor = Processor(scene_processor, dataset_id, **kwargs)
-    cluster = GatewayCluster(worker_cores=1, worker_memory=8)
-    cluster.scale(50)
-    with cluster.get_client() as client:
-        # with Client() as client:
+    #cluster = GatewayCluster(worker_cores=1, worker_memory=8)
+    #cluster.scale(200)
+    #with cluster.get_client() as client:
+    with Client() as client:
         print(client.dashboard_link)
         processor.process_by_scene()
 
