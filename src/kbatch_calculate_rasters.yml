@@ -5,6 +5,7 @@
 # 2. space after -e and -f (but not command?) 
 
 image: "mcr.microsoft.com/planetary-computer/python:latest"
+profile: r
 code: "src/"
 command:
   - sh

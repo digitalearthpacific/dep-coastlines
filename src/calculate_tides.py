@@ -36,7 +36,7 @@ if __name__ == "__main__":
     pixel_tides_kwargs = dict(
         model="TPXO9-atlas-v5", directory="../coastlines-local/tidal-models/"
     )
-    aoi_by_tile = gpd.read_file("coastline_split_by_pathrow.gpkg").set_index(
+    aoi_by_tile = gpd.read_file("data/coastline_split_by_pathrow.gpkg").set_index(
         ["PATH", "ROW"]
     )
 

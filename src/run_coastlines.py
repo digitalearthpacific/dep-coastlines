@@ -29,6 +29,7 @@ def ndwi(xr: DataArray) -> DataArray:
 
 def filter_by_cutoffs(
     ds: Dataset,
+    tides_lowres,
     tide_cutoff_min: Union[int, float, DataArray],
     tide_cutoff_max: Union[int, float, DataArray],
 ) -> Dataset:
@@ -37,7 +38,14 @@ def filter_by_cutoffs(
     """
     # Determine what pixels were acquired in selected tide range, and
     # drop time-steps without any relevant pixels to reduce data to load
-    tide_bool = (ds.tide_m >= tide_cutoff_min) & (ds.tide_m <= tide_cutoff_max)
+    # tide_bool = (ds.tide_m >= tide_cutoff_min) & (ds.tide_m <= tide_cutoff_max)
+    # Changing this to use the lowres tides, since it's causing some memory spikes
+    breakpoint()
+    tide_bool = (tides_lowres >= tide_cutoff_min) & (tides_lowres <= tide_cutoff_max)
+
+    # This step loads tide_bool in memory so if you are getting memory spikes,
+    # or if you have overwrite=False and you're trying to fill in some missing
+    # outputs and it's taking a while, this is probably the reason.
     ds = ds.sel(time=tide_bool.sum(dim=["x", "y"]) > 0)
 
     # Apply mask
@@ -51,13 +59,20 @@ def load_tides(
     container_name: str = "output",
 ) -> DataArray:
     da = rioxarray.open_rasterio(
-        f"https://deppcpublicstorage.blob.core.windows.net/output/{dataset_id}/{dataset_id}_{path}_{row}.tif",
+        f"https://deppcpublicstorage.blob.core.windows.net/{container_name}/{dataset_id}/{dataset_id}_{path}_{row}.tif",
         chunks=True,
     )
-    return da.assign_coords(
+
+    time_strings = da.attrs["long_name"]
+    band_names = (
         # this is the original data type produced by pixel_tides
-        band=[Timestamp(t) for t in da.attrs["long_name"]]
-    ).rename(band="time")
+        [Timestamp(t) for t in time_strings]
+        # In case there's only one
+        if isinstance(time_strings, Tuple)
+        else [Timestamp(time_strings)]
+    )
+
+    return da.assign_coords(band=band_names).rename(band="time").drop_duplicates(...)
 
 
 def tide_cutoffs_dask(
@@ -86,10 +101,19 @@ def tide_cutoffs_dask(
 
 
 def coastlines_by_year(xr: DataArray, area) -> Dataset:
+    # Possible we should do this in Processor.py, need to think through
+    # whether there is a case where we _would_ want duplicates
+    xr = xr.drop_duplicates(...)
     working_ds = mndwi(xr).to_dataset()
     working_ds["ndwi"] = ndwi(xr)
 
     tides_lowres = load_tides(area["PATH"].values[0], area["ROW"].values[0])
+    # Filter out times that are not in the tidal data. Basically because I have
+    # been caching the times, we may miss very recent readings (like here it is
+    # April 10 and I don't have tides for March 30 or April 7 Landsat data.
+    working_ds = working_ds.sel(
+        time=working_ds.time[working_ds.time.isin(tides_lowres.time)]
+    )
     # The deafrica-coastlines code uses rio.reproject_match, but it is not dask
     # enabled. However, we shouldn't need the reprojection, so we can use
     # (the dask enabled) DataArray.interp instead. Note that the default resampler
@@ -102,9 +126,13 @@ def coastlines_by_year(xr: DataArray, area) -> Dataset:
         working_ds, tides_lowres, tide_centre=0.0
     )
 
-    working_ds = filter_by_cutoffs(working_ds, tide_cutoff_min, tide_cutoff_max).drop(
-        "tide_m"
-    )
+    working_ds = filter_by_cutoffs(
+        working_ds, tides_lowres, tide_cutoff_min, tide_cutoff_max
+    ).drop("tide_m")
+
+    # We filtered out all the data
+    if len(working_ds.time) == 0:
+        return None
 
     # This taken from tidal_composites (I would use it directly but it
     # sets different nodata values which our writer can't handle,
@@ -120,7 +148,7 @@ def coastlines_by_year(xr: DataArray, area) -> Dataset:
     )
     median_ds["stdev"] = working_ds.mndwi.resample(time="1Y").std(keep_attrs=True)
     median_ds = median_ds.assign_coords(
-        time=[f"y{t.year}" for t in DatetimeIndex(median_ds.time)]
+        time=[f"{t.year}" for t in DatetimeIndex(median_ds.time)]
     )
 
     # return median_ds.ndwi.to_dataset("time")
@@ -133,27 +161,31 @@ def run_processor(
     **kwargs,
 ) -> None:
     processor = Processor(scene_processor, dataset_id, **kwargs)
-    #cluster = GatewayCluster(worker_cores=1, worker_memory=8)
-    #cluster.scale(200)
-    #with cluster.get_client() as client:
-    with Client() as client:
-        print(client.dashboard_link)
-        processor.process_by_scene()
+    try:
+        cluster = GatewayCluster(worker_cores=1, worker_memory=8)
+        cluster.scale(400)
+        with cluster.get_client() as client:
+            print(client.dashboard_link)
+            processor.process_by_scene()
+    except ValueError:
+        with Client() as client:
+            print(client.dashboard_link)
+            processor.process_by_scene()
 
 
 if __name__ == "__main__":
     aoi_by_tile = gpd.read_file(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-        # "/tmp/src/data/coastline_split_by_pathrow.gpkg"
-        #        "data/coastline_split_by_pathrow.gpkg"
     ).set_index(["PATH", "ROW"], drop=False)
+    aoi_by_tile = aoi_by_tile[aoi_by_tile["PR"] == "076064"]
 
-    # year = "2016"
     run_processor(
         scene_processor=coastlines_by_year,
         dataset_id="coastlines",
-        # year=year,
         aoi_by_tile=aoi_by_tile,
-        convert_output_to_int16=False,
+        convert_output_to_int16=True,
         send_area_to_scene_processor=True,
+        split_output_by_year=True,
+        split_output_by_variable=False,
+        overwrite=False,
     )
