@@ -40,7 +40,6 @@ def filter_by_cutoffs(
     # drop time-steps without any relevant pixels to reduce data to load
     # tide_bool = (ds.tide_m >= tide_cutoff_min) & (ds.tide_m <= tide_cutoff_max)
     # Changing this to use the lowres tides, since it's causing some memory spikes
-    breakpoint()
     tide_bool = (tides_lowres >= tide_cutoff_min) & (tides_lowres <= tide_cutoff_max)
 
     # This step loads tide_bool in memory so if you are getting memory spikes,
@@ -48,8 +47,9 @@ def filter_by_cutoffs(
     # outputs and it's taking a while, this is probably the reason.
     ds = ds.sel(time=tide_bool.sum(dim=["x", "y"]) > 0)
 
-    # Apply mask
-    return ds.where(tide_bool)
+    # Apply mask to high res data
+    tide_bool_highres = (ds.tide_m >= tide_cutoff_min) & (ds.tide_m <= tide_cutoff_max)
+    return ds.where(tide_bool_highres)
 
 
 def load_tides(
@@ -88,14 +88,16 @@ def tide_cutoffs_dask(
     tide_cutoff_min = tide_centre - tide_cutoff_buffer
     tide_cutoff_max = tide_centre + tide_cutoff_buffer
 
+    chunks = dict(x=ds.chunks["x"], y=ds.chunks["y"])
+
     # Reproject into original geobox
     tide_cutoff_min = tide_cutoff_min.interp(
         x=ds.coords["x"].values, y=ds.coords["y"].values, method=resampling
-    )
+    ).chunk(chunks)
 
     tide_cutoff_max = tide_cutoff_max.interp(
         x=ds.coords["x"].values, y=ds.coords["y"].values, method=resampling
-    )
+    ).chunk(chunks)
 
     return tide_cutoff_min, tide_cutoff_max
 
@@ -121,6 +123,7 @@ def coastlines_by_year(xr: DataArray, area) -> Dataset:
     working_ds["tide_m"] = tides_lowres.interp(
         dict(x=working_ds.coords["x"].values, y=working_ds.coords["y"].values)
     )
+    working_ds = working_ds.unify_chunks()
 
     tide_cutoff_min, tide_cutoff_max = tide_cutoffs_dask(
         working_ds, tides_lowres, tide_centre=0.0
@@ -130,15 +133,12 @@ def coastlines_by_year(xr: DataArray, area) -> Dataset:
         working_ds, tides_lowres, tide_cutoff_min, tide_cutoff_max
     ).drop("tide_m")
 
-    # We filtered out all the data
+    # In case we filtered out all the data
     if len(working_ds.time) == 0:
         return None
 
     # This taken from tidal_composites (I would use it directly but it
-    # sets different nodata values which our writer can't handle,
-    # and adds a year dimension (likewise)
-    #    median_ds = working_ds.median(dim="time", keep_attrs=True)
-    #    median_ds["count"] = working_ds.mndwi.count(dim="time", keep_attrs=True).astype(
+    # sets different nodata values which our writer can't handle, and adds a year dimension (likewise) median_ds = working_ds.median(dim="time", keep_attrs=True) median_ds["count"] = working_ds.mndwi.count(dim="time", keep_attrs=True).astype(
     #        "int16"
     #    )
     #    median_ds["stdev"] = working_ds.mndwi.std(dim="time", keep_attrs=True)
@@ -177,7 +177,6 @@ if __name__ == "__main__":
     aoi_by_tile = gpd.read_file(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
     ).set_index(["PATH", "ROW"], drop=False)
-    aoi_by_tile = aoi_by_tile[aoi_by_tile["PR"] == "076064"]
 
     run_processor(
         scene_processor=coastlines_by_year,

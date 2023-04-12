@@ -46,4 +46,5 @@ if __name__ == "__main__":
         scene_processor_kwargs=dict(pixel_tides_kwargs=pixel_tides_kwargs),
         aoi_by_tile=aoi_by_tile,
         convert_output_to_int16=False,
+        overwrite=True,
     ).process_by_scene()
