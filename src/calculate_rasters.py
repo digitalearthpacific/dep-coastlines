@@ -1,12 +1,14 @@
-from typing import Callable, Tuple, Union
+from typing import Callable, Literal, Tuple, Union
 
 from dask.distributed import Client
 from dask_gateway import GatewayCluster
 import geopandas as gpd
+from numpy import unique
+from numpy.lib.stride_tricks import sliding_window_view
 from pandas import DatetimeIndex, Timestamp
 import rioxarray
 from retry import retry
-from xarray import DataArray, Dataset
+from xarray import concat, DataArray, Dataset
 
 from dep_tools.Processor import Processor
 from dep_tools.utils import scale_and_offset
@@ -15,17 +17,12 @@ from dep_tools.utils import scale_and_offset
 def mndwi(xr: DataArray) -> DataArray:
     # modified normalized differential water index is just a normalized index
     # like NDVI, with different bands
-    green = xr.sel(band="green")
-    swir = xr.sel(band="swir16")
-    #    return xrspatial.multispectral.ndvi(green, swir).rename("mndwi")
-    mndwi = (green - swir) / (green + swir)
+    mndwi = normalized_ratio(xr.sel(band="green"), xr.sel(band="swir16"))
     return mndwi.rename("mndwi")
 
 
 def ndwi(xr: DataArray) -> DataArray:
-    green = xr.sel(band="green")
-    nir = xr.sel(band="nir08")
-    ndwi = (green - nir) / (green + nir)
+    ndwi = normalized_ratio(xr.sel(band="green"), xr.sel(band="nir08"))
     return ndwi.rename("ndwi")
 
 
@@ -37,10 +34,6 @@ def awei(xr: DataArray) -> DataArray:
 
     awei = 4 * (green - swir2) - (0.25 * nir + 2.75 * swir1)
     return awei.rename("awei")
-
-
-def normalized_ratio(band1: DataArray, band2: DataArray) -> DataArray:
-    return (band1 - band2) / (band1 + band2)
 
 
 def wofs(tm_da: DataArray) -> DataArray:
@@ -95,6 +88,10 @@ def wofs(tm_da: DataArray) -> DataArray:
     return water.where(tm.red.notnull(), float("nan"))
 
 
+def normalized_ratio(band1: DataArray, band2: DataArray) -> DataArray:
+    return (band1 - band2) / (band1 + band2)
+
+
 def filter_by_cutoffs(
     ds: Dataset,
     tides_lowres,
@@ -106,7 +103,7 @@ def filter_by_cutoffs(
     """
     # Determine what pixels were acquired in selected tide range, and
     # drop time-steps without any relevant pixels to reduce data to load
-    # tide_bool = (ds.tide_m >= tide_cutoff_min) & (ds.tide_m <= tide_cutoff_max)
+    tide_bool = (ds.tide_m >= tide_cutoff_min) & (ds.tide_m <= tide_cutoff_max)
     # Changing this to use the lowres tides, since it's causing some memory spikes
     tide_bool = (tides_lowres >= tide_cutoff_min) & (tides_lowres <= tide_cutoff_max)
 
@@ -120,15 +117,18 @@ def filter_by_cutoffs(
     return ds.where(tide_bool_highres)
 
 
+# Retry is here for network issues, if timeout, etc. when running via
+# kbatch, it will bring down the whole process.
 @retry(tries=20, delay=10)
 def load_tides(
     path,
     row,
+    storage_account: str = "deppcpublicstorage",
     dataset_id: str = "tpxo_lowres",
     container_name: str = "output",
 ) -> DataArray:
     da = rioxarray.open_rasterio(
-        f"https://deppcpublicstorage.blob.core.windows.net/{container_name}/{dataset_id}/{dataset_id}_{path}_{row}.tif",
+        f"https://{storage_account}.blob.core.windows.net/{container_name}/{dataset_id}/{dataset_id}_{path}_{row}.tif",
         chunks=True,
     )
 
@@ -171,7 +171,9 @@ def tide_cutoffs_dask(
     return tide_cutoff_min, tide_cutoff_max
 
 
-def coastlines_by_year(xr: DataArray, area) -> Dataset:
+def coastlines_by_year(
+    xr: DataArray, area, composite_type: str = Literal["annual", "three_year"]
+) -> Dataset:
     # Possible we should do this in Processor.py, need to think through
     # whether there is a case where we _would_ want duplicates
     xr = xr.drop_duplicates(...)
@@ -219,17 +221,42 @@ def coastlines_by_year(xr: DataArray, area) -> Dataset:
     if len(working_ds.time) == 0:
         return None
 
-    median_ds = working_ds.resample(time="1Y").median(keep_attrs=True)
-    median_ds["wofs"] = working_ds.wofs.resample(time="1Y").mean(keep_attrs=True)
-    median_ds["count"] = (
-        working_ds.mndwi.resample(time="1Y").count(keep_attrs=True).astype("int16")
-    )
-    median_ds["stdev"] = working_ds.mndwi.resample(time="1Y").std(keep_attrs=True)
-    median_ds = median_ds.assign_coords(
-        time=[f"{t.year}" for t in DatetimeIndex(median_ds.time)]
-    )
+    if composite_type == "annual":
+        median_ds = working_ds.resample(time="1Y").median(keep_attrs=True)
+        median_ds["count"] = (
+            working_ds.mndwi.resample(time="1Y").count(keep_attrs=True).astype("int16")
+        )
+        median_ds["stdev"] = working_ds.mndwi.resample(time="1Y").std(keep_attrs=True)
+        median_ds = median_ds.assign_coords(
+            time=[f"{t.year}" for t in DatetimeIndex(median_ds.time)]
+        )
+        return median_ds.squeeze()
+    elif composite_type == "three_year":
+        # three year composites
+        three_year_sets = sliding_window_view(
+            unique(xr.time.astype("datetime64[Y]").values), 3
+        )
+        three_year_medians = list()
+        for three_year_set in three_year_sets:
+            this_working_ds = working_ds.sel(
+                time=slice(min(three_year_set), max(three_year_set))
+            )
 
-    return median_ds.squeeze()
+            # Or another value; there is some more filtering in coastlines.vector
+            if len(this_working_ds.time) < 1:
+                continue
+            this_median = this_working_ds.median("time", keep_attrs=True)
+            this_median["count"] = this_working_ds.mndwi.count(
+                "time", keep_attrs=True
+            ).astype("int16")
+            this_median["stdev"] = this_working_ds.mndwi.std("time", keep_attrs=True)
+            this_median = this_median.assign_coords(
+                time=three_year_set[1].astype("datetime64[Y]").astype("str")
+            )
+            three_year_medians.append(this_median)
+        return concat(three_year_medians, "time")
+    else:
+        raise ValueError(f"{composite_type} is not a valid value for `composite_type`")
 
 
 def run_processor(
@@ -253,14 +280,15 @@ def run_processor(
 if __name__ == "__main__":
     aoi_by_tile = gpd.read_file(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-    ).set_index(["PATH", "ROW"], drop=False)
+    ).set_index(["PATH", "ROW"], drop=False)[85:170]
 
     run_processor(
         scene_processor=coastlines_by_year,
-        dataset_id="coastlines",
+        dataset_id="coastlines-composite",
         aoi_by_tile=aoi_by_tile,
         convert_output_to_int16=True,
         send_area_to_scene_processor=True,
+        scene_processor_kwargs=dict(composite_type="three_year"),
         # year="2015",
         split_output_by_year=True,
         split_output_by_variable=False,

@@ -1,7 +1,6 @@
 import geopandas as gpd
 from shapely import make_valid
 
-# We use 8859 so distances will be in meters
 aoi = gpd.read_file("data/aoi.gpkg")
 
 # Approx 2km at equator, other CRSes did not work (horizontal stripes that
