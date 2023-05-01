@@ -30,8 +30,7 @@ def download_blob(
     remote_path = f"{dataset}/{year}/{dataset}_{year}_{path}_{row}.tif"
     local_path = f"data/tonga/{dataset}_{year}_{path}_{row}.tif"
     blob_client = container_client.get_blob_client(remote_path)
-    print(remote_path)
-    if blob_client.exists():
+    if blob_client.exists() and not Path(local_path).exists():
         with open(local_path, "wb") as dst:
             download_stream = blob_client.download_blob()
             dst.write(download_stream.readall())
@@ -46,16 +45,16 @@ land_minus = tonga.buffer(-500)
 land_zone = make_valid(land_plus.difference(land_minus).unary_union)
 
 for i, row in tonga.iterrows():
-    for year in range(1984, 2024):
-        download_blob(cc, "coastlines", year, row.PATH, row.ROW)
-
+    for year in range(2013, 2024):
+        download_blob(cc, "landsat-mosaic", year, row.PATH, row.ROW)
 
 year_das = []
 for year in range(2013, 2024):
-    files = [str(f) for f in Path("data/tonga").glob(f"coastlines_{year}*.tif")]
-    vrt_file = f"data/tonga/coastlines_{year}.vrt"
+    files = [str(f) for f in Path("data/tonga").glob(f"landsat-mosaic_{year}*.tif")]
+    vrt_file = f"data/tonga/coastlines_nir_{year}.vrt"
     gdal.BuildVRT(vrt_file, files)
-    bands = dict(mdnwi=1, ndwi=2, awei=3, wofs=4)
+    #bands = dict(mdnwi=1, ndwi=2, awei=3, wofs=4)
+    bands = dict(nir08 = 4)
     da = (
         rx.open_rasterio(vrt_file, chunks=True)
         .rio.write_crs(8859)
@@ -66,7 +65,7 @@ for year in range(2013, 2024):
 
     for name, index in bands.items():
         path = f"data/tonga/coastlines_{year}_{name}.gpkg"
-        subpixel_contours(da.sel(band=index)).to_file(path)
+#        subpixel_contours(da.sel(band=index), [0.128]).to_file(path)
         print(path)
 
     da["time"] = year
@@ -75,5 +74,5 @@ for year in range(2013, 2024):
 for name, index in bands.items():
     all_years = xr.concat(year_das, "time")
     subpixel_contours(
-        all_years.sel(band=index), attribute_df=all_years.time.to_dataframe("year")
-    ).to_file(f"data/tonga/coastlines_{name}.gpkg")
+        all_years.sel(band=index), [0.128]
+    ).to_file(f"data/tonga/coastlines_nir_{name}.gpkg")
