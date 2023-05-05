@@ -1,0 +1,10 @@
+https://landsateuwest.blob.core.windows.net/landsat-c2/level-2/standard/oli-tirs/2022/052/071/LC08_L2SR_052071_20220620_20220630_02_T1/LC08_L2SR_052071_20220620_20220630_02_T1_SR_B6.TIF
+
+https://landsateuwest.blob.core.windows.net/landsat-c2/level-2/standard/oli-tirs/2022/084/054/LC08_L2SR_084054_20220722_20220802_02_T1/LC08_L2SR_084054_20220722_20220802_02
+_T1_QA_PIXEL.TIF
+
+# maybe
+https://landsateuwest.blob.core.windows.net/landsat-c2/level-2/standard/oli-tirs/2021/077/064/LC08_L2SR_077064_20211107_20211117_02_T1/LC08_L2SR_077064_20211107_20211117_02
+_T1_SR_B5.TIF
+
+https://landsateuwest.blob.core.windows.net/landsat-c2/level-2/standard/oli-tirs/2022/045/073/LC09_L2SR_045073_20220713_20220718_02_T2/LC09_L2SR_045073_20220713_20220718_02_T2_SR_B5.TIF
