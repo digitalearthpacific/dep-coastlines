@@ -3,11 +3,13 @@ from pathlib import Path
 
 from azure.storage.blob import ContainerClient
 import geopandas as gpd
+from geopandas import GeoDataframe
 import numpy as np
 from osgeo import gdal
 import rioxarray as rx
 from shapely import make_valid
 import xarray as xr
+from xarray import Dataset
 
 from dea_tools.spatial import subpixel_contours
 
@@ -36,25 +38,39 @@ def download_blob(
             dst.write(download_stream.readall())
 
 
+def contours_preprocess(
+    yearly_ds: Dataset, gapfill_ds: Dataset, water_index: str, index_threshold: float
+) -> Dataset:
+    pass
+
+
+def download_for_df(df: Dataframe) -> None:
+    cc = container_client()
+    for ds in ["coastlines", "coastlines-composite", "landsat-mosaic"]:
+        for i, row in df.iterrows():
+            for year in range(2013, 2024):
+                download_blob(cc, ds, year, row.PATH, row.ROW)
+
+
+def get_coastal_mask(areas: GeoDataframe) -> GeoDataframe:
+    land_plus = areas.buffer(100)
+    land_minus = areas.buffer(-500)
+    return make_valid(land_plus.difference(land_minus).unary_union)
+
+
 aoi = gpd.read_file("data/aoi_split_by_landsat_pathrow.gpkg")
 tonga = aoi[aoi.NAME_0 == "Tonga"].to_crs(8859)
-cc = container_client()
 
-land_plus = tonga.buffer(100)
-land_minus = tonga.buffer(-500)
-land_zone = make_valid(land_plus.difference(land_minus).unary_union)
+land_zone = get_coastal_mask(tonga)
 
-for i, row in tonga.iterrows():
-    for year in range(2013, 2024):
-        download_blob(cc, "landsat-mosaic", year, row.PATH, row.ROW)
 
 year_das = []
 for year in range(2013, 2024):
     files = [str(f) for f in Path("data/tonga").glob(f"landsat-mosaic_{year}*.tif")]
     vrt_file = f"data/tonga/coastlines_nir_{year}.vrt"
     gdal.BuildVRT(vrt_file, files)
-    #bands = dict(mdnwi=1, ndwi=2, awei=3, wofs=4)
-    bands = dict(nir08 = 4)
+    # bands = dict(mdnwi=1, ndwi=2, awei=3, wofs=4)
+    bands = dict(nir08=4)
     da = (
         rx.open_rasterio(vrt_file, chunks=True)
         .rio.write_crs(8859)
@@ -65,7 +81,7 @@ for year in range(2013, 2024):
 
     for name, index in bands.items():
         path = f"data/tonga/coastlines_{year}_{name}.gpkg"
-#        subpixel_contours(da.sel(band=index), [0.128]).to_file(path)
+        #        subpixel_contours(da.sel(band=index), [0.128]).to_file(path)
         print(path)
 
     da["time"] = year
@@ -73,6 +89,6 @@ for year in range(2013, 2024):
 
 for name, index in bands.items():
     all_years = xr.concat(year_das, "time")
-    subpixel_contours(
-        all_years.sel(band=index), [0.128]
-    ).to_file(f"data/tonga/coastlines_nir_{name}.gpkg")
+    subpixel_contours(all_years.sel(band=index), [0.128]).to_file(
+        f"data/tonga/coastlines_nir_{name}.gpkg"
+    )
