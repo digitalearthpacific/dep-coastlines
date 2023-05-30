@@ -27,6 +27,7 @@ def awei(xr: DataArray) -> DataArray:
 
 def wofs(tm_da: DataArray) -> DataArray:
     # First, rescale to what the wofs model expects
+    # (input values should be scaled, not raw int)
     l1_scale = 0.0001
     l1_rescale = 1.0 / l1_scale
     tm_da = scale_and_offset(tm_da, scale=[l1_rescale])

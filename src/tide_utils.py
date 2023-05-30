@@ -5,7 +5,8 @@ from retry import retry
 import rioxarray as rx
 from xarray import DataArray, Dataset
 
-def filter_by_tides(ds: Dataset, path: str, row:str) -> Dataset:
+
+def filter_by_tides(da: DataArray, path: str, row: str) -> DataArray:
     """Remove out of range tide values from a given dataset."""
     # TODO: add pathrow to dataset?
     # TODO: add kwargs for functions below as needed
@@ -14,9 +15,7 @@ def filter_by_tides(ds: Dataset, path: str, row:str) -> Dataset:
     # Filter out times that are not in the tidal data. Basically because I have
     # been caching the times, we may miss very recent readings (like here it is
     # April 10 and I don't have tides for March 30 or April 7 Landsat data.
-    ds = ds.sel(
-        time=ds.time[ds.time.isin(tides_lowres.time)]
-    )
+    ds = da.sel(time=da.time[da.time.isin(tides_lowres.time)]).to_dataset()
 
     # Now filter out tide times that are not in the ds
     tides_lowres = tides_lowres.sel(
@@ -30,15 +29,18 @@ def filter_by_tides(ds: Dataset, path: str, row:str) -> Dataset:
     ds["tide_m"] = tides_lowres.interp(
         dict(x=ds.coords["x"].values, y=ds.coords["y"].values)
     )
-    ds = ds.unify_chunks()
 
     tide_cutoff_min, tide_cutoff_max = tide_cutoffs_dask(
         ds, tides_lowres, tide_centre=0.0
     )
 
-    return filter_by_cutoffs(
-        ds, tides_lowres, tide_cutoff_min, tide_cutoff_max
-    ).drop("tide_m")
+    # The squeeze is because there is a "variable" dim added when converted to ds
+    return (
+        filter_by_cutoffs(ds, tides_lowres, tide_cutoff_min, tide_cutoff_max)
+        .drop("tide_m")
+        .to_array()
+        .squeeze(drop=True)
+    )
 
 
 def filter_by_cutoffs(
@@ -68,10 +70,10 @@ def filter_by_cutoffs(
 
 # Retry is here for network issues, if timeout, etc. when running via
 # kbatch, it will bring down the whole process.
-@retry(tries=50, delay=10)
+@retry(tries=100, delay=2)
 def load_tides(
-    path:str,
-    row:str,
+    path: str,
+    row: str,
     storage_account: str = "deppcpublicstorage",
     dataset_id: str = "tpxo_lowres",
     container_name: str = "output",
@@ -107,6 +109,7 @@ def tide_cutoffs_dask(
     tide_cutoff_min = tide_centre - tide_cutoff_buffer
     tide_cutoff_max = tide_centre + tide_cutoff_buffer
 
+    ds = ds.unify_chunks()
     chunks = dict(x=ds.chunks["x"], y=ds.chunks["y"])
 
     # Reproject into original geobox
