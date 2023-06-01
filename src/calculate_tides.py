@@ -14,7 +14,7 @@ coastline processing this is included with other raster processing but
 Tidal processing should be done before anything else, as results are needed for
 filtering input landsat data before water index calculation.
 
-I ran this locally with tidal model data in ../coastlines-local (see below) as
+This can be run locally with tidal model data in ../coastlines-local (see below) as
 it does not actually pull any planetary computer data and only writes
 small-ish (5km resolution) data to blob storage. It has low memory requirements
 and takes just a few hours to run for the full area and all times. It could be

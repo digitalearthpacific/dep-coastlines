@@ -6,7 +6,7 @@ Digital Earth Africa (https://github.com/digitalearthafrica/deafrica-coastlines)
 coastline work, so much credit to those projects / authors for much of what 
 is below.
 
-We are not using those functions directly at this point because I wanted to 
+We are not using those functions directly at this point because of efforts
 dask-enable some things that were not previously dask enabled (see, for
 instance, temporal_masking), and I am sure there will be modifications / 
 additions to the workflow which are study area specific to the Pacific.

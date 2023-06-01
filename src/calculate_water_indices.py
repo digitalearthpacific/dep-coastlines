@@ -4,12 +4,11 @@ As of this writing we are focusing on the use of the nir band for all coastline
 work, but the other bands are here for legacy sake and possible use later.
 
 This is best run using kbatch (see calculate_water_indices.yml) with a single
-year or group of years (e.g. 2013/2015) and I should probably pass that parameter
-as an argument via typer next time I run. I previously tried to run this
+year or group of years (e.g. 2013/2015). We previously tried to run this
 variously using all years / all composite years , separately for each variable, 
 etc. but the long running / task heavy processes often failed in practice.
 
-As I recall each year took an hour or two to run, so if you start multiple
+Each year took an hour or two to run, so if you start multiple
 processes you can calculate for all years within a day or so.
 
 TODO: Should probably not call this "coastlines".

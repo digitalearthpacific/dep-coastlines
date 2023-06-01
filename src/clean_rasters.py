@@ -2,9 +2,8 @@
 This is a work-in-progress script to "post-process" water index data before
 vectorizing. The functionality here is part of the vectorization code from the
 DEA and DEAfrica work, but it is primarily raster based, hence the name.
-I'm still on the fence about whether to include the actual vectorization
-here (using subpixel_contours), so things may move around / get renamed some
-in the coming weeks.
+The actual vectorization (using subpixel_contours) may or may not belong here, 
+so things may move around / get renamed some in the coming weeks.
 
 Please refer to raster_cleaning.py for specific functions.
 """

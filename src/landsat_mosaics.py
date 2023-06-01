@@ -1,6 +1,6 @@
 """
 This calculates cloud-masked, high and low tide filtered annual landsat mosaics.
-I used this to explore actual band values when evaluating different water
+These were used to explore actual band values when evaluating different water
 indices, etc. Could be useful for future projects, so am leaving here. For more
 specifics on running, see the notes to calculate_water_indices.py.
 """
@@ -14,6 +14,7 @@ from dep_tools.Processor import run_processor
 
 from tide_utils import filter_by_tides
 
+
 def landsat_mosaics(ds: Dataset, area) -> Union[Dataset, None]:
     bands = ["blue", "green", "red", "nir08", "swir16", "swir22"]
     ds = ds.drop_duplicates(...).sel(band=bands).to_dataset("band")
@@ -23,15 +24,16 @@ def landsat_mosaics(ds: Dataset, area) -> Union[Dataset, None]:
         return None
 
     median_ds = ds.resample(time="1Y").median()
-    median_ds = median_ds.assign_coords(time=[f"{t.year}" for t in DatetimeIndex(median_ds.time)])
+    median_ds = median_ds.assign_coords(
+        time=[f"{t.year}" for t in DatetimeIndex(median_ds.time)]
+    )
     return median_ds.squeeze()
-
 
 
 if __name__ == "__main__":
     aoi_by_tile = gpd.read_file(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-        ).set_index(["PATH", "ROW"], drop=False)[170:255]
+    ).set_index(["PATH", "ROW"], drop=False)[170:255]
 
     run_processor(
         scene_processor=landsat_mosaics,
