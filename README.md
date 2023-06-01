@@ -1,7 +1,6 @@
 # Digital Earth Pacific Coastlines
 
-This is a work-in-progress adaptation of [Digital Earth Australia (DEA)]
-(https://github.com/GeoscienceAustralia/dea-coastlines) and [Digital Earth
+This is a work-in-progress adaptation of [Digital Earth Australia (DEA)](https://github.com/GeoscienceAustralia/dea-coastlines) and [Digital Earth
 Africa
 Coastlines](https://github.com/digitalearthafrica/deafrica-coastlines) products
 for the Pacific nations. Please refer to the following for
