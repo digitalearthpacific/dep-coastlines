@@ -1,15 +1,9 @@
-[submodule "dea-coastlines"]
-	path = dea-coastlines
-	url = https://github.com/jessjaco/dea-coastlines
 [submodule "dep-tools"]
 	path = dep-tools
 	url = git@github.com:jessjaco/dep-tools.git
 [submodule "pyfes"]
 	path = pyfes
 	url = git@github.com:geopython/pyfes.git
-[submodule "deafrica-coastlines"]
-	path = deafrica-coastlines
-	url = git@github.com:digitalearthafrica/deafrica-coastlines.git
 [submodule "dea-notebooks"]
 	path = dea-notebooks
 	url = git@github.com:GeoscienceAustralia/dea-notebooks.git

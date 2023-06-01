@@ -1,13 +1,38 @@
-import os
+"""
+Calculates low-resolution tide rasters for all areas and times using 
+functionality from the Digital Earth Austalia project. In the DEA and DEAfrica
+coastline processing this is included with other raster processing but 
+1) For this project all the water index, etc. calculations are dask-enabled,
+   while this is not.
+2) It has separate prerequisites that other pieces due to the tidal calculation
+   packages (see below).
+3) This is the most static part of the workflow in that once the areas are
+   set, the tidal calculations can be "one and done" for the most part (unless
+   you wish to revisit for more recent data at a later time). No reason to redo
+   this every time if testing out new water indices / cloud masking etc.
+
+Tidal processing should be done before anything else, as results are needed for
+filtering input landsat data before water index calculation.
+
+I ran this locally with tidal model data in ../coastlines-local (see below) as
+it does not actually pull any planetary computer data and only writes
+small-ish (5km resolution) data to blob storage. It has low memory requirements
+and takes just a few hours to run for the full area and all times. It could be
+modified to run in kbatch but requires a docker image with the large tidal models
+embedded.
+
+TODO: If revisiting this file, consider abstracting some of the constant values
+set in the main script body and using typer.
+"""
+
 from typing import Dict
 
-from azure.storage.blob import ContainerClient
 import geopandas as gpd
 from xarray import DataArray, Dataset
 
-# local submodules
 from dea_tools.coastal import pixel_tides
 from dep_tools.Processor import run_processor
+from dep_tools.utils import get_container_client
 
 
 def calculate_tides(xr: DataArray, pixel_tides_kwargs: Dict = dict()) -> Dataset:
@@ -18,13 +43,6 @@ def calculate_tides(xr: DataArray, pixel_tides_kwargs: Dict = dict()) -> Dataset
         .transpose("time", "y", "x")
         .to_dataset("time")
     )
-
-    # Possible workflow using map_blocks
-    #    working_ds = working_ds.chunk(dict(time=270, x=256, y=256))
-    #    pixel_tides_kwargs.update(dict(resample=False))
-    # Problem here was making the template (consider the res, etc)
-    #    tides_lowres = working_ds.map_blocks(pixel_tides, kwargs=pixel_tides_kwargs)
-    #    tides_lowres =  pixel_tides(working_ds, resample=False, **pixel_tides_kwargs).transpose("time", "y", "x").to_dataset("time")
 
     # date bands are type pd.Timestamp, need to change them to string
     # Watch as (apparently) older versions of rioxarray do not write the
@@ -38,29 +56,17 @@ def calculate_tides(xr: DataArray, pixel_tides_kwargs: Dict = dict()) -> Dataset
 
 
 if __name__ == "__main__":
-    # I ran this locally rather than via kbatch
-
     pixel_tides_kwargs = dict(
         model="TPXO9-atlas-v5", directory="../coastlines-local/tidal-models/"
     )
     aoi_by_tile = gpd.read_file(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
     ).set_index(["PATH", "ROW"])
-    aoi_by_tile = aoi_by_tile.loc[aoi_by_tile.index == (93, 62)]
-
-    storage_account = os.environ["AZURE_STORAGE_ACCOUNT"]
-    container_name = "output"
-    credential = os.environ["AZURE_STORAGE_SAS_TOKEN"]
-    container_client = ContainerClient(
-        f"https://{storage_account}.blob.core.windows.net",
-        container_name=container_name,
-        credential=credential,
-    )
 
     run_processor(
         scene_processor=calculate_tides,
         dataset_id="tpxo_lowres",
-        container_client=container_client,
+        container_client=get_container_client(),
         scene_processor_kwargs=dict(pixel_tides_kwargs=pixel_tides_kwargs),
         aoi_by_tile=aoi_by_tile,
         convert_output_to_int16=False,

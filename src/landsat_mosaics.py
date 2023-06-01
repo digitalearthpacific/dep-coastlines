@@ -1,3 +1,9 @@
+"""
+This calculates cloud-masked, high and low tide filtered annual landsat mosaics.
+I used this to explore actual band values when evaluating different water
+indices, etc. Could be useful for future projects, so am leaving here. For more
+specifics on running, see the notes to calculate_water_indices.py.
+"""
 from typing import Union
 
 import geopandas as gpd

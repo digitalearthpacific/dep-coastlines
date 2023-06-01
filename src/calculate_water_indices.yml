@@ -9,4 +9,5 @@ profile: r
 code: "src/"
 command:
   - sh
-  - calculate_rasters.sh
+  - run_on_pc.sh
+  - calculate_water_indices.py
