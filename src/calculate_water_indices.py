@@ -61,8 +61,6 @@ if __name__ == "__main__":
         aoi_by_tile=aoi_by_tile,
         convert_output_to_int16=True,
         send_area_to_scene_processor=True,
-        scene_processor_kwargs=dict(composite_type="all"),
-        split_output_by_variable=False,
         overwrite=True,
         output_value_multiplier=1000,
     )
