@@ -12,7 +12,7 @@ instance, temporal_masking), and I am sure there will be modifications /
 additions to the workflow which are study area specific to the Pacific.
 """
 
-from pathlib import Path
+from typing import Union
 
 import flox.xarray  # <- not positive this is in the planetary computer image
 from geopandas import GeoDataFrame
@@ -61,7 +61,7 @@ def contours_preprocess(
     water_index: str = "nir08",
     index_threshold: float = 128.0,
     mask_temporal: bool = True,
-) -> Dataset | DataArray:
+) -> Union[Dataset, DataArray]:
     # Remove low obs pixels and replace with 3-year gapfill
     combined_ds = yearly_ds.where(yearly_ds["count"] > 5, gapfill_ds)
 

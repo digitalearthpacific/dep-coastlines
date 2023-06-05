@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List
+from typing import List, Union
 
 from geopandas import GeoDataFrame
 from osgeo import gdal
@@ -14,7 +14,7 @@ from dep_tools.utils import download_blob, get_blob_path, get_container_client
 
 
 @retry(tries=20, delay=10)
-def load_blobs(dataset_id: str, path, row, years, **kwargs) -> xr.Dataset | None:
+def load_blobs(dataset_id: str, path, row, years, **kwargs) -> Union[xr.Dataset, None]:
     # Some obvious overlap between this and `load_local_data` that should be
     # cleaned up
     prefix = Path("https://deppcpublicstorage.blob.core.windows.net/output")

@@ -4,10 +4,9 @@
 # 1. escaping of quotes for keys
 # 2. space after -e and -f (but not command?) 
 
-image: "mcr.microsoft.com/planetary-computer/python:latest"
+image: "docker.io/numbersandstrings/dep-coastlines:latest"
 profile: r
 code: "src/"
 command:
-  - sh
-  - run_on_pc.sh
+  - python
   - clean_rasters.py

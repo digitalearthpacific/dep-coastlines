@@ -18,7 +18,7 @@ from raster_cleaning import contours_preprocess
 from utils import load_blobs
 
 
-def clean_rasters():
+def clean_rasters(overwrite: bool = False) -> None:
     aoi = gpd.read_file(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
     )
@@ -31,7 +31,7 @@ def clean_rasters():
         path = r.PATH
         row = r.ROW
         output_path = f"clean-nir/clean_nir_{path}_{row}.tif"
-        if not blob_exists(output_path):
+        if not blob_exists(output_path) or overwrite:
             # If using local data, could use load_local_data instead. They
             # may be combined soon.
             yearly_ds = load_blobs(
@@ -51,9 +51,12 @@ def clean_rasters():
                 "coastlines", path, row, composite_years, chunks=True
             )[["nir08", "count"]]
 
+            # thresholding for nir band is the opposite direction of
+            # all other indices, so we multiply by negative 1.
             yearly_ds["nir08"] = yearly_ds.nir08 * -1
             composite_ds["nir08"] = composite_ds.nir08 * -1
             water_index = "nir08"
+
             index_threshold = -128.0
 
             composite_ds["year"] = range(start_year, end_year)
@@ -69,23 +72,27 @@ def clean_rasters():
                 combined_ds,
                 path=output_path,
                 write_args=dict(driver="COG"),
-                overwrite=False,
+                overwrite=overwrite,
             )
 
-            combined_gdf = subpixel_contours(combined_ds, dim="year", z_values=[-128.0])
+            combined_gdf = subpixel_contours(
+                combined_ds, dim="year", z_values=[index_threshold]
+            )
             write_to_blob_storage(
-                combined_gdf, f"clean-nir/clean_nir_{path}_{row}.gpkg", overwrite=False
+                combined_gdf,
+                f"coastlines-vector/coastlines_vector_{path}_{row}.gpkg",
+                overwrite=False,
             )
 
 
 if __name__ == "__main__":
     try:
         cluster = GatewayCluster(worker_cores=1, worker_memory=8)
-        cluster.scale(100)
+        cluster.scale(400)
         with cluster.get_client() as client:
             print(client.dashboard_link)
-            clean_rasters()
+            clean_rasters(True)
     except ValueError:
         with Client() as client:
             print(client.dashboard_link)
-            clean_rasters()
+            clean_rasters(True)
