@@ -35,6 +35,7 @@ def clean_rasters(
         path = r.PATH
         row = r.ROW
         output_path = f"clean-nir/clean_nir_{path}_{row}.tif"
+        print(output_path)
         if not blob_exists(output_path) or overwrite_images:
             # If using local data, could use load_local_data instead. They
             # may be combined soon.
@@ -83,9 +84,13 @@ def clean_rasters(
             )
         else:
             # might need to fix the years here
-            combined_ds = rx.open_rasterio(
-                f"/vsiaz/output/{output_path}", chunks=True
-            ).rio.write_crs(8859)
+            combined_ds = rx.open_rasterio(f"/vsiaz/output/{output_path}", chunks=True)
+
+            combined_ds = (
+                combined_ds.rename({"band": "year"})
+                .assign_coords(year=list(combined_ds.attrs["long_name"]))
+                .rio.write_crs(8859)
+            )
 
         lines_path = f"coastlines-vector/coastlines_vector_{path}_{row}.gpkg"
         if not blob_exists(lines_path) or overwrite_lines:
@@ -101,8 +106,8 @@ def clean_rasters(
 
 
 if __name__ == "__main__":
-    overwrite_images = True
-    overwrite_lines = True
+    overwrite_images = False
+    overwrite_lines = False
     try:
         cluster = GatewayCluster(worker_cores=1, worker_memory=8)
         cluster.scale(100)
