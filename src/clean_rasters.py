@@ -10,6 +10,7 @@ Please refer to raster_cleaning.py for specific functions.
 from dask.distributed import Client
 from dask_gateway import GatewayCluster
 import geopandas as gpd
+import rioxarray as rx
 
 from dea_tools.spatial import subpixel_contours
 from dep_tools.utils import blob_exists, write_to_blob_storage
@@ -18,20 +19,23 @@ from raster_cleaning import contours_preprocess
 from utils import load_blobs
 
 
-def clean_rasters(overwrite: bool = False) -> None:
+def clean_rasters(
+    overwrite_images: bool = False, overwrite_lines: bool = False
+) -> None:
     aoi = gpd.read_file(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
     )
     start_year = 2014
     end_year = 2022
 
+    index_threshold = -128.0
     # While this functionality is similar to dep_tools.Processor, we don't
     # do a stac search / load so it doesn't fit entirely.
     for _, r in aoi.iterrows():
         path = r.PATH
         row = r.ROW
         output_path = f"clean-nir/clean_nir_{path}_{row}.tif"
-        if not blob_exists(output_path) or overwrite:
+        if not blob_exists(output_path) or overwrite_images:
             # If using local data, could use load_local_data instead. They
             # may be combined soon.
             yearly_ds = load_blobs(
@@ -57,8 +61,6 @@ def clean_rasters(overwrite: bool = False) -> None:
             composite_ds["nir08"] = composite_ds.nir08 * -1
             water_index = "nir08"
 
-            index_threshold = -128.0
-
             composite_ds["year"] = range(start_year, end_year)
             combined_ds = contours_preprocess(
                 yearly_ds,
@@ -67,32 +69,47 @@ def clean_rasters(overwrite: bool = False) -> None:
                 index_threshold=index_threshold,
                 mask_temporal=True,
             )
+            # Some strange thing happening where year needs to be numeric for
+            # contours preprocess, but we need to make it a string here or
+            # rioxarray has problems writing it ("numpy.int64 has no attribute
+            # encode")
+            combined_ds["year"] = combined_ds.year.astype("str")
 
             write_to_blob_storage(
-                combined_ds,
+                combined_ds.to_dataset("year"),
                 path=output_path,
                 write_args=dict(driver="COG"),
-                overwrite=overwrite,
+                overwrite=overwrite_images,
             )
+        else:
+            # might need to fix the years here
+            combined_ds = rx.open_rasterio(
+                f"/vsiaz/output/{output_path}", chunks=True
+            ).rio.write_crs(8859)
 
+        lines_path = f"coastlines-vector/coastlines_vector_{path}_{row}.gpkg"
+        if not blob_exists(lines_path) or overwrite_lines:
             combined_gdf = subpixel_contours(
                 combined_ds, dim="year", z_values=[index_threshold]
             )
             write_to_blob_storage(
                 combined_gdf,
-                f"coastlines-vector/coastlines_vector_{path}_{row}.gpkg",
-                overwrite=False,
+                lines_path,
+                write_args=dict(driver="GPKG", layer=f"coastlines_vector_{path}_{row}"),
+                overwrite=overwrite_lines,
             )
 
 
 if __name__ == "__main__":
+    overwrite_images = True
+    overwrite_lines = True
     try:
         cluster = GatewayCluster(worker_cores=1, worker_memory=8)
-        cluster.scale(400)
+        cluster.scale(100)
         with cluster.get_client() as client:
             print(client.dashboard_link)
-            clean_rasters(True)
+            clean_rasters(overwrite_images, overwrite_lines)
     except ValueError:
         with Client() as client:
             print(client.dashboard_link)
-            clean_rasters(True)
+            clean_rasters(overwrite_images, overwrite_lines)
