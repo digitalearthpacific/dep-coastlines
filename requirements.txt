@@ -1,4 +1,5 @@
-./dep-tools
-./dea-notebooks/Tools
+-e ./dep-tools
+-e ./dea-notebooks/Tools
 flox
 xarray-spatial
+typer
