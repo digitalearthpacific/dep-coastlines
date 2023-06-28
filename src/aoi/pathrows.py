@@ -30,7 +30,7 @@ if not aoi.exists():
     print(f"AOI file {aoi} does not exist. Run src/aoi/aoi.py first.")
     exit(1)
 
-aoi = gpd.read_file("data/aoi.geojson")
+aoi = gpd.read_file("data/aoi.gpkg")
 
 if not pathrows_file.exists():
     # Cache the zipped file
