@@ -1,5 +1,5 @@
--e ./dep-tools
--e ./dea-notebooks/Tools
 flox
 xarray-spatial
 typer
+dea_tools
+git+https://github.com/jessjaco/dep-tools.git

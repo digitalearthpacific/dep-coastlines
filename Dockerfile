@@ -12,9 +12,7 @@
 
 FROM geoscienceaustralia/dea-coastlines:latest AS base
 
-ADD . /tmp/src
+ADD ./requirements.txt /tmp/requirements.txt
+
 RUN pip install --no-cache-dir --upgrade pip \
-  && pip install /tmp/src/dep-tools \
-  && pip install /tmp/src/dea-notebooks/Tools \
-  && pip install odc-geo \
-  && pip install flox
+  && pip install -r /tmp/requirements.txt

@@ -1,9 +1,0 @@
-[submodule "dep-tools"]
-	path = dep-tools
-	url = git@github.com:jessjaco/dep-tools.git
-[submodule "pyfes"]
-	path = pyfes
-	url = git@github.com:geopython/pyfes.git
-[submodule "dea-notebooks"]
-	path = dea-notebooks
-	url = git@github.com:GeoscienceAustralia/dea-notebooks.git
