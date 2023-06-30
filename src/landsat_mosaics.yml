@@ -9,5 +9,5 @@ profile: r
 code: "src/"
 command:
   - sh
-  - run_on_pc.sh
+  - tools/run_on_pc.sh
   - landsat_mosaics.py
