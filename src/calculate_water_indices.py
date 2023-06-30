@@ -14,7 +14,6 @@ processes you can calculate for all years within a day or so.
 TODO: Should probably not call this "coastlines".
 """
 
-from azure.storage.blob import ContainerClient
 import geopandas as gpd
 import rioxarray
 from xarray import DataArray, Dataset

@@ -10,11 +10,10 @@
 # Alternatively we could just pull the subpixel_contours stuff out of the repo.
  
 
-FROM geoscienceaustralia/dea-coastlines:latest AS base
+FROM mcr.microsoft.com/planetary-computer/python:latest AS base
 
 ADD . /tmp/src
-RUN pip install --no-cache-dir --upgrade pip \
-  && pip install /tmp/src/dep-tools \
-  && pip install /tmp/src/dea-notebooks/Tools \
-  && pip install odc-geo \
-  && pip install flox
+ADD requirements.txt /tmp/requirements.txt
+RUN conda install gcc -y \
+  && pip install --no-cache-dir --upgrade pip \
+  && pip install -r /tmp/requirements.txt

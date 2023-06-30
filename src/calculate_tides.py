@@ -57,7 +57,7 @@ def calculate_tides(xr: DataArray, pixel_tides_kwargs: Dict = dict()) -> Dataset
 
 if __name__ == "__main__":
     pixel_tides_kwargs = dict(
-        model="TPXO9-atlas-v5", directory="../coastlines-local/tidal-models/"
+        model="TPXO9-atlas-v5", directory="coastlines-local/tidal-models/"
     )
     aoi_by_tile = gpd.read_file(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"

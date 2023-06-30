@@ -1,5 +1,7 @@
--e ./dep-tools
--e ./dea-notebooks/Tools
-flox
-xarray-spatial
-typer
+# error in planetary_computer package, likely to be fixed by MS
+pydantic<2
+
+git+https://github.com/jessjaco/dep-tools.git
+
+# latest tested version
+dea-tools==0.2.8dev80
