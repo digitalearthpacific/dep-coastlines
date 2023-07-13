@@ -40,25 +40,6 @@ from dep_tools.utils import get_container_client
 def calculate_tides(xr: DataArray, area, pixel_tides_kwargs: Dict = dict()) -> Dataset:
     working_ds = xr.isel(band=0).to_dataset().drop_duplicates(...)
 
-    # Where should this go?????? Here, or should we modify the stac search /
-    # filtering in Processor?
-    #    working_ds = working_ds.assign_coords(
-    #        {
-    #            "PR": (
-    #                "time",
-    #                [
-    #                    f"{working_ds.coords['landsat:wrs_path'].values[i]}{working_ds.coords['landsat:wrs_row'].values[i]}"
-    #                    for i in range(len(working_ds.time))
-    #                ],
-    #            )
-    #        }
-    #    )
-    #    # might be a more concise way to do this but it's late
-    #    working_ds = working_ds.where(
-    #        working_ds.time[working_ds.coords["PR"] == area.WRSPR.iloc[0]]
-    #    )
-    #    print(working_ds.coords["PR"].values)
-
     tides_lowres = (
         pixel_tides(working_ds, resample=False, **pixel_tides_kwargs)
         .transpose("time", "y", "x")
@@ -82,7 +63,7 @@ if __name__ == "__main__":
     )
     aoi_by_tile = gpd.read_file(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-    ).set_index(["PATH", "ROW"])[56 + 88 :]
+    ).set_index(["PATH", "ROW"])
 
     run_processor(
         scene_processor=calculate_tides,
