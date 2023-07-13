@@ -48,16 +48,21 @@ def water_indices(xr: DataArray, area) -> Dataset:
 
 
 if __name__ == "__main__":
-    aoi_by_tile = gpd.read_file(
-        "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-    ).set_index(["PATH", "ROW"], drop=False)
+    aoi_by_tile = (
+        gpd.read_file(
+            "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
+        )
+        .set_index(["PATH", "ROW"], drop=False)
+        .query("PATH == 82 & ROW == 75")
+    )
 
     run_processor(
         scene_processor=water_indices,
         dataset_id="coastlines",
         n_workers=80,
-        year="2014",
+        year="2016",
         aoi_by_tile=aoi_by_tile,
+        stac_kwargs=dict(resampling={"qa_pixel": "nearest", "*": "cubic"}),
         convert_output_to_int16=True,
         send_area_to_scene_processor=True,
         overwrite=True,

@@ -1,5 +1,6 @@
 from typing import Tuple, Union
 
+import odc.geo
 from pandas import Timestamp
 from retry import retry
 import rioxarray as rx
@@ -11,10 +12,13 @@ def filter_by_tides(da: DataArray, path: str, row: str) -> DataArray:
     # TODO: add pathrow to dataset?
     # TODO: add kwargs for functions below as needed
 
-    tides_lowres = load_tides(path, row)
+    tides_lowres = load_tides(path, row).rio.reproject(da.rio.crs)
     # Filter out times that are not in the tidal data. Basically because I have
     # been caching the times, we may miss very recent readings (like here it is
     # April 10 and I don't have tides for March 30 or April 7 Landsat data.
+    #
+    # Just be aware if youi rerun that the cutoffs will likely change ever so slightly.
+    # Perhaps not enough to change the "quality" data readings though.
     ds = da.sel(time=da.time[da.time.isin(tides_lowres.time)]).to_dataset()
 
     # Now filter out tide times that are not in the ds
@@ -29,6 +33,8 @@ def filter_by_tides(da: DataArray, path: str, row: str) -> DataArray:
     ds["tide_m"] = tides_lowres.interp(
         dict(x=ds.coords["x"].values, y=ds.coords["y"].values)
     )
+
+    ds["tide_m_odc"] = tides_lowres.odc.reproject(ds.odc.geobox, resampling="bilinear")
 
     tide_cutoff_min, tide_cutoff_max = tide_cutoffs_dask(
         ds, tides_lowres, tide_centre=0.0
@@ -70,7 +76,7 @@ def filter_by_cutoffs(
 
 # Retry is here for network issues, if timeout, etc. when running via
 # kbatch, it will bring down the whole process.
-@retry(tries=100, delay=2)
+@retry(tries=100, delay=5)
 def load_tides(
     path: str,
     row: str,

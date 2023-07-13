@@ -25,9 +25,11 @@ TODO: If revisiting this file, consider abstracting some of the constant values
 set in the main script body and using typer.
 """
 
+from datetime import datetime, timezone
 from typing import Dict
 
 import geopandas as gpd
+from numpy import datetime64
 from xarray import DataArray, Dataset
 
 from dea_tools.coastal import pixel_tides
@@ -35,8 +37,27 @@ from dep_tools.Processor import run_processor
 from dep_tools.utils import get_container_client
 
 
-def calculate_tides(xr: DataArray, pixel_tides_kwargs: Dict = dict()) -> Dataset:
+def calculate_tides(xr: DataArray, area, pixel_tides_kwargs: Dict = dict()) -> Dataset:
     working_ds = xr.isel(band=0).to_dataset().drop_duplicates(...)
+
+    # Where should this go?????? Here, or should we modify the stac search /
+    # filtering in Processor?
+    #    working_ds = working_ds.assign_coords(
+    #        {
+    #            "PR": (
+    #                "time",
+    #                [
+    #                    f"{working_ds.coords['landsat:wrs_path'].values[i]}{working_ds.coords['landsat:wrs_row'].values[i]}"
+    #                    for i in range(len(working_ds.time))
+    #                ],
+    #            )
+    #        }
+    #    )
+    #    # might be a more concise way to do this but it's late
+    #    working_ds = working_ds.where(
+    #        working_ds.time[working_ds.coords["PR"] == area.WRSPR.iloc[0]]
+    #    )
+    #    print(working_ds.coords["PR"].values)
 
     tides_lowres = (
         pixel_tides(working_ds, resample=False, **pixel_tides_kwargs)
@@ -45,7 +66,7 @@ def calculate_tides(xr: DataArray, pixel_tides_kwargs: Dict = dict()) -> Dataset
     )
 
     # date bands are type pd.Timestamp, need to change them to string
-    # Watch as (apparently) older versions of rioxarray do not write the
+    # Watch though as (apparently) older versions of rioxarray do not write the
     # band names (times) as `long_name` attribute on output files. Probably
     # worth checking the first few outputs to see.
     tides_lowres = tides_lowres.rename(
@@ -57,18 +78,23 @@ def calculate_tides(xr: DataArray, pixel_tides_kwargs: Dict = dict()) -> Dataset
 
 if __name__ == "__main__":
     pixel_tides_kwargs = dict(
-        model="TPXO9-atlas-v5", directory="coastlines-local/tidal-models/"
+        model="TPXO9-atlas-v5", directory="../coastlines-local/tidal-models/"
     )
     aoi_by_tile = gpd.read_file(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-    ).set_index(["PATH", "ROW"])
+    ).set_index(["PATH", "ROW"])[56 + 88 :]
 
     run_processor(
         scene_processor=calculate_tides,
         dataset_id="tpxo_lowres",
+        prefix="coastlines",
         container_client=get_container_client(),
+        stac_loader_kwargs=dict(epsg="native", loader="stackstac"),
         scene_processor_kwargs=dict(pixel_tides_kwargs=pixel_tides_kwargs),
+        send_area_to_scene_processor=True,
         aoi_by_tile=aoi_by_tile,
         convert_output_to_int16=False,
-        overwrite=True,
+        overwrite=False,
+        extra_attrs=dict(dep_version="12July2023")
+        #        extra_attrs=dict(dep_version=str(datetime64(datetime.now(timezone.utc)))),
     )
