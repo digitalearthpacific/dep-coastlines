@@ -37,24 +37,21 @@ from dep_tools.Processor import run_processor
 from dep_tools.utils import get_container_client
 
 
-def calculate_tides(xr: DataArray, area, pixel_tides_kwargs: Dict = dict()) -> Dataset:
+def calculate_tides(xr: DataArray, pixel_tides_kwargs: Dict = dict()) -> Dataset:
     working_ds = xr.isel(band=0).to_dataset().drop_duplicates(...)
 
-    tides_lowres = (
-        pixel_tides(working_ds, resample=False, **pixel_tides_kwargs)
-        .transpose("time", "y", "x")
-        .to_dataset("time")
-    )
+    tides_lowres = pixel_tides(
+        working_ds, resample=False, **pixel_tides_kwargs
+    ).transpose("time", "y", "x")
 
     # date bands are type pd.Timestamp, need to change them to string
     # Watch though as (apparently) older versions of rioxarray do not write the
     # band names (times) as `long_name` attribute on output files. Probably
     # worth checking the first few outputs to see.
-    tides_lowres = tides_lowres.rename(
-        dict(zip(tides_lowres.keys(), [str(k) for k in tides_lowres.keys()]))
-    )
 
-    return tides_lowres
+    tides_lowres.coords["time"] = tides_lowres.coords["time"].astype("str")
+
+    return tides_lowres.to_dataset("time")
 
 
 if __name__ == "__main__":
@@ -72,10 +69,8 @@ if __name__ == "__main__":
         container_client=get_container_client(),
         stac_loader_kwargs=dict(epsg="native", loader="stackstac"),
         scene_processor_kwargs=dict(pixel_tides_kwargs=pixel_tides_kwargs),
-        send_area_to_scene_processor=True,
         aoi_by_tile=aoi_by_tile,
         convert_output_to_int16=False,
-        overwrite=False,
-        extra_attrs=dict(dep_version="12July2023")
-        #        extra_attrs=dict(dep_version=str(datetime64(datetime.now(timezone.utc)))),
+        overwrite=True,
+        extra_attrs=dict(dep_version="14July2023"),
     )
