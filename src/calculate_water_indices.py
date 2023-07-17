@@ -15,18 +15,40 @@ TODO: Should probably not call this "coastlines".
 """
 
 import geopandas as gpd
-import rioxarray
 from xarray import DataArray, Dataset
+
 
 from dep_tools.Processor import run_processor
 from tide_utils import filter_by_tides
 from water_indices import mndwi, ndwi, awei, wofs
 
 
+def nir(xr: DataArray, area) -> Dataset:
+    xr = xr.drop_duplicates(...).sel(band="nir08")
+    working_ds = filter_by_tides(
+        xr, area["PATH"].values[0], area["ROW"].values[0]
+    ).to_dataset(name="nir08")
+
+    # In case we filtered out all the data
+    if not "time" in working_ds or len(working_ds.time) == 0:
+        return None
+
+    working_ds.coords["time"] = working_ds.time.dt.floor("1D")
+
+    # or mean or median or whatever
+    working_ds = working_ds.groupby("time").first()
+
+    output = working_ds.median("time", keep_attrs=True)
+    output["count"] = working_ds.nir08.count("time", keep_attrs=True).astype("int16")
+    output["stdev"] = working_ds.nir08.std("time", keep_attrs=True)
+    return output
+
+
 def water_indices(xr: DataArray, area) -> Dataset:
     # Possible we should do this in Processor.py, need to think through
     # whether there is a case where we _would_ want duplicates
     xr = xr.drop_duplicates(...)
+
     xr = filter_by_tides(xr, area["PATH"].values[0], area["ROW"].values[0])
 
     working_ds = mndwi(xr).to_dataset()
@@ -40,6 +62,10 @@ def water_indices(xr: DataArray, area) -> Dataset:
     if not "time" in working_ds or len(working_ds.time) == 0:
         return None
 
+    working_ds.coords["time"] = xr.time.dt.floor("1D")
+
+    # or mean or median or whatever
+    working_ds = working_ds.groupby("time").first()
     output = working_ds.median("time", keep_attrs=True)
     output["wofs"] = working_ds.wofs.mean("time", keep_attrs=True)
     output["count"] = working_ds.mndwi.count("time", keep_attrs=True).astype("int16")
@@ -48,23 +74,25 @@ def water_indices(xr: DataArray, area) -> Dataset:
 
 
 if __name__ == "__main__":
-    aoi_by_tile = (
-        gpd.read_file(
-            "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-        )
-        .set_index(["PATH", "ROW"], drop=False)
-        .query("PATH == 82 & ROW == 75")
-    )
+    aoi_by_tile = gpd.read_file(
+        "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
+    ).set_index(["PATH", "ROW"], drop=False)
 
     run_processor(
-        scene_processor=water_indices,
-        dataset_id="coastlines",
-        n_workers=80,
-        year="2016",
+        scene_processor=nir,
+        dataset_id="nir08",
+        prefix="coastlines",
+        year="2017",
         aoi_by_tile=aoi_by_tile,
-        stac_kwargs=dict(resampling={"qa_pixel": "nearest", "*": "cubic"}),
+        stac_loader_kwargs=dict(
+            epsg="native",
+            resampling={"qa_pixel": "nearest", "*": "cubic"}
+            # loader="stac",
+        ),
+        dask_chunksize=dict(band=1, time=1, x=2048, y=2048),
         convert_output_to_int16=True,
         send_area_to_scene_processor=True,
         overwrite=True,
         output_value_multiplier=1000,
+        extra_attrs=dict(dep_version="16Jul2023"),
     )

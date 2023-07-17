@@ -12,7 +12,7 @@ def filter_by_tides(da: DataArray, path: str, row: str) -> DataArray:
     # TODO: add pathrow to dataset?
     # TODO: add kwargs for functions below as needed
 
-    tides_lowres = load_tides(path, row).rio.reproject(da.rio.crs)
+    tides_lowres = load_tides(path, row)
 
     # This should always be the case for matching versions and reprojecting
     # the tides has caused issues, hence the assert
@@ -35,12 +35,13 @@ def filter_by_tides(da: DataArray, path: str, row: str) -> DataArray:
     # enabled. However, we shouldn't need the reprojection, so we can use
     # (the dask enabled) DataArray.interp instead. Note that the default resampler
     # ("linear") is equivalent to bilinear.
-    ds["tide_m"] = tides_lowres.interp(
-        dict(x=ds.coords["x"].values, y=ds.coords["y"].values)
-    )
 
-    ds["tide_m_odc"] = tides_lowres.odc.reproject(ds.odc.geobox, resampling="bilinear")
-    breakpoint()
+    # Interpolate_na is probably the closest to what we need, but it does
+    # e.g. smooth across narrow islands where tides may differ on each side.
+    # So the question is which method? Nearest makes some sense here, but
+    # so does linear.
+
+    ds["tide_m"] = fill_and_interp(tides_lowres, ds)
 
     tide_cutoff_min, tide_cutoff_max = tide_cutoffs_dask(
         ds, tides_lowres, tide_centre=0.0
@@ -68,7 +69,7 @@ def filter_by_cutoffs(
     # drop time-steps without any relevant pixels to reduce data to load
     tide_bool = (ds.tide_m >= tide_cutoff_min) & (ds.tide_m <= tide_cutoff_max)
     # Changing this to use the lowres tides, since it's causing some memory spikes
-    tide_bool = (tides_lowres >= tide_cutoff_min) & (tides_lowres <= tide_cutoff_max)
+    # tide_bool = (tides_lowres >= tide_cutoff_min) & (tides_lowres <= tide_cutoff_max)
 
     # This step loads tide_bool in memory so if you are getting memory spikes,
     # or if you have overwrite=False and you're trying to fill in some missing
@@ -105,7 +106,24 @@ def load_tides(
         else [Timestamp(time_strings)]
     )
 
-    return da.assign_coords(band=band_names).rename(band="time").drop_duplicates(...)
+    return (
+        da.assign_coords(band=("band", band_names))
+        .rename(band="time")
+        .drop_duplicates(...)
+    )
+
+
+def fill_and_interp(xr_to_interp, xr_to_interp_to, na=float("nan")):
+    return (
+        xr_to_interp.rio.write_nodata(na)
+        .map_blocks(lambda xr: xr.rio.interpolate_na("nearest"), template=xr_to_interp)
+        .interp(
+            dict(
+                x=xr_to_interp_to.coords["x"].values,
+                y=xr_to_interp_to.coords["y"].values,
+            ),
+        )
+    )
 
 
 def tide_cutoffs_dask(
@@ -122,15 +140,18 @@ def tide_cutoffs_dask(
     tide_cutoff_max = tide_centre + tide_cutoff_buffer
 
     ds = ds.unify_chunks()
-    chunks = dict(x=ds.chunks["x"], y=ds.chunks["y"])
+
+    tide_cutoff_min = fill_and_interp(tide_cutoff_min, ds)
+    tide_cutoff_max = fill_and_interp(tide_cutoff_max, ds)
+    #    chunks = dict(x=ds.chunks["x"], y=ds.chunks["y"])
 
     # Reproject into original geobox
-    tide_cutoff_min = tide_cutoff_min.interp(
-        x=ds.coords["x"].values, y=ds.coords["y"].values, method=resampling
-    ).chunk(chunks)
-
-    tide_cutoff_max = tide_cutoff_max.interp(
-        x=ds.coords["x"].values, y=ds.coords["y"].values, method=resampling
-    ).chunk(chunks)
+    #    tide_cutoff_min = tide_cutoff_min.interp(
+    #        x=ds.coords["x"].values, y=ds.coords["y"].values, method=resampling
+    #    ).chunk(chunks)
+    #
+    #    tide_cutoff_max = tide_cutoff_max.interp(
+    #        x=ds.coords["x"].values, y=ds.coords["y"].values, method=resampling
+    #    ).chunk(chunks)
 
     return tide_cutoff_min, tide_cutoff_max
