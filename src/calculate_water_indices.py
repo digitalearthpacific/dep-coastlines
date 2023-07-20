@@ -81,6 +81,7 @@ if __name__ == "__main__":
     run_processor(
         scene_processor=nir,
         dataset_id="nir08",
+        worker_memory=16,
         prefix="coastlines",
         year="2017",
         aoi_by_tile=aoi_by_tile,
@@ -93,6 +94,6 @@ if __name__ == "__main__":
         convert_output_to_int16=True,
         send_area_to_scene_processor=True,
         overwrite=True,
-        output_value_multiplier=1000,
-        extra_attrs=dict(dep_version="16Jul2023"),
+        output_value_multiplier=10000,
+        extra_attrs=dict(dep_version="19Jul2023"),
     )

@@ -67,14 +67,16 @@ def filter_by_cutoffs(
     """
     # Determine what pixels were acquired in selected tide range, and
     # drop time-steps without any relevant pixels to reduce data to load
-    tide_bool = (ds.tide_m >= tide_cutoff_min) & (ds.tide_m <= tide_cutoff_max)
+    # tide_bool = (ds.tide_m >= tide_cutoff_min) & (ds.tide_m <= tide_cutoff_max)
     # Changing this to use the lowres tides, since it's causing some memory spikes
+    # (highres should not have range beyond what lowres has)
     # tide_bool = (tides_lowres >= tide_cutoff_min) & (tides_lowres <= tide_cutoff_max)
 
     # This step loads tide_bool in memory so if you are getting memory spikes,
     # or if you have overwrite=False and you're trying to fill in some missing
     # outputs and it's taking a while, this is probably the reason.
-    ds = ds.sel(time=tide_bool.sum(dim=["x", "y"]) > 0)
+    # ds = ds.sel(time=tide_bool.sum(dim=["x", "y"]) > 0)
+    # ds = ds.sel(time=tide_bool.any(dim=["x", "y"]))
 
     # Apply mask to high res data
     tide_bool_highres = (ds.tide_m >= tide_cutoff_min) & (ds.tide_m <= tide_cutoff_max)
@@ -83,7 +85,7 @@ def filter_by_cutoffs(
 
 # Retry is here for network issues, if timeout, etc. when running via
 # kbatch, it will bring down the whole process.
-@retry(tries=100, delay=5)
+@retry(tries=250, delay=3)
 def load_tides(
     path: str,
     row: str,
