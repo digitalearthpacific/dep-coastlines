@@ -74,9 +74,13 @@ def water_indices(xr: DataArray, area) -> Dataset:
 
 
 if __name__ == "__main__":
-    aoi_by_tile = gpd.read_file(
-        "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-    ).set_index(["PATH", "ROW"], drop=False)
+    aoi_by_tile = (
+        gpd.read_file(
+            "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
+        )
+        .set_index(["PATH", "ROW"], drop=False)
+        .query("PATH == 82 & ROW == 74")
+    )
 
     run_processor(
         scene_processor=nir,
@@ -86,9 +90,7 @@ if __name__ == "__main__":
         year="2017",
         aoi_by_tile=aoi_by_tile,
         stac_loader_kwargs=dict(
-            epsg="native",
-            resampling={"qa_pixel": "nearest", "*": "cubic"}
-            # loader="stac",
+            epsg="native", resampling={"qa_pixel": "nearest", "*": "cubic"}
         ),
         dask_chunksize=dict(band=1, time=1, x=2048, y=2048),
         convert_output_to_int16=True,
