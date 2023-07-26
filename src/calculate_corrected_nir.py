@@ -11,7 +11,6 @@ etc. but the long running / task heavy processes often failed in practice.
 Each year took an hour or two to run, so if you start multiple
 processes you can calculate for all years within a day or so.
 
-TODO: Should probably not call this "coastlines".
 """
 
 import geopandas as gpd
@@ -28,7 +27,7 @@ from tide_utils import filter_by_tides
 
 
 class NirProcessor(LandsatProcessor):
-    def process(self, xr: DataArray, area) -> DataArray:
+    def process(self, xr: DataArray, area) -> Dataset:
         xr = super().process(xr)
         xr = xr.drop_duplicates(...).sel(band="nir08")
         working_ds = filter_by_tides(
@@ -57,7 +56,11 @@ if __name__ == "__main__":
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
     ).set_index(["PATH", "ROW"], drop=False)
 
-    year = "2019"
+    prefix = "coastlines"
+    dataset_id = "nir08"
+    year = "2021"
+    version = "19Jul2023"
+
     loader = LandsatOdcLoader(
         datetime=year,
         dask_chunksize=dict(band=1, time=1, x=2048, y=2048),
@@ -65,18 +68,19 @@ if __name__ == "__main__":
     )
     processor = NirProcessor(send_area_to_processor=True)
     writer = AzureXrWriter(
-        dataset_id="nir08",
+        dataset_id=dataset_id,
         year=year,
-        prefix="coastlines",
+        prefix=prefix,
         convert_to_int16=True,
         overwrite=True,
         output_value_multiplier=10000,
-        extra_attrs=dict(dep_version="19Jul2023"),
+        extra_attrs=dict(dep_version=version),
     )
     logger = CsvLogger(
-        name="test",
+        name="nir08",
         container_client=get_container_client(),
-        path="coastlines/test_log.csv",
+        path=f"{prefix}/{dataset_id}/{year}/log_{version}.csv",
+        header="time| index| status\n",
     )
 
-    run(loader, processor, writer, logger, worker_memory=16, areas=aoi_by_tile)
+    run(aoi_by_tile, loader, processor, writer, logger, worker_memory=16)
