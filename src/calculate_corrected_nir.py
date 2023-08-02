@@ -16,11 +16,10 @@ processes you can calculate for all years within a day or so.
 import geopandas as gpd
 from xarray import DataArray, Dataset
 
-
 from azure_logger import CsvLogger
-from dep_tools.runner import run
+from dep_tools.runner import run_by_area_dask
 from dep_tools.loaders import LandsatOdcLoader
-from dep_tools.processor import LandsatProcessor
+from dep_tools.processors import LandsatProcessor
 from dep_tools.utils import get_container_client
 from dep_tools.writers import AzureXrWriter
 from tide_utils import filter_by_tides
@@ -80,7 +79,15 @@ if __name__ == "__main__":
         name="nir08",
         container_client=get_container_client(),
         path=f"{prefix}/{dataset_id}/{year}/log_{version}.csv",
-        header="time| index| status\n",
+        overwrite=True,
+        header="time| index| status| paths\n",
     )
 
-    run(aoi_by_tile, loader, processor, writer, logger, worker_memory=16)
+    run_by_area_dask(
+        areas=aoi_by_tile,
+        loader=loader,
+        processor=processor,
+        writer=writer,
+        logger=logger,
+        worker_memory=16,
+    )

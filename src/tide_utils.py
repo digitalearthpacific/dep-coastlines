@@ -1,6 +1,5 @@
 from typing import Tuple, Union
 
-import odc.geo
 from pandas import Timestamp
 from retry import retry
 import rioxarray as rx
@@ -48,39 +47,9 @@ def filter_by_tides(da: DataArray, path: str, row: str) -> DataArray:
     )
 
     # The squeeze is because there is a "variable" dim added when converted to ds
-    return (
-        filter_by_cutoffs(ds, tides_lowres, tide_cutoff_min, tide_cutoff_max)
-        .drop("tide_m")
-        .to_array()
-        .squeeze(drop=True)
-    )
-
-
-def filter_by_cutoffs(
-    ds: Dataset,
-    tides_lowres: DataArray,
-    tide_cutoff_min: Union[int, float, DataArray],
-    tide_cutoff_max: Union[int, float, DataArray],
-) -> Dataset:
-    """
-    coastline.raster.load_tidal_subset that doesn't load
-    """
-    # Determine what pixels were acquired in selected tide range, and
-    # drop time-steps without any relevant pixels to reduce data to load
-    # tide_bool = (ds.tide_m >= tide_cutoff_min) & (ds.tide_m <= tide_cutoff_max)
-    # Changing this to use the lowres tides, since it's causing some memory spikes
-    # (highres should not have range beyond what lowres has)
-    # tide_bool = (tides_lowres >= tide_cutoff_min) & (tides_lowres <= tide_cutoff_max)
-
-    # This step loads tide_bool in memory so if you are getting memory spikes,
-    # or if you have overwrite=False and you're trying to fill in some missing
-    # outputs and it's taking a while, this is probably the reason.
-    # ds = ds.sel(time=tide_bool.sum(dim=["x", "y"]) > 0)
-    # ds = ds.sel(time=tide_bool.any(dim=["x", "y"]))
-
-    # Apply mask to high res data
     tide_bool_highres = (ds.tide_m >= tide_cutoff_min) & (ds.tide_m <= tide_cutoff_max)
-    return ds.where(tide_bool_highres)
+
+    return ds.where(tide_bool_highres).drop("tide_m").to_array().squeeze(drop=True)
 
 
 # Retry is here for network issues, if timeout, etc. when running via
@@ -145,15 +114,5 @@ def tide_cutoffs_dask(
 
     tide_cutoff_min = fill_and_interp(tide_cutoff_min, ds)
     tide_cutoff_max = fill_and_interp(tide_cutoff_max, ds)
-    #    chunks = dict(x=ds.chunks["x"], y=ds.chunks["y"])
-
-    # Reproject into original geobox
-    #    tide_cutoff_min = tide_cutoff_min.interp(
-    #        x=ds.coords["x"].values, y=ds.coords["y"].values, method=resampling
-    #    ).chunk(chunks)
-    #
-    #    tide_cutoff_max = tide_cutoff_max.interp(
-    #        x=ds.coords["x"].values, y=ds.coords["y"].values, method=resampling
-    #    ).chunk(chunks)
 
     return tide_cutoff_min, tide_cutoff_max
