@@ -6,6 +6,7 @@ import rioxarray as rx
 from xarray import DataArray, Dataset
 
 
+@retry(tries=20, delay=3)
 def filter_by_tides(da: DataArray, path: str, row: str) -> DataArray:
     """Remove out of range tide values from a given dataset."""
     # TODO: add pathrow to dataset?
@@ -46,15 +47,16 @@ def filter_by_tides(da: DataArray, path: str, row: str) -> DataArray:
         ds, tides_lowres, tide_centre=0.0
     )
 
-    # The squeeze is because there is a "variable" dim added when converted to ds
+    # This is often the line that is shown in tracebacks, hence the retry above
     tide_bool_highres = (ds.tide_m >= tide_cutoff_min) & (ds.tide_m <= tide_cutoff_max)
 
+    # The squeeze is because there is a "variable" dim added when converted to ds
     return ds.where(tide_bool_highres).drop("tide_m").to_array().squeeze(drop=True)
 
 
 # Retry is here for network issues, if timeout, etc. when running via
 # kbatch, it will bring down the whole process.
-@retry(tries=250, delay=3)
+@retry(tries=20, delay=3)
 def load_tides(
     path: str,
     row: str,

@@ -50,35 +50,35 @@ class NirProcessor(LandsatProcessor):
         return output
 
 
-if __name__ == "__main__":
+def main(datetime: str, version: str) -> None:
     aoi_by_tile = gpd.read_file(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
     ).set_index(["PATH", "ROW"], drop=False)
 
-    prefix = "coastlines"
     dataset_id = "nir08"
-    year = "2021"
-    version = "19Jul2023"
+    prefix = f"coastlines/{version}"
 
     loader = LandsatOdcLoader(
-        datetime=year,
+        datetime=datetime,
         dask_chunksize=dict(band=1, time=1, x=2048, y=2048),
-        odc_load_kwargs=dict(resampling={"qa_pixel": "nearest", "*": "cubic"}),
+        odc_load_kwargs=dict(
+            resampling={"qa_pixel": "nearest", "*": "cubic"}, fail_on_error=False
+        ),
     )
     processor = NirProcessor(send_area_to_processor=True)
     writer = AzureXrWriter(
         dataset_id=dataset_id,
-        year=year,
+        year=datetime,
         prefix=prefix,
         convert_to_int16=True,
-        overwrite=True,
+        overwrite=False,
         output_value_multiplier=10000,
         extra_attrs=dict(dep_version=version),
     )
     logger = CsvLogger(
-        name="nir08",
+        name=dataset_id,
         container_client=get_container_client(),
-        path=f"{prefix}/{dataset_id}/{year}/log_{version}.csv",
+        path=f"{prefix}/{dataset_id}/logs/{dataset_id}_{version}_{datetime}_log.csv",
         overwrite=True,
         header="time| index| status| paths\n",
     )
@@ -91,3 +91,7 @@ if __name__ == "__main__":
         logger=logger,
         worker_memory=16,
     )
+
+
+if __name__ == "__main__":
+    main("2013", "3Aug2023")
