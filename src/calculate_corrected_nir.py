@@ -12,8 +12,10 @@ Each year took an hour or two to run, so if you start multiple
 processes you can calculate for all years within a day or so.
 
 """
+from ast import literal_eval
 
 import geopandas as gpd
+from pandas import DataFrame
 from xarray import DataArray, Dataset
 
 from azure_logger import CsvLogger
@@ -30,7 +32,7 @@ class NirProcessor(LandsatProcessor):
         xr = super().process(xr)
         xr = xr.drop_duplicates(...).sel(band="nir08")
         working_ds = filter_by_tides(
-            xr, area["PATH"].values[0], area["ROW"].values[0]
+            xr, area["PATH"].values[0], area["ROW"].values[0], area
         ).to_dataset(name="nir08")
 
         # In case we filtered out all the data
@@ -50,6 +52,10 @@ class NirProcessor(LandsatProcessor):
         return output
 
 
+def get_log_path(prefix: str, dataset_id: str, version: str, datetime: str) -> str:
+    return f"{prefix}/{dataset_id}/logs/{dataset_id}_{version}_{datetime.replace('/', '_')}_log.csv"
+
+
 def main(datetime: str, version: str) -> None:
     aoi_by_tile = gpd.read_file(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
@@ -60,11 +66,14 @@ def main(datetime: str, version: str) -> None:
 
     loader = LandsatOdcLoader(
         datetime=datetime,
-        dask_chunksize=dict(band=1, time=1, x=2048, y=2048),
+        dask_chunksize=dict(band=1, time=1, x=1024, y=1024),
         odc_load_kwargs=dict(
-            resampling={"qa_pixel": "nearest", "*": "cubic"}, fail_on_error=False
+            resampling={"qa_pixel": "nearest", "*": "cubic"},
+            fail_on_error=False,
+            bands=["qa_pixel", "nir08"],
         ),
     )
+
     processor = NirProcessor(send_area_to_processor=True)
     writer = AzureXrWriter(
         dataset_id=dataset_id,
@@ -78,10 +87,12 @@ def main(datetime: str, version: str) -> None:
     logger = CsvLogger(
         name=dataset_id,
         container_client=get_container_client(),
-        path=f"{prefix}/{dataset_id}/logs/{dataset_id}_{version}_{datetime}_log.csv",
-        overwrite=True,
-        header="time| index| status| paths\n",
+        path=get_log_path(prefix, dataset_id, version, datetime),
+        overwrite=False,
+        header="time|index|status|paths|comment\n",
     )
+
+    aoi_by_tile = filter_by_log(aoi_by_tile, logger.parse_log())
 
     run_by_area_dask(
         areas=aoi_by_tile,
@@ -93,5 +104,16 @@ def main(datetime: str, version: str) -> None:
     )
 
 
+def filter_by_log(df: DataFrame, log: DataFrame) -> DataFrame:
+    # Need to decide if this is where we do this. I want to keep the logger
+    # fairly generic. Suppose we could subclass it.
+    log = log.set_index("index")
+    log.index = [literal_eval(i) for i in log.index]
+
+    # Need to filter by errors
+
+    return df[~df.index.isin(log.index)]
+
+
 if __name__ == "__main__":
-    main("2013", "3Aug2023")
+    main("2021/2023", "3Aug2023")
