@@ -17,6 +17,7 @@ from dep_tools.utils import blob_exists, write_to_blob_storage
 
 from raster_cleaning import contours_preprocess
 from utils import load_blobs
+from dep_tools.utils import get_blob_path
 
 
 def clean_rasters(
@@ -24,23 +25,24 @@ def clean_rasters(
 ) -> None:
     aoi = gpd.read_file(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-    )
-    start_year = 2014
-    end_year = 2022
+    ).set_index(["PATH", "ROW"], drop=False)
 
-    index_threshold = -128.0
+    version = "3Aug2023"
+    prefix = f"coastlines/{version}"
+    start_year = 2014
+    end_year = 2023
+
+    index_threshold = -1280.0
     # While this functionality is similar to dep_tools.Processor, we don't
     # do a stac search / load so it doesn't fit entirely.
-    for _, r in aoi.iterrows():
-        path = r.PATH
-        row = r.ROW
-        output_path = f"clean-nir/clean_nir_{path}_{row}.tif"
+    for index, _ in aoi.iterrows():
+        output_path = get_blob_path("nir08-clean", index, prefix)
         print(output_path)
         if not blob_exists(output_path) or overwrite_images:
             # If using local data, could use load_local_data instead. They
             # may be combined soon.
             yearly_ds = load_blobs(
-                "coastlines", path, row, range(start_year, end_year), chunks=True
+                "nir08", index, prefix, range(start_year, end_year), chunks=True
             )
 
             # some scenes have no data
@@ -53,7 +55,7 @@ def clean_rasters(
                 f"{year-1}_{year+1}" for year in range(start_year, end_year)
             ]
             composite_ds = load_blobs(
-                "coastlines", path, row, composite_years, chunks=True
+                "nir08", index, prefix, composite_years, chunks=True
             )[["nir08", "count"]]
 
             # thresholding for nir band is the opposite direction of
@@ -83,16 +85,13 @@ def clean_rasters(
                 overwrite=overwrite_images,
             )
         else:
-            # might need to fix the years here
             combined_ds = rx.open_rasterio(f"/vsiaz/output/{output_path}", chunks=True)
 
-            combined_ds = (
-                combined_ds.rename({"band": "year"})
-                .assign_coords(year=list(combined_ds.attrs["long_name"]))
-                .rio.write_crs(8859)
+            combined_ds = combined_ds.rename({"band": "year"}).assign_coords(
+                year=list(combined_ds.attrs["long_name"])
             )
 
-        lines_path = f"coastlines-vector/coastlines_vector_{path}_{row}.gpkg"
+        lines_path = get_blob_path("lines", index, prefix, ext="gpkg")
         if not blob_exists(lines_path) or overwrite_lines:
             combined_gdf = subpixel_contours(
                 combined_ds, dim="year", z_values=[index_threshold]
@@ -100,14 +99,14 @@ def clean_rasters(
             write_to_blob_storage(
                 combined_gdf,
                 lines_path,
-                write_args=dict(driver="GPKG", layer=f"coastlines_vector_{path}_{row}"),
+                write_args=dict(driver="GPKG", layer=f"lines_{index}"),
                 overwrite=overwrite_lines,
             )
 
 
 if __name__ == "__main__":
-    overwrite_images = False
-    overwrite_lines = False
+    overwrite_images = True
+    overwrite_lines = True
     try:
         cluster = GatewayCluster(worker_cores=1, worker_memory=8)
         cluster.scale(100)

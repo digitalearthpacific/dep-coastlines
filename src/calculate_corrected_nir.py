@@ -15,12 +15,14 @@ processes you can calculate for all years within a day or so.
 from ast import literal_eval
 
 import geopandas as gpd
+from dask.distributed import Client
 from pandas import DataFrame
+from rasterio.enums import Resampling
 from xarray import DataArray, Dataset
 
 from azure_logger import CsvLogger
-from dep_tools.runner import run_by_area_dask
-from dep_tools.loaders import LandsatOdcLoader
+from dep_tools.runner import run_by_area_dask, run_by_area
+from dep_tools.loaders import LandsatOdcLoader, LandsatStackLoader
 from dep_tools.processors import LandsatProcessor
 from dep_tools.utils import get_container_client
 from dep_tools.writers import AzureXrWriter
@@ -49,7 +51,7 @@ class NirProcessor(LandsatProcessor):
             "int16"
         )
         output["stdev"] = working_ds.nir08.std("time", keep_attrs=True)
-        return output
+        return output.unify_chunks()
 
 
 def get_log_path(prefix: str, dataset_id: str, version: str, datetime: str) -> str:
@@ -64,14 +66,24 @@ def main(datetime: str, version: str) -> None:
     dataset_id = "nir08"
     prefix = f"coastlines/{version}"
 
-    loader = LandsatOdcLoader(
+    #    loader = LandsatOdcLoader(
+    #        datetime=datetime,
+    #        dask_chunksize=dict(band=1, time=1, x=1024, y=1024),
+    #        odc_load_kwargs=dict(
+    #            resampling={"qa_pixel": "nearest", "*": "cubic"},
+    #            fail_on_error=False,
+    #            bands=["qa_pixel", "nir08"],
+    #        ),
+    #    )
+
+    loader = LandsatStackLoader(
         datetime=datetime,
-        dask_chunksize=dict(band=1, time=1, x=1024, y=1024),
-        odc_load_kwargs=dict(
-            resampling={"qa_pixel": "nearest", "*": "cubic"},
-            fail_on_error=False,
-            bands=["qa_pixel", "nir08"],
-        ),
+        dask_chunksize=1024,
+        exclude_platforms=["landsat-7"],
+        resamplers_and_assets=[
+            {"resampler": Resampling.nearest, "assets": ["qa_pixel"]},
+            {"resampler": Resampling.cubic, "assets": ["nir08"]},
+        ],
     )
 
     processor = NirProcessor(send_area_to_processor=True)
@@ -93,6 +105,15 @@ def main(datetime: str, version: str) -> None:
     )
 
     aoi_by_tile = filter_by_log(aoi_by_tile, logger.parse_log())
+
+    #    with Client():
+    #        run_by_area(
+    #            areas=aoi_by_tile,
+    #            loader=loader,
+    #            processor=processor,
+    #            writer=writer,
+    #            logger=logger,
+    #        )
 
     run_by_area_dask(
         areas=aoi_by_tile,
@@ -116,4 +137,4 @@ def filter_by_log(df: DataFrame, log: DataFrame) -> DataFrame:
 
 
 if __name__ == "__main__":
-    main("2021/2023", "3Aug2023")
+    main("2014/2016", "3Aug2023")

@@ -19,6 +19,8 @@ def filter_by_tides(da: DataArray, path: str, row: str, area=None) -> DataArray:
             area.to_crs(tides_lowres.rio.crs).geometry, all_touched=True, from_disk=True
         )
 
+    tide_cutoff_min, tide_cutoff_max = tide_cutoffs_dask(tides_lowres, tide_centre=0.0)
+
     # Filter out times that are not in the tidal data. Basically because I have
     # been caching the times, we may miss very recent readings (like here it is
     # April 10 and I don't have tides for March 30 or April 7 Landsat data.
@@ -32,17 +34,12 @@ def filter_by_tides(da: DataArray, path: str, row: str, area=None) -> DataArray:
         time=tides_lowres.time[tides_lowres.time.isin(ds.time)]
     )
 
+    # chunk obv should not be hardcoded, either fix here or in fill_and_interp
+    tide_cutoff_min = fill_and_interp(tide_cutoff_min, ds).chunk(1024)
+    tide_cutoff_max = fill_and_interp(tide_cutoff_max, ds).chunk(1024)
+
     ds["tide_m"] = fill_and_interp(tides_lowres, ds)
-
     ds = ds.unify_chunks()
-
-    tide_cutoff_min, tide_cutoff_max = tide_cutoffs_dask(
-        ds, tides_lowres, tide_centre=0.0
-    )
-
-    # obv should not be hardcoded, either fix here or in fill_and_interp
-    tide_cutoff_min.chunk(512)
-    tide_cutoff_max.chunk(512)
 
     tide_bool_highres = (ds.tide_m >= tide_cutoff_min) & (ds.tide_m <= tide_cutoff_max)
 
@@ -65,8 +62,6 @@ def load_tides(
         f"https://{storage_account}.blob.core.windows.net/{container_name}/coastlines/{dataset_id}/{dataset_id}_{path}_{row}.tif",
         chunks=True,
     )
-    print(f"hey hey: {da.rio.crs}")
-
     time_strings = da.attrs["long_name"]
     band_names = (
         # this is the original data type produced by pixel_tides
@@ -107,7 +102,7 @@ def fill_and_interp(xr_to_interp, xr_to_interp_to, na=float("nan")):
 
 
 def tide_cutoffs_dask(
-    ds: Dataset, tides_lowres: DataArray, tide_centre=0.0, resampling="linear"
+    tides_lowres: DataArray, tide_centre=0.0
 ) -> Tuple[DataArray, DataArray]:
     """A replacement for coastlines.tide_cutoffs that is dask enabled"""
     # Calculate min and max tides
@@ -118,8 +113,5 @@ def tide_cutoffs_dask(
     tide_cutoff_buffer = (tide_max - tide_min) * 0.25
     tide_cutoff_min = tide_centre - tide_cutoff_buffer
     tide_cutoff_max = tide_centre + tide_cutoff_buffer
-
-    tide_cutoff_min = fill_and_interp(tide_cutoff_min, ds)
-    tide_cutoff_max = fill_and_interp(tide_cutoff_max, ds)
 
     return tide_cutoff_min, tide_cutoff_max

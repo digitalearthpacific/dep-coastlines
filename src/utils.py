@@ -13,21 +13,23 @@ import xarray as xr
 from dep_tools.utils import download_blob, get_blob_path, get_container_client
 
 
-@retry(tries=20, delay=10)
-def load_blobs(dataset_id: str, path, row, years, **kwargs) -> Union[xr.Dataset, None]:
+@retry(tries=20, delay=5)
+def load_blobs(
+    dataset_id: str, item_id, prefix, years, **kwargs
+) -> Union[xr.Dataset, None]:
     # Some obvious overlap between this and `load_local_data` that should be
     # cleaned up
-    prefix = Path("https://deppcpublicstorage.blob.core.windows.net/output")
+    az_prefix = Path("https://deppcpublicstorage.blob.core.windows.net/output")
     dss = list()
     for year in years:
-        blob_path = prefix / get_blob_path(dataset_id, year, path, row)
+        blob_path = az_prefix / get_blob_path(dataset_id, item_id, prefix, year)
         try:
             da = rx.open_rasterio(blob_path, **kwargs)
         except RasterioIOError:
-            return None
+            continue
 
         band_names = list(da.attrs["long_name"])
-        da = da.assign_coords(band=band_names).rio.write_crs(8859).astype("float32")
+        da = da.assign_coords(band=band_names).astype("float32")
         da = da.where(da != -32767, np.nan)
 
         da["year"] = year
