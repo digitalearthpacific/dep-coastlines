@@ -33,7 +33,6 @@ import geopandas as gpd
 from pandas import DataFrame
 from xarray import DataArray, Dataset
 
-from dea_tools.coastal import pixel_tides
 
 from azure_logger import CsvLogger
 from dep_tools.runner import run_by_area
@@ -44,29 +43,23 @@ from dep_tools.utils import get_container_client
 from dep_tools.writers import AzureXrWriter
 
 # from dep_tools.writers2 import LocalXrWriter
-from tide_utils import fill_and_interp, tide_cutoffs_dask
+from tide_utils import fill_and_interp, tide_cutoffs_dask, load_tides
 
 
 class TideProcessor(Processor):
     def process(self, xr: DataArray, area) -> Dataset:
-        working_ds = xr.isel(band=0).to_dataset().drop_duplicates(...)
-
-        tides_lowres = (
-            pixel_tides(
-                working_ds,
-                resample=False,
-                model="TPXO9-atlas-v5",
-                directory="../coastlines-local/tidal-models/",
-                resolution=4980,
-            )
-            .transpose("time", "y", "x")
-            .chunk(time=1)
+        tides_lowres = load_tides(area.index[0])
+        working_ds = (
+            xr.isel(band=0)
+            .drop_duplicates(...)
+            .sel(time=xr.time[xr.time.isin(tides_lowres.time)])
+            .to_dataset()
         )
 
-        # date bands are type pd.Timestamp, need to change them to string
-        # Watch though as (apparently) older versions of rioxarray do not write the
-        # band names (times) as `long_name` attribute on output files. Probably
-        # worth checking the first few outputs to see.
+        # Now filter out tide times that are not in the ds
+        tides_lowres = tides_lowres.sel(
+            time=tides_lowres.time[tides_lowres.time.isin(working_ds.time)]
+        )
 
         tides_lowres.coords["time"] = tides_lowres.coords["time"].astype("str")
 
@@ -75,8 +68,8 @@ class TideProcessor(Processor):
         )
 
         tides_highres = fill_and_interp(tides_lowres, working_ds).to_dataset("time")
-        tides_highres["tide_cutoff_min"] = fill_and_interp(tide_cutoff_min, working_ds)
-        tides_highres["tide_cutoff_max"] = fill_and_interp(tide_cutoff_max, working_ds)
+        tide_cutoff_min = fill_and_interp(tide_cutoff_min, working_ds)
+        tide_cutoff_max = fill_and_interp(tide_cutoff_max, working_ds)
 
         # Do this  _after_ interpolation
         if area is not None:
@@ -109,13 +102,13 @@ def filter_by_log(df: DataFrame, log: DataFrame) -> DataFrame:
     return df[~df.index.isin(log.index)]
 
 
-def main(datetime: str, version: str, client) -> None:
+def main(datetime: str, version: str, client=None) -> None:
     dataset_id = "tpxo_highres"
     prefix = f"coastlines/{version}"
 
     aoi_by_tile = gpd.read_file(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-    ).set_index(["PATH", "ROW"])
+    ).set_index(["PATH", "ROW"], drop=False)
 
     loader = LandsatOdcLoader(
         datetime=datetime,
@@ -127,19 +120,17 @@ def main(datetime: str, version: str, client) -> None:
 
     writer = AzureXrWriter(
         dataset_id=dataset_id,
+        year=datetime,
         prefix=prefix,
         convert_to_int16=True,
         overwrite=False,
         extra_attrs=dict(dep_version=version),
-        #        write_kwargs=dict(
-        #            tiled=True, windowed=True
-        #        ),  # lock=Lock("rio", client=client)),
     )
 
     logger = CsvLogger(
         name=dataset_id,
         container_client=get_container_client(),
-        path=get_log_path(prefix, dataset_id, version),
+        path=get_log_path(prefix, dataset_id, version, datetime),
         overwrite=False,
         header="time|index|status|paths|comment\n",
     )
@@ -156,5 +147,5 @@ def main(datetime: str, version: str, client) -> None:
 
 
 if __name__ == "__main__":
-    with Client() as client:
-        main("2013/2023", "8Aug2023", client)
+    for year in range(1984, 2024):
+        main(str(year), "9Aug2023")

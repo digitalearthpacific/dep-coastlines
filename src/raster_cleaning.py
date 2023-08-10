@@ -16,7 +16,10 @@ from typing import Union
 
 import flox.xarray  # <- not positive this is in the planetary computer image
 from geopandas import GeoDataFrame
+import odc.algo
 from retry import retry
+from rasterio.errors import RasterioIOError
+import rioxarray as rx
 from shapely import make_valid
 from skimage.measure import label
 from skimage.morphology import binary_dilation, disk
@@ -54,13 +57,26 @@ def temporal_masking(ds: DataArray) -> DataArray:
     return flox.xarray.xarray_reduce(neighbours, by=zones, func="max")
 
 
-@retry(tries=20, delay=10)
+def load_esa_water_land(ds: Dataset) -> DataArray:
+    # This is from http://maps.elie.ucl.ac.be/CCI/viewer/download.php
+    # See Lamarche, C.; Santoro, M.; Bontemps, S.; Dâ€™Andrimont, R.; Radoux, J.; Giustarini, L.; Brockmann, C.; Wevers, J.; Defourny, P.; Arino, O. Compilation and Validation of SAR and Optical Data Products for a Complete and Global Map of Inland/Ocean Water Tailored to the Climate Modeling Community. Remote Sens. 2017, 9, 36. https://doi.org/10.3390/rs9010036
+    input_path = "https://deppcpublicstorage.blob.core.windows.net/output/src/ESACCI-LC-L4-WB-Ocean-Land-Map-150m-P13Y-2000-v4.0.tif"
+    return (
+        rx.open_rasterio(input_path, chunks=True)
+        .rio.clip_box(*ds.rio.bounds(), crs=ds.rio.crs)
+        .squeeze()
+        .rio.reproject_match(ds)
+    )
+
+
+# @retry(RasterioIOError, tries=10, delay=3)
 def contours_preprocess(
     yearly_ds: Dataset,
     gapfill_ds: Dataset,
     water_index: str = "nir08",
     index_threshold: float = 128.0,
     mask_temporal: bool = True,
+    mask_esa_water_land: bool = True,
 ) -> Union[Dataset, DataArray]:
     # Remove low obs pixels and replace with 3-year gapfill
     combined_ds = yearly_ds.where(yearly_ds["count"] > 5, gapfill_ds)
@@ -95,6 +111,13 @@ def contours_preprocess(
 
         # Set any pixels outside mask to 0 to represent water
         thresholded_ds = thresholded_ds.where(temporal_mask, 0)
+
+    if mask_esa_water_land:
+        esa_water_land = load_esa_water_land(yearly_ds)
+        esa_ocean = esa_water_land == 0
+        mask = odc.algo.mask_cleanup(esa_ocean, [("dilation", 10)])
+        # Set any pixels outside mask to 0 to represent land
+        thresholded_ds = thresholded_ds.where(mask, 0)
 
     thresholded_ds = xr.apply_ufunc(
         binary_dilation,

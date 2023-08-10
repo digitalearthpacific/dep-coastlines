@@ -1,5 +1,6 @@
 from typing import Tuple, Union
 
+import dask
 from pandas import Timestamp
 from retry import retry
 import rioxarray as rx
@@ -7,26 +8,19 @@ from xarray import DataArray, Dataset
 
 
 @retry(tries=10, delay=3)
-def filter_by_tides(da: DataArray, path: str, row: str, area=None) -> DataArray:
+def filter_by_tides(da: DataArray, item_id, area=None) -> DataArray:
     """Remove out of range tide values from a given dataset."""
-    # TODO: add pathrow to dataset?
-    # TODO: add kwargs for functions below as needed
-    tides_lowres = load_tides(path, row)
+    tides_lowres = load_tides(item_id)
 
-    # perhaps should be done in load_tides
-    if area is not None:
-        tides_lowres = tides_lowres.rio.clip(
-            area.to_crs(tides_lowres.rio.crs).geometry, all_touched=True, from_disk=True
-        )
-
+    # Just be aware if you rerun that the cutoffs will likely change ever so slightly
+    # as new data are added.
+    # Perhaps not enough to change the "quality" data readings though.
     tide_cutoff_min, tide_cutoff_max = tide_cutoffs_dask(tides_lowres, tide_centre=0.0)
 
     # Filter out times that are not in the tidal data. Basically because I have
     # been caching the times, we may miss very recent readings (like here it is
     # April 10 and I don't have tides for March 30 or April 7 Landsat data.
     #
-    # Just be aware if youi rerun that the cutoffs will likely change ever so slightly.
-    # Perhaps not enough to change the "quality" data readings though.
     ds = da.sel(time=da.time[da.time.isin(tides_lowres.time)]).to_dataset()
 
     # Now filter out tide times that are not in the ds
@@ -35,8 +29,13 @@ def filter_by_tides(da: DataArray, path: str, row: str, area=None) -> DataArray:
     )
 
     # chunk obv should not be hardcoded, either fix here or in fill_and_interp
-    tide_cutoff_min = fill_and_interp(tide_cutoff_min, ds).chunk(1024)
-    tide_cutoff_max = fill_and_interp(tide_cutoff_max, ds).chunk(1024)
+    tide_cutoff_min = fill_and_interp(tide_cutoff_min, ds)  # .chunk(1024)
+    tide_cutoff_max = fill_and_interp(tide_cutoff_max, ds)  # .chunk(1024)
+
+    if area is not None:
+        tides_lowres = tides_lowres.rio.clip(
+            area.to_crs(tides_lowres.rio.crs).geometry, all_touched=True, from_disk=True
+        )
 
     ds["tide_m"] = fill_and_interp(tides_lowres, ds)
     ds = ds.unify_chunks()
@@ -51,15 +50,15 @@ def filter_by_tides(da: DataArray, path: str, row: str, area=None) -> DataArray:
 # kbatch, it will bring down the whole process.
 @retry(tries=10, delay=3)
 def load_tides(
-    path: str,
-    row: str,
+    item_id,
     storage_account: str = "deppcpublicstorage",
     dataset_id: str = "tpxo_lowres",
     container_name: str = "output",
 ) -> DataArray:
     """Loads previously calculated tide data (via src/calculate_tides.py)"""
+    suffix = "_".join([str(i) for i in item_id])
     da = rx.open_rasterio(
-        f"https://{storage_account}.blob.core.windows.net/{container_name}/coastlines/{dataset_id}/{dataset_id}_{path}_{row}.tif",
+        f"https://{storage_account}.blob.core.windows.net/{container_name}/coastlines/{dataset_id}/{dataset_id}_{suffix}.tif",
         chunks=True,
     )
     time_strings = da.attrs["long_name"]
@@ -78,6 +77,7 @@ def load_tides(
     )
 
 
+# @dask.delayed
 def fill_and_interp(xr_to_interp, xr_to_interp_to, na=float("nan")):
     # The deafrica-coastlines code uses rio.reproject_match, but it is not dask
     # enabled. However, we shouldn't need the reprojection, so we can use
@@ -90,8 +90,10 @@ def fill_and_interp(xr_to_interp, xr_to_interp_to, na=float("nan")):
     # so does linear.
 
     return (
-        xr_to_interp.rio.write_nodata(na)
-        .map_blocks(lambda xr: xr.rio.interpolate_na("nearest"), template=xr_to_interp)
+        xr_to_interp.rio.write_nodata(na).map_blocks(
+            lambda xr: xr.rio.interpolate_na("nearest"), template=xr_to_interp
+        )
+        # .rio.interpolate_na("nearest").interp(
         .interp(
             dict(
                 x=xr_to_interp_to.coords["x"].values,
