@@ -19,6 +19,7 @@ from geopandas import GeoDataFrame
 import odc.algo
 from retry import retry
 from rasterio.errors import RasterioIOError
+from rasterio.warp import transform_bounds
 import rioxarray as rx
 from shapely import make_valid
 from skimage.measure import label
@@ -60,16 +61,21 @@ def temporal_masking(ds: DataArray) -> DataArray:
 def load_esa_water_land(ds: Dataset) -> DataArray:
     # This is from http://maps.elie.ucl.ac.be/CCI/viewer/download.php
     # See Lamarche, C.; Santoro, M.; Bontemps, S.; Dâ€™Andrimont, R.; Radoux, J.; Giustarini, L.; Brockmann, C.; Wevers, J.; Defourny, P.; Arino, O. Compilation and Validation of SAR and Optical Data Products for a Complete and Global Map of Inland/Ocean Water Tailored to the Climate Modeling Community. Remote Sens. 2017, 9, 36. https://doi.org/10.3390/rs9010036
-    input_path = "https://deppcpublicstorage.blob.core.windows.net/output/src/ESACCI-LC-L4-WB-Ocean-Land-Map-150m-P13Y-2000-v4.0.tif"
-    return (
-        rx.open_rasterio(input_path, chunks=True)
-        .rio.clip_box(*ds.rio.bounds(), crs=ds.rio.crs)
-        .squeeze()
-        .rio.reproject_match(ds)
-    )
+    input_path = "https://deppcpublicstorage.blob.core.windows.net/output/src/ESACCI-LC-L4-WB-Ocean-Land-Map-150m-P13Y-2000-v4.0-8859.tif"
+
+    # In theory we could just use the `crs` arg of clip_box but that wasn't working
+    # for me with CRS 8859. This did.
+
+    # Also, if you're wondering why I reprojected to CRS 8859 it's because I couldn't
+    # reproject from 4326 for tiles that crossed the antimeridian.
+    # If you're wondering why I set the CRS manually it's because it's not being
+    # read from teh asset for some reason.
+    water_land = rx.open_rasterio(input_path, chunks=True).rio.write_crs(8859)
+    bounds = list(transform_bounds(ds.rio.crs, water_land.rio.crs, *ds.rio.bounds()))
+    return water_land.rio.clip_box(*bounds).squeeze().rio.reproject_match(ds)
 
 
-# @retry(RasterioIOError, tries=10, delay=3)
+@retry(RasterioIOError, tries=10, delay=3)
 def contours_preprocess(
     yearly_ds: Dataset,
     gapfill_ds: Dataset,

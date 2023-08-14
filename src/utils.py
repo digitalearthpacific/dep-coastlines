@@ -10,7 +10,24 @@ from retry import retry
 import rioxarray as rx
 import xarray as xr
 
-from dep_tools.utils import download_blob, get_blob_path, get_container_client
+from dep_tools.exceptions import EmptyCollectionError
+from dep_tools.utils import (
+    download_blob,
+    get_blob_path,
+    get_container_client,
+    blob_exists,
+)
+
+
+def load_blob(dataset_id, item_id, prefix, year=None, **kwargs) -> xr.DataArray:
+    blob_path = get_blob_path(dataset_id, item_id, prefix, year)
+    az_prefix = Path("https://deppcpublicstorage.blob.core.windows.net/output")
+    blob_url = az_prefix / blob_path
+
+    if not blob_exists(blob_path):
+        raise EmptyCollectionError()
+
+    return rx.open_rasterio(blob_url, **kwargs)
 
 
 @retry(tries=20, delay=5)
@@ -19,13 +36,11 @@ def load_blobs(
 ) -> Union[xr.Dataset, None]:
     # Some obvious overlap between this and `load_local_data` that should be
     # cleaned up
-    az_prefix = Path("https://deppcpublicstorage.blob.core.windows.net/output")
     dss = list()
     for year in years:
-        blob_path = az_prefix / get_blob_path(dataset_id, item_id, prefix, year)
         try:
-            da = rx.open_rasterio(blob_path, **kwargs)
-        except RasterioIOError:
+            da = load_blob(dataset_id, item_id, prefix, year, **kwargs)
+        except EmptyCollectionError:
             continue
 
         band_names = list(da.attrs["long_name"])
@@ -34,7 +49,7 @@ def load_blobs(
 
         da["year"] = year
         dss.append(da.to_dataset("band"))
-    #    if len(dss) > 0: breakpoint()
+        #    if len(dss) > 0: breakpoint()
     return xr.concat(dss, dim="year") if len(dss) > 0 else None
 
 

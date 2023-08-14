@@ -49,13 +49,9 @@ def water_indices(xr: DataArray, area) -> Dataset:
     # whether there is a case where we _would_ want duplicates
     xr = xr.drop_duplicates(...)
 
-    xr = filter_by_tides(xr, area["PATH"].values[0], area["ROW"].values[0])
+    xr = filter_by_tides(xr, area.index[0])
 
     working_ds = mndwi(xr).to_dataset()
-    working_ds["ndwi"] = ndwi(xr)
-    working_ds["awei"] = awei(xr)
-
-    working_ds["wofs"] = wofs(xr)
     working_ds["nir08"] = xr.sel(band="nir08")
 
     # In case we filtered out all the data
@@ -67,9 +63,8 @@ def water_indices(xr: DataArray, area) -> Dataset:
     # or mean or median or whatever
     working_ds = working_ds.groupby("time").first()
     output = working_ds.median("time", keep_attrs=True)
-    output["wofs"] = working_ds.wofs.mean("time", keep_attrs=True)
-    output["count"] = working_ds.mndwi.count("time", keep_attrs=True).astype("int16")
-    output["stdev"] = working_ds.mndwi.std("time", keep_attrs=True)
+    output["count"] = working_ds.nir08.count("time", keep_attrs=True).astype("int16")
+    output["stdev"] = working_ds.nir08.std("time", keep_attrs=True)
     return output
 
 

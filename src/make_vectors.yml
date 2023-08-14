@@ -9,4 +9,4 @@ profile: r
 code: "src/"
 command:
   - python
-  - make_vectors.yml
+  - make_vectors.py

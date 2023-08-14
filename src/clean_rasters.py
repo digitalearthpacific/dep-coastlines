@@ -14,7 +14,8 @@ from typing import Tuple
 from dea_tools.spatial import subpixel_contours
 import geopandas as gpd
 from numpy import mean
-import rioxarray
+from rasterio.errors import RasterioIOError
+from retry import retry
 from xarray import Dataset
 
 from azure_logger import CsvLogger, get_log_path
@@ -76,6 +77,9 @@ class CompositeLoader(Loader):
         )
         yearly_ds = yearly_ds.where(yearly_ds.year.isin(composite_ds.year), drop=True)
 
+        if len(yearly_ds.year) == 0:
+            raise EmptyCollectionError()
+
         return (yearly_ds, composite_ds)
 
 
@@ -84,6 +88,7 @@ class Cleaner(Processor):
         super().__init__(**kwargs)
         self.index_threshold = index_threshold
 
+    @retry(RasterioIOError, tries=10, delay=3)
     def process(self, input: Tuple[Dataset, Dataset]) -> Dataset:
         yearly_ds, composite_ds = input
 
@@ -109,6 +114,7 @@ class Cleaner(Processor):
         combined_gdf = subpixel_contours(
             combined_ds, dim="year", z_values=[self.index_threshold]
         )
+        combined_gdf.year = combined_gdf.year.astype(int)
 
         return (combined_ds.to_dataset("year"), combined_gdf)
 
@@ -166,7 +172,7 @@ def main() -> None:
         path=get_log_path(
             prefix, dataset_id, output_version, f"{start_year}_{end_year}"
         ),
-        overwrite=True,
+        overwrite=False,
         header="time|index|status|paths|comment\n",
     )
 
