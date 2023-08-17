@@ -15,11 +15,12 @@ processes you can calculate for all years within a day or so.
 from typing import Union
 
 import geopandas as gpd
+from rasterio.enums import Resampling
 from xarray import DataArray, Dataset
 
 from azure_logger import CsvLogger, get_log_path, filter_by_log
-from dep_tools.runner import run_by_area_dask
-from dep_tools.loaders import LandsatOdcLoader
+from dep_tools.runner import run_by_area_dask, run_by_area
+from dep_tools.loaders import LandsatOdcLoader, LandsatStackLoader
 from dep_tools.processors import LandsatProcessor
 from dep_tools.utils import get_container_client
 from dep_tools.writers import AzureXrWriter
@@ -52,26 +53,6 @@ class NirProcessor(LandsatProcessor):
         )
         output["nir_stdev"] = working_ds.nir08.std("time", keep_attrs=True)
         return output.unify_chunks()
-
-
-#        xr = xr.drop_duplicates(...).sel(band="nir08")
-#        working_ds = filter_by_tides(xr, area.index[0]).to_dataset(name="nir08")
-#
-#        # In case we filtered out all the data
-#        if not "time" in working_ds or len(working_ds.time) == 0:
-#            return None
-#
-#        working_ds.coords["time"] = working_ds.time.dt.floor("1D")
-#
-#        # or mean or median or whatever
-#        working_ds = working_ds.groupby("time").first()
-#
-#        output = working_ds.median("time", keep_attrs=True)
-#        output["count"] = working_ds.nir08.count("time", keep_attrs=True).astype(
-#            "int16"
-#        )
-#        output["stdev"] = working_ds.nir08.std("time", keep_attrs=True)
-#        return output.unify_chunks()
 
 
 def main(datetime: str, version: str) -> None:
@@ -107,7 +88,7 @@ def main(datetime: str, version: str) -> None:
         name=dataset_id,
         container_client=get_container_client(),
         path=get_log_path(prefix, dataset_id, version, datetime),
-        overwrite=True,
+        overwrite=False,
         header="time|index|status|paths|comment\n",
     )
 
@@ -124,4 +105,4 @@ def main(datetime: str, version: str) -> None:
 
 
 if __name__ == "__main__":
-    main("2017", "12Aug2023")
+    main("2021/2023", "12Aug2023")
