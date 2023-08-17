@@ -1,5 +1,4 @@
-"""
-These are functions needed for raster cleaning, similar to coastlines.raster.
+"""These are functions needed for raster cleaning, similar to coastlines.raster.
 So far everything is inspired / taken from the Digital Earth Austalia 
 (https://github.com/GeoscienceAustralia/dea-coastlines) and
 Digital Earth Africa (https://github.com/digitalearthafrica/deafrica-coastlines)
