@@ -15,6 +15,7 @@ from dea_tools.spatial import subpixel_contours
 import geopandas as gpd
 from numpy import mean
 from rasterio.errors import RasterioIOError
+from rasterio.enums import Resampling
 from retry import retry
 from xarray import Dataset
 
@@ -48,10 +49,11 @@ class CompositeLoader(Loader):
         self.prefix = prefix
         self.start_year = start_year
         self.end_year = end_year
+        self.dataset = "nir08"
 
     def load(self, area) -> Tuple[Dataset, Dataset]:
         yearly_ds = load_blobs(
-            "nir08",
+            self.dataset,
             area.index[0],
             self.prefix,
             range(self.start_year, self.end_year),
@@ -67,7 +69,7 @@ class CompositeLoader(Loader):
             f"{year-1}_{year+1}" for year in range(self.start_year, self.end_year)
         ]
         composite_ds = load_blobs(
-            "nir08", area.index[0], self.prefix, composite_years, chunks=True
+            self.dataset, area.index[0], self.prefix, composite_years, chunks=True
         )[["nir08", "count"]]
 
         composite_ds = _set_year_to_middle_year(composite_ds)
@@ -103,6 +105,7 @@ class Cleaner(Processor):
             water_index="nir08",
             index_threshold=self.index_threshold,
             mask_temporal=True,
+            mask_esa_water_land=True,
         )
 
         # Some strange thing happening where year needs to be numeric for
@@ -151,12 +154,12 @@ def main() -> None:
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
     ).set_index(["PATH", "ROW"], drop=False)
 
-    dataset_id = "nir08-clean"
+    dataset_id = "water-indices-clean"
 
-    input_version = "3Aug2023"
+    input_version = "4Sep2023"
     input_prefix = f"coastlines/{input_version}"
 
-    output_version = "10Aug2023"
+    output_version = "4Sep2023"
     prefix = f"coastlines/{output_version}"
     start_year = 2014
     end_year = 2023
@@ -165,14 +168,14 @@ def main() -> None:
 
     loader = CompositeLoader(input_prefix, start_year, end_year)
     processor = Cleaner(index_threshold=index_threshold)
-    writer = CleanedWriter(dataset_id, prefix, overwrite=False)
+    writer = CleanedWriter(dataset_id, prefix, overwrite=True)
     logger = CsvLogger(
         name=dataset_id,
         container_client=get_container_client(),
         path=get_log_path(
             prefix, dataset_id, output_version, f"{start_year}_{end_year}"
         ),
-        overwrite=False,
+        overwrite=True,
         header="time|index|status|paths|comment\n",
     )
 

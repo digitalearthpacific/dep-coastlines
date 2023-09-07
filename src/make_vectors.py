@@ -1,5 +1,6 @@
 from dea_tools.spatial import subpixel_contours
 import geopandas as gpd
+from rasterio.enums import Resampling
 from xarray import DataArray
 
 from azure_logger import CsvLogger, get_log_path
@@ -41,7 +42,12 @@ class Vectorizer(Processor):
         self.index_threshold = index_threshold
 
     def process(self, input: DataArray) -> gpd.GeoDataFrame:
-        output = subpixel_contours(input, dim="year", z_values=[self.index_threshold])
+        input_hr = input.rio.reproject(
+            resolution=10, resampling=Resampling.cubic, dst_crs=input.rio.crs
+        )
+        output = subpixel_contours(
+            input_hr, dim="year", z_values=[self.index_threshold]
+        )
         output.year = output.year.astype(int)
         return output
 
@@ -53,7 +59,7 @@ class VectorWriter(Writer):
         self.overwrite = overwrite
 
     def write(self, output, item_id):
-        lines_path = get_blob_path("lines", item_id, self.prefix, ext="gpkg")
+        lines_path = get_blob_path(self.dataset_id, item_id, self.prefix, ext="gpkg")
         if not blob_exists(lines_path) or self.overwrite:
             write_to_blob_storage(
                 output,
@@ -68,19 +74,19 @@ def main() -> None:
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
     ).set_index(["PATH", "ROW"], drop=False)
 
-    dataset_id = "lines"
+    dataset_id = "lines-5m-cubic"
     start_year = 2014
     end_year = 2022
 
-    input_version = "10Aug2023"
+    input_version = "4Sep2023"
     input_prefix = f"coastlines/{input_version}"
 
-    output_version = "11Aug2023"
+    output_version = "4Sep2023"
     prefix = f"coastlines/{output_version}"
 
     index_threshold = -1280.0
 
-    loader = CleanLoader(input_prefix, dataset_id="nir08-clean")
+    loader = CleanLoader(input_prefix, dataset_id="water-indices-clean")
     processor = Vectorizer(index_threshold=index_threshold)
     writer = VectorWriter(dataset_id, prefix, overwrite=False)
     logger = CsvLogger(

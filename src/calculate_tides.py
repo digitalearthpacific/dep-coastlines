@@ -35,7 +35,7 @@ from xarray import DataArray, Dataset
 
 from dea_tools.coastal import pixel_tides
 
-from azure_logger import CsvLogger
+from azure_logger import CsvLogger, get_log_path, filter_by_log
 from dep_tools.runner import run_by_area
 from dep_tools.processors import Processor
 from dep_tools.loaders import LandsatOdcLoader
@@ -70,47 +70,32 @@ class TideProcessor(Processor):
 
         tides_lowres.coords["time"] = tides_lowres.coords["time"].astype("str")
 
-        tide_cutoff_min, tide_cutoff_max = tide_cutoffs_dask(
-            tides_lowres, tide_centre=0.0
-        )
+        #        tide_cutoff_min, tide_cutoff_max = tide_cutoffs_dask(
+        #            tides_lowres, tide_centre=0.0
+        #        )
 
-        tides_highres = fill_and_interp(tides_lowres, working_ds).to_dataset("time")
-        tides_highres["tide_cutoff_min"] = fill_and_interp(tide_cutoff_min, working_ds)
-        tides_highres["tide_cutoff_max"] = fill_and_interp(tide_cutoff_max, working_ds)
+        a_band = working_ds.isel(time=0).to_array().squeeze()
+        # effectively replaces all values with constant
+        unmasked_band = a_band.where(0, 1)
+        interp_to = unmasked_band.rio.clip(area.to_crs(unmasked_band.rio.crs).geometry)
+
+        output = fill_and_interp(tides_lowres, interp_to)
+
+        output.coords["time"] = output.time.astype(str)
+        return output.to_dataset("time").astype("int8")
 
         # Do this  _after_ interpolation
-        if area is not None:
-            tides_highres = tides_highres.rio.clip(
-                area.to_crs(tides_highres.rio.crs).geometry,
-                all_touched=True,
-                from_disk=True,
-            )
-        return tides_highres
-
-
-def get_log_path(
-    prefix: str, dataset_id: str, version: str, datetime: Union[str, None] = None
-) -> str:
-    return (
-        f"{prefix}/{dataset_id}/logs/{dataset_id}_{version}_{datetime.replace('/', '_')}_log.csv"
-        if datetime is not None
-        else f"{prefix}/{dataset_id}/logs/{dataset_id}_{version}_log.csv"
-    )
-
-
-def filter_by_log(df: DataFrame, log: DataFrame) -> DataFrame:
-    # Need to decide if this is where we do this. I want to keep the logger
-    # fairly generic. Suppose we could subclass it.
-    log = log.set_index("index")
-    log.index = [literal_eval(i) for i in log.index]
-
-    # Need to filter by errors
-
-    return df[~df.index.isin(log.index)]
+        #        if area is not None:
+        #            tides_highres = tides_highres.rio.clip(
+        #                area.to_crs(tides_highres.rio.crs).geometry,
+        #                all_touched=True,
+        #                from_disk=True,
+        #            )
+        # return tides_highres
 
 
 def main(datetime: str, version: str, client) -> None:
-    dataset_id = "tpxo_highres"
+    dataset_id = "tide-mask"
     prefix = f"coastlines/{version}"
 
     aoi_by_tile = gpd.read_file(
@@ -128,9 +113,10 @@ def main(datetime: str, version: str, client) -> None:
     writer = AzureXrWriter(
         dataset_id=dataset_id,
         prefix=prefix,
-        convert_to_int16=True,
+        convert_to_int16=False,
         overwrite=False,
         extra_attrs=dict(dep_version=version),
+        output_nodata=0
         #        write_kwargs=dict(
         #            tiled=True, windowed=True
         #        ),  # lock=Lock("rio", client=client)),
@@ -139,7 +125,7 @@ def main(datetime: str, version: str, client) -> None:
     logger = CsvLogger(
         name=dataset_id,
         container_client=get_container_client(),
-        path=get_log_path(prefix, dataset_id, version),
+        path=get_log_path(prefix, dataset_id, version, datetime),
         overwrite=False,
         header="time|index|status|paths|comment\n",
     )
@@ -157,4 +143,4 @@ def main(datetime: str, version: str, client) -> None:
 
 if __name__ == "__main__":
     with Client() as client:
-        main("2013/2023", "8Aug2023", client)
+        main("2013/2023", "4Sep2023", client)

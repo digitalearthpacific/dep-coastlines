@@ -15,13 +15,14 @@ from typing import Union
 
 import flox.xarray  # <- not positive this is in the planetary computer image
 from geopandas import GeoDataFrame
+import numpy as np
 import odc.algo
 from retry import retry
 from rasterio.errors import RasterioIOError
 from rasterio.warp import transform_bounds
 import rioxarray as rx
 from shapely import make_valid
-from skimage.measure import label
+from skimage.measure import label, regionprops
 from skimage.morphology import binary_dilation, disk
 import xarray as xr
 from xarray import DataArray, Dataset
@@ -54,7 +55,7 @@ def temporal_masking(ds: DataArray) -> DataArray:
     # xarray docs say that flox is used by default if it is loaded, I did
     # not find that to be the case. If it did work you could just do
     # zone_maxes = neighbours.groupby(zones).max()
-    return flox.xarray.xarray_reduce(neighbours, by=zones, func="max")
+    return flox.xarray.xarray_reduce(zones, by=neighbours, func="max")
 
 
 def load_esa_water_land(ds: Dataset) -> DataArray:
@@ -130,4 +131,4 @@ def contours_preprocess(
         disk(5),
         dask="allowed",
     ).to_array("year")
-    return combined_ds[water_index].where(thresholded_ds)  # == 1?
+    return combined_ds[water_index].where(thresholded_ds)

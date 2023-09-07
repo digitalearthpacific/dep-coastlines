@@ -15,29 +15,28 @@ processes you can calculate for all years within a day or so.
 from typing import Union
 
 import geopandas as gpd
-from rasterio.enums import Resampling
+from numpy.lib.stride_tricks import sliding_window_view
 from xarray import DataArray, Dataset
 
 from azure_logger import CsvLogger, get_log_path, filter_by_log
 from dep_tools.runner import run_by_area_dask, run_by_area
-from dep_tools.loaders import LandsatOdcLoader, LandsatStackLoader
+from dep_tools.loaders import LandsatOdcLoader
 from dep_tools.processors import LandsatProcessor
 from dep_tools.utils import get_container_client
 from dep_tools.writers import AzureXrWriter
 from tide_utils import filter_by_tides
-from water_indices import mndwi
+from water_indices import mndwi, ndwi
 
 
 class NirProcessor(LandsatProcessor):
     def process(self, xr: DataArray, area) -> Union[Dataset, None]:
-        xr = super().process(xr)
+        xr = super().process(xr).drop_duplicates(...)
+        xr = filter_by_tides(xr, area.index[0], area)
 
-        xr = xr.drop_duplicates(...)
-
-        xr = filter_by_tides(xr, area.index[0])
-
-        working_ds = mndwi(xr).to_dataset()
-        working_ds["nir08"] = xr.sel(band="nir08")
+        #        working_ds = mndwi(xr).to_dataset()
+        #        working_ds["ndwi"] = ndwi(xr)
+        #        working_ds["nir08"] = xr.sel(band="nir08")
+        working_ds = xr.sel(band="nir08").to_dataset(name="nir08")
 
         # In case we filtered out all the data
         if not "time" in working_ds or len(working_ds.time) == 0:
@@ -52,7 +51,7 @@ class NirProcessor(LandsatProcessor):
             "int16"
         )
         output["nir_stdev"] = working_ds.nir08.std("time", keep_attrs=True)
-        return output.unify_chunks()
+        return output
 
 
 def main(datetime: str, version: str) -> None:
@@ -65,12 +64,13 @@ def main(datetime: str, version: str) -> None:
 
     loader = LandsatOdcLoader(
         datetime=datetime,
-        dask_chunksize=dict(band=1, time=1, x=2048, y=2048),
+        dask_chunksize=dict(band=1, time=1, x=4096, y=4096),
         odc_load_kwargs=dict(
             resampling={"qa_pixel": "nearest", "*": "cubic"},
             fail_on_error=False,
             bands=["qa_pixel", "nir08", "green", "swir16"],
         ),
+        pystac_client_search_kwargs=dict(query=["landsat:collection_category=T1"]),
         exclude_platforms=["landsat-7"],
     )
 
@@ -91,7 +91,6 @@ def main(datetime: str, version: str) -> None:
         overwrite=False,
         header="time|index|status|paths|comment\n",
     )
-
     aoi_by_tile = filter_by_log(aoi_by_tile, logger.parse_log())
 
     run_by_area_dask(
@@ -100,9 +99,15 @@ def main(datetime: str, version: str) -> None:
         processor=processor,
         writer=writer,
         logger=logger,
+        n_workers=20,
         worker_memory=16,
     )
 
 
 if __name__ == "__main__":
-    main("2021/2023", "12Aug2023")
+    single_years = list(range(2013, 2024))
+    composite_years = [f"{y[0]}/{y[2]}" for y in sliding_window_view(single_years, 3)]
+    all_years = single_years + composite_years
+
+    # for year in all_years:
+    main("2020/2022", "4Sep2023")
