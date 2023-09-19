@@ -25,6 +25,7 @@ from shapely import make_valid
 from skimage.measure import label, regionprops
 from skimage.morphology import binary_dilation, disk
 import xarray as xr
+import xrspatial as xs
 from xarray import DataArray, Dataset
 
 
@@ -32,6 +33,20 @@ def get_coastal_mask(areas: GeoDataFrame) -> GeoDataFrame:
     land_plus = areas.buffer(1000)
     land_minus = areas.buffer(-1000)
     return make_valid(land_plus.difference(land_minus).unary_union)
+
+
+def remove_small_areas(bool_ds: DataArray, min_size_in_pixels: int = 55) -> DataArray:
+    def _remove_2d(bool_ds_2d: DataArray) -> DataArray:
+        zones = xr.apply_ufunc(label, bool_ds_2d, None, 0, dask="parallelized")
+        size_by_zone = xs.zonal_stats(
+            zones, bool_ds_2d.astype(int), stats_funcs=["sum"]
+        )
+        big_zones = size_by_zone["zone"][size_by_zone["sum"] >= min_size_in_pixels]
+        return bool_ds_2d.where(zones.isin(big_zones) == 1)
+
+    return xr.concat(
+        [_remove_2d(bool_ds.sel(year=year)) for year in bool_ds.year], dim="year"
+    )
 
 
 def temporal_masking(ds: DataArray) -> DataArray:
@@ -55,7 +70,7 @@ def temporal_masking(ds: DataArray) -> DataArray:
     # xarray docs say that flox is used by default if it is loaded, I did
     # not find that to be the case. If it did work you could just do
     # zone_maxes = neighbours.groupby(zones).max()
-    return flox.xarray.xarray_reduce(zones, by=neighbours, func="max")
+    return flox.xarray.xarray_reduce(neighbours, by=zones, func="max")
 
 
 def load_esa_water_land(ds: Dataset) -> DataArray:
@@ -80,9 +95,11 @@ def contours_preprocess(
     yearly_ds: Dataset,
     gapfill_ds: Dataset,
     water_index: str = "nir08",
-    index_threshold: float = 128.0,
+    index_threshold: float = 0,
+    masking_index: str = "nir08",
     mask_temporal: bool = True,
     mask_esa_water_land: bool = True,
+    remove_tiny_areas: bool = True,
 ) -> Union[Dataset, DataArray]:
     # Remove low obs pixels and replace with 3-year gapfill
     combined_ds = yearly_ds.where(yearly_ds["count"] > 5, gapfill_ds)
@@ -92,14 +109,19 @@ def contours_preprocess(
     combined_ds = combined_ds.where(yearly_ds["count"] > 1)
 
     # Apply water index threshold and re-apply nodata values
-    nodata = combined_ds[water_index].isnull()
-    thresholded_ds = combined_ds[water_index] < index_threshold
-    thresholded_ds = thresholded_ds.where(~nodata)
+    land_mask = combined_ds[masking_index] < index_threshold
+    other_land_mask = combined_ds["mndwi"] < 0.0
+    # Double up!
+    land_mask = land_mask.where(other_land_mask, 0)
+
+    nodata = combined_ds[masking_index].isnull()
+    land_mask = land_mask.where(~nodata)
 
     # The threshold here should checked out a bit more. It varies for Australia
     # and Africa, and for the shortertime period we are starting with (i.e.
     # 2013-2023) a stray year could me amplified if other years are missing
-    # all_time_land = thresholded_ds.mean(dim="year") > 1 / 3.0
+    all_time_land = land_mask.mean(dim="year") > (1 / 4.0)
+    land_mask = land_mask.where(all_time_land, 0)
 
     if mask_temporal:
         # Create a temporal mask by identifying land pixels with a direct
@@ -113,22 +135,20 @@ def contours_preprocess(
         # in proximity to land before or after the specific timestep.
 
         # Compute temporal mask
-        temporal_mask = temporal_masking(thresholded_ds == 1)
+        temporal_mask = temporal_masking(land_mask == 1)
 
         # Set any pixels outside mask to 0 to represent water
-        thresholded_ds = thresholded_ds.where(temporal_mask, 0)
+        land_mask = land_mask.where(temporal_mask, 0)
 
     if mask_esa_water_land:
         esa_water_land = load_esa_water_land(yearly_ds)
         esa_ocean = esa_water_land == 0
-        mask = odc.algo.mask_cleanup(esa_ocean, [("dilation", 10)])
-        # Set any pixels outside mask to 0 to represent land
-        thresholded_ds = thresholded_ds.where(mask, 0)
+        esa_land_mask = ~odc.algo.mask_cleanup(esa_ocean, [("erosion", 1)])
+        # Set any pixels outside mask to 0 to represent water
+        land_mask = land_mask.where(esa_land_mask, 0)
 
-    thresholded_ds = xr.apply_ufunc(
-        binary_dilation,
-        thresholded_ds.to_dataset("year"),
-        disk(5),
-        dask="allowed",
-    ).to_array("year")
-    return combined_ds[water_index].where(thresholded_ds)
+    if remove_tiny_areas:
+        land_mask = land_mask.where(remove_small_areas(land_mask == 1) == 1, 0)
+
+    land_mask = odc.algo.mask_cleanup(land_mask == 1, [("dilation", 3)])
+    return combined_ds[water_index].where(land_mask)

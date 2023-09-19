@@ -44,12 +44,12 @@ def _set_year_to_middle_year(xr: Dataset) -> Dataset:
 
 
 class CompositeLoader(Loader):
-    def __init__(self, prefix, start_year, end_year, **kwargs):
+    def __init__(self, prefix, start_year, end_year, dataset, **kwargs):
         super().__init__(**kwargs)
         self.prefix = prefix
         self.start_year = start_year
         self.end_year = end_year
-        self.dataset = "nir08"
+        self.dataset = dataset
 
     def load(self, area) -> Tuple[Dataset, Dataset]:
         yearly_ds = load_blobs(
@@ -63,14 +63,12 @@ class CompositeLoader(Loader):
         if yearly_ds is None:
             raise EmptyCollectionError()
 
-        yearly_ds = yearly_ds[["nir08", "count"]]
-
         composite_years = [
             f"{year-1}_{year+1}" for year in range(self.start_year, self.end_year)
         ]
         composite_ds = load_blobs(
             self.dataset, area.index[0], self.prefix, composite_years, chunks=True
-        )[["nir08", "count"]]
+        )
 
         composite_ds = _set_year_to_middle_year(composite_ds)
 
@@ -86,33 +84,43 @@ class CompositeLoader(Loader):
 
 
 class Cleaner(Processor):
-    def __init__(self, index_threshold: float = -1280.0, **kwargs):
+    def __init__(
+        self,
+        water_index: str = "nir08",
+        masking_index: str = "nir08",
+        index_threshold: float = -1280.0,
+        masking_threshold: float = -1280.0,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.index_threshold = index_threshold
+        self.water_index = water_index
+        self.masking_index = masking_index
+        self.masking_threshold = masking_threshold
 
-    @retry(RasterioIOError, tries=10, delay=3)
     def process(self, input: Tuple[Dataset, Dataset]) -> Dataset:
         yearly_ds, composite_ds = input
 
         # thresholding for nir band is the opposite direction of
         # all other indices, so we multiply by negative 1.
-        yearly_ds["nir08"] = yearly_ds.nir08 * -1
-        composite_ds["nir08"] = composite_ds.nir08 * -1
+        if "nir08" in yearly_ds:
+            yearly_ds["nir08"] = yearly_ds.nir08 * -1
+            composite_ds["nir08"] = composite_ds.nir08 * -1
 
         combined_ds = contours_preprocess(
             yearly_ds,
             composite_ds,
-            water_index="nir08",
-            index_threshold=self.index_threshold,
+            water_index=self.water_index,
+            index_threshold=self.masking_threshold,
+            masking_index=self.masking_index,
             mask_temporal=True,
-            mask_esa_water_land=True,
+            mask_esa_water_land=False,
         )
 
-        # Some strange thing happening where year needs to be numeric for
-        # contours preprocess, but we need to make it a string here or
+        # We need to make it a string here or
         # rioxarray has problems writing it ("numpy.int64 has no attribute
         # encode")
-        combined_ds["year"] = combined_ds.year.astype("str")
+        combined_ds["year"] = combined_ds.year.astype(str)
 
         combined_gdf = subpixel_contours(
             combined_ds, dim="year", z_values=[self.index_threshold]
@@ -139,7 +147,9 @@ class CleanedWriter(Writer):
                 overwrite=self.overwrite,
             )
 
-        lines_path = get_blob_path("lines", item_id, self.prefix, ext="gpkg")
+        lines_path = get_blob_path(
+            f"{self.dataset_id}-lines", item_id, self.prefix, ext="gpkg"
+        )
         if not blob_exists(lines_path) or self.overwrite:
             write_to_blob_storage(
                 gdf,
@@ -149,31 +159,39 @@ class CleanedWriter(Writer):
             )
 
 
-def main() -> None:
+def main(
+    water_index="nir08",
+    threshold=-1280.0,
+    masking_index="nir08",
+    masking_threshold=-1280.0,
+) -> None:
     aoi = gpd.read_file(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
     ).set_index(["PATH", "ROW"], drop=False)
 
-    dataset_id = "water-indices-clean"
-
+    input_dataset = "water-indices"
     input_version = "4Sep2023"
     input_prefix = f"coastlines/{input_version}"
 
-    output_version = "4Sep2023"
+    output_dataset = f"{water_index}-clean"
+    output_version = "0_3_5"
     prefix = f"coastlines/{output_version}"
     start_year = 2014
     end_year = 2023
 
-    index_threshold = -1280.0
-
-    loader = CompositeLoader(input_prefix, start_year, end_year)
-    processor = Cleaner(index_threshold=index_threshold)
-    writer = CleanedWriter(dataset_id, prefix, overwrite=True)
+    loader = CompositeLoader(input_prefix, start_year, end_year, input_dataset)
+    processor = Cleaner(
+        water_index=water_index,
+        index_threshold=threshold,
+        masking_index=masking_index,
+        masking_threshold=masking_threshold,
+    )
+    writer = CleanedWriter(output_dataset, prefix, overwrite=True)
     logger = CsvLogger(
-        name=dataset_id,
+        name=output_dataset,
         container_client=get_container_client(),
         path=get_log_path(
-            prefix, dataset_id, output_version, f"{start_year}_{end_year}"
+            prefix, output_dataset, output_version, f"{start_year}_{end_year}"
         ),
         overwrite=True,
         header="time|index|status|paths|comment\n",
@@ -191,4 +209,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(
+        water_index="mndwi",
+        threshold=0,
+        masking_index="nir08",
+        masking_threshold=-1280.0,
+    )

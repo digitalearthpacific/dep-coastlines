@@ -1,17 +1,3 @@
-"""
-Calculates water indices for the given areas and times and saves to blob storage.
-As of this writing we are focusing on the use of the nir band for all coastline
-work, but the other bands are here for legacy sake and possible use later.
-
-This is best run using kbatch (see calculate_water_indices.yml) with a single
-year or group of years (e.g. 2013/2015). We previously tried to run this
-variously using all years / all composite years , separately for each variable, 
-etc. but the long running / task heavy processes often failed in practice.
-
-Each year took an hour or two to run, so if you start multiple
-processes you can calculate for all years within a day or so.
-
-"""
 from typing import Union
 
 import geopandas as gpd
@@ -25,18 +11,15 @@ from dep_tools.processors import LandsatProcessor
 from dep_tools.utils import get_container_client
 from dep_tools.writers import AzureXrWriter
 from tide_utils import filter_by_tides
-from water_indices import mndwi, ndwi
 
 
-class NirProcessor(LandsatProcessor):
+class MosaicProcessor(LandsatProcessor):
     def process(self, xr: DataArray, area) -> Union[Dataset, None]:
         xr = super().process(xr).drop_duplicates(...)
         xr = filter_by_tides(xr, area.index[0], area)
-
-        # working_ds = mndwi(xr).to_dataset()
-        # working_ds["ndwi"] = ndwi(xr)
-        # working_ds["nir08"] = xr.sel(band="nir08")
-        working_ds = xr.sel(band="nir08").to_dataset(name="nir08")
+        working_ds = xr.to_dataset("band")[
+            ["red", "blue", "green", "nir08", "swir16", "swir22"]
+        ]
 
         # In case we filtered out all the data
         if not "time" in working_ds or len(working_ds.time) == 0:
@@ -44,26 +27,16 @@ class NirProcessor(LandsatProcessor):
 
         working_ds.coords["time"] = xr.time.dt.floor("1D")
 
-        # or mean or median or whatever
         working_ds = working_ds.groupby("time").first()
-        output = working_ds.median("time", keep_attrs=True)
-        output["count"] = working_ds.nir08.count("time", keep_attrs=True).astype(
-            "int16"
-        )
-        output["nir_stdev"] = working_ds.nir08.std("time", keep_attrs=True)
-        return output
+        return working_ds.median("time", keep_attrs=True)
 
 
 def main(datetime: str, version: str) -> None:
-    aoi_by_tile = (
-        gpd.read_file(
-            "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-        )
-        .set_index(["PATH", "ROW"], drop=False)
-        .query("PATH == 87 & ROW == 56")
-    )
+    aoi_by_tile = gpd.read_file(
+        "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
+    ).set_index(["PATH", "ROW"], drop=False)
 
-    dataset_id = "water-indices"
+    dataset_id = "annual-mosaic"
     prefix = f"coastlines/{version}"
 
     loader = LandsatOdcLoader(
@@ -72,13 +45,13 @@ def main(datetime: str, version: str) -> None:
         odc_load_kwargs=dict(
             resampling={"qa_pixel": "nearest", "*": "cubic"},
             fail_on_error=False,
-            bands=["qa_pixel", "nir08", "green", "swir16"],
         ),
         pystac_client_search_kwargs=dict(query=["landsat:collection_category=T1"]),
         exclude_platforms=["landsat-7"],
     )
 
-    processor = NirProcessor(
+    processor = MosaicProcessor(
+        scale_and_offset=False,
         send_area_to_processor=True,
         dilate_mask=True,
     )
@@ -87,9 +60,8 @@ def main(datetime: str, version: str) -> None:
         dataset_id=dataset_id,
         year=datetime,
         prefix=prefix,
-        convert_to_int16=True,
         overwrite=False,
-        output_value_multiplier=10000,
+        output_value_multiplier=1,
         extra_attrs=dict(dep_version=version),
     )
     logger = CsvLogger(
@@ -117,6 +89,5 @@ if __name__ == "__main__":
     composite_years = [f"{y[0]}/{y[2]}" for y in sliding_window_view(single_years, 3)]
     all_years = single_years + composite_years
 
-    all_years = ["2013/2015", "2020", "2021", "2022", "2023"]
     for year in all_years:
-        main(str(year), "12Sep2023")
+        main(str(year), "0_3_4")

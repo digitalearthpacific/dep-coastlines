@@ -4,7 +4,7 @@ version=$1
 az_src="coastlines/$version/lines"
 dst=data/$version
 output=data/$version/coastlines_$version.gpkg
-output_geojson=data/$version/coastlines_version.geojson
+output_geojson=data/$version/coastlines_$version.geojson
 tile_folder=data/tiles/$version
 
 mkdir -p $dst
