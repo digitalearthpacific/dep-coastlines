@@ -114,7 +114,7 @@ class Cleaner(Processor):
             index_threshold=self.masking_threshold,
             masking_index=self.masking_index,
             mask_temporal=True,
-            mask_esa_water_land=False,
+            mask_esa_water_land=True,
         )
 
         # We need to make it a string here or
@@ -174,7 +174,7 @@ def main(
     input_prefix = f"coastlines/{input_version}"
 
     output_dataset = f"{water_index}-clean"
-    output_version = "0_3_6"
+    output_version = "0_3_7"
     prefix = f"coastlines/{output_version}"
     start_year = 2014
     end_year = 2023
