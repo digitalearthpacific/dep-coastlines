@@ -120,8 +120,8 @@ def contours_preprocess(
     # The threshold here should checked out a bit more. It varies for Australia
     # and Africa, and for the shortertime period we are starting with (i.e.
     # 2013-2023) a stray year could me amplified if other years are missing
-    all_time_land = land_mask.mean(dim="year") > (1 / 4.0)
-    land_mask = land_mask.where(all_time_land, 0)
+    # all_time_land = land_mask.mean(dim="year") > (1 / 4.0)
+    # land_mask = land_mask.where(all_time_land, 0)
 
     if mask_temporal:
         # Create a temporal mask by identifying land pixels with a direct
