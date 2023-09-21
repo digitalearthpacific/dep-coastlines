@@ -14,7 +14,7 @@ from typing import Tuple
 from dea_tools.spatial import subpixel_contours
 import geopandas as gpd
 from numpy import mean
-from xarray import Dataset
+from xarray import Dataset, where
 
 from azure_logger import CsvLogger, get_log_path
 from dep_tools.exceptions import EmptyCollectionError
@@ -57,15 +57,15 @@ class CompositeLoader(Loader):
             chunks=True,
         )
 
-        yearly_mosaic = load_blobs(
-            "annual-mosaic",
-            area.index[0],
-            "coastlines/0_3_4",
-            range(self.start_year, self.end_year),
-            chunks=True,
-        )
-        yearly_ds["gss"] = yearly_mosaic.green - yearly_mosaic.swir16
-        yearly_ds["gns"] = yearly_mosaic.green - yearly_mosaic.nir08
+        #        yearly_mosaic = load_blobs(
+        #            "annual-mosaic",
+        #            area.index[0],
+        #            "coastlines/0_3_4",
+        #            range(self.start_year, self.end_year),
+        #            chunks=True,
+        #        )
+        #        yearly_ds["gss"] = yearly_mosaic.green - yearly_mosaic.swir16
+        #        yearly_ds["gns"] = yearly_mosaic.green - yearly_mosaic.nir08
 
         if yearly_ds is None:
             raise EmptyCollectionError()
@@ -77,16 +77,16 @@ class CompositeLoader(Loader):
             self.dataset, area.index[0], self.prefix, composite_years, chunks=True
         )
 
-        composite_mosaic = load_blobs(
-            "annual-mosaic",
-            area.index[0],
-            "coastlines/0_3_4",
-            composite_years,
-            chunks=True,
-        )
-        composite_ds["gss"] = composite_mosaic.green - composite_mosaic.swir16
-        composite_ds["gns"] = composite_mosaic.green - composite_mosaic.nir08
-
+        #        composite_mosaic = load_blobs(
+        #            "annual-mosaic",
+        #            area.index[0],
+        #            "coastlines/0_3_4",
+        #            composite_years,
+        #            chunks=True,
+        #        )
+        #        composite_ds["gss"] = composite_mosaic.green - composite_mosaic.swir16
+        #        composite_ds["gns"] = composite_mosaic.green - composite_mosaic.nir08
+        #
         composite_ds = _set_year_to_middle_year(composite_ds)
 
         composite_ds = composite_ds.where(
@@ -191,7 +191,7 @@ def main(
     input_prefix = f"coastlines/{input_version}"
 
     output_dataset = f"{water_index}-clean"
-    output_version = "0_3_8"
+    output_version = "0-3-9"
     prefix = f"coastlines/{output_version}"
     start_year = 2014
     end_year = 2023
@@ -227,8 +227,8 @@ def main(
 
 if __name__ == "__main__":
     main(
-        water_index="gns",
-        threshold=-1000,
+        water_index="mndwi",
+        threshold=0,
         masking_index="nir08",
         masking_threshold=-1280.0,
     )

@@ -108,6 +108,10 @@ def contours_preprocess(
     # are extremely vulnerable to noise
     combined_ds = combined_ds.where(yearly_ds["count"] > 1)
 
+    water_noise = (combined_ds.mndwi < 0) & (combined_ds.nir08 > -1280)
+    thats_water = 100
+    combined_ds = combined_ds.where(~water_noise, thats_water)
+
     # Apply water index threshold and re-apply nodata values
     land_mask = combined_ds[masking_index] < index_threshold
     other_land_mask = combined_ds["mndwi"] < 0.0
@@ -145,7 +149,8 @@ def contours_preprocess(
         esa_ocean = esa_water_land == 0
         esa_land_mask = ~odc.algo.mask_cleanup(esa_ocean, [("erosion", 5)])
         # Set any pixels outside mask to 0 to represent water
-        land_mask = land_mask.where(esa_land_mask, 0)
+        land_mask = xr.where(esa_land_mask, 1, land_mask)
+        # land_mask = land_mask.where(esa_land_mask, 0)
 
     if remove_tiny_areas:
         land_mask = land_mask.where(remove_small_areas(land_mask == 1) == 1, 0)
