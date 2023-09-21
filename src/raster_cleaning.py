@@ -147,10 +147,11 @@ def contours_preprocess(
     if mask_esa_water_land:
         esa_water_land = load_esa_water_land(yearly_ds)
         esa_ocean = esa_water_land == 0
-        esa_land_mask = ~odc.algo.mask_cleanup(esa_ocean, [("erosion", 5)])
+        close_to_coast = odc.algo.mask_cleanup(esa_ocean, [("dilation", 10)])
+        # esa_land_mask = ~odc.algo.mask_cleanup(esa_ocean, [("erosion", 5)])
         # Set any pixels outside mask to 0 to represent water
-        land_mask = xr.where(esa_land_mask, 1, land_mask)
-        # land_mask = land_mask.where(esa_land_mask, 0)
+        # land_mask = xr.where(esa_land_mask, 1, land_mask)
+        land_mask = land_mask.where(close_to_coast)
 
     if remove_tiny_areas:
         land_mask = land_mask.where(remove_small_areas(land_mask == 1) == 1, 0)

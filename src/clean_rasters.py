@@ -191,7 +191,7 @@ def main(
     input_prefix = f"coastlines/{input_version}"
 
     output_dataset = f"{water_index}-clean"
-    output_version = "0-3-9"
+    output_version = "0-3-10"
     prefix = f"coastlines/{output_version}"
     start_year = 2014
     end_year = 2023
