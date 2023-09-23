@@ -110,7 +110,7 @@ def contours_preprocess(
 
     water_noise = (combined_ds.mndwi < 0) & (combined_ds.nir08 > -1280)
     thats_water = 100
-    combined_ds = combined_ds.where(~water_noise, thats_water)
+    combined_ds = combined_ds.where(~water_noise)
 
     # Apply water index threshold and re-apply nodata values
     land_mask = combined_ds[masking_index] < index_threshold
