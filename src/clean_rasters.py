@@ -14,7 +14,7 @@ from typing import Tuple
 from dea_tools.spatial import subpixel_contours
 import geopandas as gpd
 from numpy import mean
-from xarray import Dataset, where
+from xarray import Dataset, concat
 
 from azure_logger import CsvLogger, get_log_path
 from dep_tools.exceptions import EmptyCollectionError
@@ -41,19 +41,21 @@ def _set_year_to_middle_year(xr: Dataset) -> Dataset:
 
 
 class CompositeLoader(Loader):
-    def __init__(self, prefix, start_year, end_year, dataset, **kwargs):
+    def __init__(self, prefix, early_prefix, start_year, end_year, dataset, **kwargs):
         super().__init__(**kwargs)
         self.prefix = prefix
+        self.early_prefix = early_prefix
         self.start_year = start_year
         self.end_year = end_year
         self.dataset = dataset
 
     def load(self, area) -> Tuple[Dataset, Dataset]:
+        late_range = range(2013, self.end_year)
         yearly_ds = load_blobs(
             self.dataset,
             area.index[0],
             self.prefix,
-            range(self.start_year, self.end_year),
+            late_range,
             chunks=True,
         )
 
@@ -67,15 +69,31 @@ class CompositeLoader(Loader):
         #        yearly_ds["gss"] = yearly_mosaic.green - yearly_mosaic.swir16
         #        yearly_ds["gns"] = yearly_mosaic.green - yearly_mosaic.nir08
 
-        if yearly_ds is None:
-            raise EmptyCollectionError()
-
-        composite_years = [
-            f"{year-1}_{year+1}" for year in range(self.start_year, self.end_year)
-        ]
+        composite_years = [f"{year-1}_{year+1}" for year in late_range]
         composite_ds = load_blobs(
             self.dataset, area.index[0], self.prefix, composite_years, chunks=True
         )
+
+        early_range = range(self.start_year, 2013)
+
+        if len(early_range) > 0:
+            early_yearly_ds = load_blobs(
+                self.dataset, area.index[0], self.early_prefix, early_range, chunks=True
+            )
+            yearly_ds = concat([early_yearly_ds, yearly_ds], dim="year")
+
+            early_composite_years = [f"{year-1}_{year+1}" for year in early_range]
+            early_composite_ds = load_blobs(
+                self.dataset,
+                area.index[0],
+                self.early_prefix,
+                early_composite_years,
+                chunks=True,
+            )
+            composite_ds = concat([early_composite_ds, composite_ds], dim="year")
+
+        if yearly_ds is None:
+            raise EmptyCollectionError()
 
         #        composite_mosaic = load_blobs(
         #            "annual-mosaic",
@@ -132,6 +150,8 @@ class Cleaner(Processor):
             masking_index=self.masking_index,
             mask_temporal=True,
             mask_esa_water_land=True,
+            remove_tiny_areas=True,
+            remove_inland_water=True,
         )
 
         # We need to make it a string here or
@@ -190,13 +210,18 @@ def main(
     input_version = "4Sep2023"
     input_prefix = f"coastlines/{input_version}"
 
+    early_input_version = "0-3-16"
+    early_input_prefix = f"coastlines/{early_input_version}"
+
     output_dataset = f"{water_index}-clean"
-    output_version = "0-3-11"
+    output_version = "0-3-18"
     prefix = f"coastlines/{output_version}"
-    start_year = 2014
+    start_year = 2000
     end_year = 2023
 
-    loader = CompositeLoader(input_prefix, start_year, end_year, input_dataset)
+    loader = CompositeLoader(
+        input_prefix, early_input_prefix, start_year, end_year, input_dataset
+    )
     processor = Cleaner(
         water_index=water_index,
         index_threshold=threshold,

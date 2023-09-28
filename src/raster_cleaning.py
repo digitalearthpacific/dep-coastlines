@@ -17,6 +17,7 @@ import flox.xarray  # <- not positive this is in the planetary computer image
 from geopandas import GeoDataFrame
 import numpy as np
 import odc.algo
+from odc.geo.xr import xr_reproject
 from retry import retry
 from rasterio.errors import RasterioIOError
 from rasterio.warp import transform_bounds
@@ -35,17 +36,30 @@ def get_coastal_mask(areas: GeoDataFrame) -> GeoDataFrame:
     return make_valid(land_plus.difference(land_minus).unary_union)
 
 
-def remove_small_areas(bool_ds: DataArray, min_size_in_pixels: int = 55) -> DataArray:
-    def _remove_2d(bool_ds_2d: DataArray) -> DataArray:
-        zones = xr.apply_ufunc(label, bool_ds_2d, None, 0, dask="parallelized")
-        size_by_zone = xs.zonal_stats(
-            zones, bool_ds_2d.astype(int), stats_funcs=["sum"]
+def find_inland_areas(water_bool_da, ocean_bool_da) -> DataArray:
+    def find_inland_2d(bool_da_2d: DataArray) -> DataArray:
+        zones = xr.apply_ufunc(label, bool_da_2d.astype("int8"), dask="parallelized")
+        location_by_zone = xs.zonal_stats(
+            zones, ocean_bool_da.astype(int), stats_funcs=["max"]
         )
-        big_zones = size_by_zone["zone"][size_by_zone["sum"] >= min_size_in_pixels]
-        return bool_ds_2d.where(zones.isin(big_zones) == 1)
+        inland_zones = location_by_zone["zone"][location_by_zone["max"] == 0]
+        return bool_da_2d.where(zones.isin(inland_zones) == 1, False)
 
+    return water_bool_da.groupby("year").apply(find_inland_2d)
+
+
+def small_areas(bool_da: DataArray, min_size_in_pixels: int = 55) -> DataArray:
+    def _remove_2d(bool_da_2d: DataArray) -> DataArray:
+        zones = xr.apply_ufunc(label, bool_da_2d, None, 0, dask="parallelized")
+        size_by_zone = xs.zonal_stats(
+            zones, bool_da_2d.astype(int), stats_funcs=["sum"]
+        )
+        small_zones = size_by_zone["zone"][size_by_zone["sum"] < min_size_in_pixels]
+        return bool_da_2d.where(zones.isin(small_zones) == 1, False)
+
+    # I think this could be replaced with bool_da.groupby("year").apply(_remove_2d)?
     return xr.concat(
-        [_remove_2d(bool_ds.sel(year=year)) for year in bool_ds.year], dim="year"
+        [_remove_2d(bool_da.sel(year=year)) for year in bool_da.year], dim="year"
     )
 
 
@@ -87,7 +101,7 @@ def load_esa_water_land(ds: Dataset) -> DataArray:
     # read from teh asset for some reason.
     water_land = rx.open_rasterio(input_path, chunks=True).rio.write_crs(8859)
     bounds = list(transform_bounds(ds.rio.crs, water_land.rio.crs, *ds.rio.bounds()))
-    return water_land.rio.clip_box(*bounds).squeeze().rio.reproject_match(ds)
+    return xr_reproject(water_land.rio.clip_box(*bounds).squeeze(), ds.odc.geobox)
 
 
 @retry(RasterioIOError, tries=10, delay=3)
@@ -100,6 +114,7 @@ def contours_preprocess(
     mask_temporal: bool = True,
     mask_esa_water_land: bool = True,
     remove_tiny_areas: bool = True,
+    remove_inland_water: bool = True,
 ) -> Union[Dataset, DataArray]:
     # Remove low obs pixels and replace with 3-year gapfill
     combined_ds = yearly_ds.where(yearly_ds["count"] > 5, gapfill_ds)
@@ -108,24 +123,40 @@ def contours_preprocess(
     # are extremely vulnerable to noise
     combined_ds = combined_ds.where(yearly_ds["count"] > 1)
 
-    water_noise = (combined_ds.mndwi < 0) & (combined_ds.nir08 > -1280)
+    # Identify and remove water noise. Basically areas which mndwi says are land
+    # which nir08 thinks are probably not, and esa says are not too
+    esa_water_land = load_esa_water_land(yearly_ds)
+    esa_ocean = esa_water_land == 0
+    # usual cutoff is -1280, I relax a bit to soften the impact on true coastal
+    # areas.
+    water_noise = (combined_ds.mndwi < 0) & (combined_ds.nir08 > -800) & (esa_ocean)
+    # The choice to be made is whether to simply mask out the water areas, or
+    # recode. The recoding is not the best, and we should probably mask out when
+    # we are certain we are only getting noise. Otherwise we remove some usable areas.
     thats_water = 100
-    combined_ds = combined_ds.where(~water_noise)
+    combined_ds = combined_ds.where(~water_noise, thats_water)
 
     # Apply water index threshold and re-apply nodata values
+    # Here we use both the thresholded nir08 and mndwi to define land. They must
+    # both agree. This helps to remove both water noise from mndwi and surf
+    # (and other) artifacts from nir08. (I'll also add, in general, nir08 is more
+    # dependable at identifying land than mndwi.)
     land_mask = combined_ds[masking_index] < index_threshold
-    other_land_mask = combined_ds["mndwi"] < 0.0
-    # Double up!
-    land_mask = land_mask.where(other_land_mask, 0)
+    mndwi_land_mask = combined_ds["mndwi"] < 0.0
+    land_mask = land_mask & mndwi_land_mask
 
     nodata = combined_ds[masking_index].isnull()
-    land_mask = land_mask.where(~nodata)
+    analysis_mask = land_mask.where(~nodata, False)
+    analysis_mask = odc.algo.mask_cleanup(analysis_mask, [("dilation", 3)])
 
     # The threshold here should checked out a bit more. It varies for Australia
     # and Africa, and for the shortertime period we are starting with (i.e.
     # 2013-2023) a stray year could me amplified if other years are missing
     # all_time_land = land_mask.mean(dim="year") > (1 / 4.0)
     # land_mask = land_mask.where(all_time_land, 0)
+    if remove_inland_water:
+        inland_water = find_inland_areas(~land_mask, esa_ocean)
+        analysis_mask = analysis_mask & ~inland_water
 
     if mask_temporal:
         # Create a temporal mask by identifying land pixels with a direct
@@ -138,23 +169,16 @@ def contours_preprocess(
         # neighbouring timesteps. True land, however, is likely to appear
         # in proximity to land before or after the specific timestep.
 
-        # Compute temporal mask
-        temporal_mask = temporal_masking(land_mask == 1)
-
-        # Set any pixels outside mask to 0 to represent water
-        land_mask = land_mask.where(temporal_mask, 0)
+        # amask here
+        analysis_mask = analysis_mask & temporal_masking(analysis_mask)
 
     if mask_esa_water_land:
-        esa_water_land = load_esa_water_land(yearly_ds)
-        esa_ocean = esa_water_land == 0
         close_to_coast = odc.algo.mask_cleanup(esa_ocean, [("dilation", 10)])
-        # esa_land_mask = ~odc.algo.mask_cleanup(esa_ocean, [("erosion", 5)])
-        # Set any pixels outside mask to 0 to represent water
-        # land_mask = xr.where(esa_land_mask, 1, land_mask)
-        land_mask = land_mask.where(close_to_coast)
+        analysis_mask = analysis_mask & close_to_coast
 
     if remove_tiny_areas:
-        land_mask = land_mask.where(remove_small_areas(land_mask == 1) == 1, 0)
+        # This was created mainly for surf artifacts in nir08, and may not be
+        # needed if using e.g. mndwi
+        analysis_mask = analysis_mask & ~small_areas(land_mask)
 
-    land_mask = odc.algo.mask_cleanup(land_mask == 1, [("dilation", 3)])
-    return combined_ds[water_index].where(land_mask)
+    return combined_ds[water_index].where(analysis_mask)
