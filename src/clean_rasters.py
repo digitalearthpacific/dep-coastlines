@@ -160,7 +160,7 @@ class Cleaner(Processor):
         combined_ds["year"] = combined_ds.year.astype(str)
 
         combined_gdf = subpixel_contours(
-            combined_ds, dim="year", z_values=[self.index_threshold]
+            combined_ds, dim="year", z_values=[self.index_threshold], min_vertices=10
         )
         combined_gdf.year = combined_gdf.year.astype(int)
 
