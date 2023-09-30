@@ -132,6 +132,7 @@ class Cleaner(Processor):
             mask_esa_water_land=False,
             remove_tiny_areas=True,
             remove_inland_water=False,
+            remove_water_noise=False,
         )
 
         # We need to make it a string here or

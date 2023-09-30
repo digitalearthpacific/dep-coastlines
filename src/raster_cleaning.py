@@ -36,6 +36,7 @@ def contours_preprocess(
     mask_nir: bool = True,
     remove_tiny_areas: bool = True,
     remove_inland_water: bool = True,
+    remove_water_noise: bool = True,
 ) -> Union[Dataset, DataArray]:
     # Remove low obs pixels and replace with 3-year gapfill
     combined_ds = yearly_ds.where(yearly_ds["count"] > 5, gapfill_ds)
@@ -43,17 +44,6 @@ def contours_preprocess(
     # Set any pixels with only one observation to NaN, as these
     # are extremely vulnerable to noise
     combined_ds = combined_ds.where(combined_ds["count"] > 1)
-
-    # Identify and remove water noise. Basically areas which mndwi says are land
-    # which nir08 thinks are probably not, and esa says are not too
-    # usual cutoff is -1280, I relax a bit to soften the impact on true coastal
-    # areas.
-    # water_noise = (combined_ds.mndwi < 0) & (combined_ds.nir08 > -800) & (esa_ocean)
-    # The choice to be made is whether to simply mask out the water areas, or
-    # recode. The recoding is not the best, and we should probably mask out when
-    # we are certain we are only getting noise. Otherwise we remove some usable areas.
-    # thats_water = 100
-    # combined_ds = combined_ds.where(~water_noise, thats_water)
 
     # Apply water index threshold and re-apply nodata values
     # Here we use both the thresholded nir08 and mndwi to define land. They must
@@ -101,6 +91,22 @@ def contours_preprocess(
         # This was created mainly for surf artifacts in nir08, and may not be
         # needed if using e.g. mndwi
         analysis_mask = analysis_mask & ~small_areas(land_mask)
+
+    if remove_water_noise:
+        esa_water_land = load_esa_water_land(yearly_ds)
+        esa_ocean = esa_water_land == 0
+        water_noise = (combined_ds.mndwi < 0) & (combined_ds.nir08 > -800) & (esa_ocean)
+        # The choice to be made is whether to simply mask out the water areas, or
+        # recode. The recoding is not the best, and we should probably mask out when
+        # we are certain we are only getting noise. Otherwise we remove some usable areas.
+        # thats_water = 100
+        # combined_ds = combined_ds.where(~water_noise, thats_water)
+        analysis_mask = analysis_mask & ~water_noise
+
+    # Identify and remove water noise. Basically areas which mndwi says are land
+    # which nir08 thinks are probably not, and esa says are not too
+    # usual cutoff is -1280, I relax a bit to soften the impact on true coastal
+    # areas.
 
     inland = odc.algo.mask_cleanup(gadm_land, mask_filters=[("erosion", 5)])
     deep_ocean = odc.algo.mask_cleanup(~gadm_land, mask_filters=[("erosion", 10)])
