@@ -182,13 +182,9 @@ def main(
     masking_index="nir08",
     masking_threshold=-1280.0,
 ) -> None:
-    aoi = (
-        gpd.read_file(
-            "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-        )
-        .set_index(["PATH", "ROW"], drop=False)
-        .query("PATH == 70 & ROW == 75")
-    )
+    aoi = gpd.read_file(
+        "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
+    ).set_index(["PATH", "ROW"], drop=False)
 
     input_dataset = "water-indices"
     input_version = "4Sep2023"
@@ -198,7 +194,7 @@ def main(
     early_input_prefix = f"coastlines/{early_input_version}"
 
     output_dataset = f"{water_index}-clean"
-    output_version = "0-4-8"
+    output_version = "0-4-6"
     prefix = f"coastlines/{output_version}"
     start_year = 2000
     end_year = 2023

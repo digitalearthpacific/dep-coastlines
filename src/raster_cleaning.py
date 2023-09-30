@@ -102,7 +102,7 @@ def contours_preprocess(
         # needed if using e.g. mndwi
         analysis_mask = analysis_mask & ~small_areas(land_mask)
 
-    inland = odc.algo.mask_cleanup(gadm_land, mask_filters=[("erosion", 10)])
+    inland = odc.algo.mask_cleanup(gadm_land, mask_filters=[("erosion", 5)])
     deep_ocean = odc.algo.mask_cleanup(~gadm_land, mask_filters=[("erosion", 10)])
 
     analysis_mask = odc.algo.mask_cleanup(analysis_mask, mask_filters=[("dilation", 2)])
