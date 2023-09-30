@@ -132,7 +132,7 @@ class Cleaner(Processor):
             mask_esa_water_land=False,
             remove_tiny_areas=True,
             remove_inland_water=False,
-            remove_water_noise=False,
+            remove_water_noise=True,
         )
 
         # We need to make it a string here or
@@ -195,7 +195,7 @@ def main(
     early_input_prefix = f"coastlines/{early_input_version}"
 
     output_dataset = f"{water_index}-clean"
-    output_version = "0-4-6"
+    output_version = "0-4-7"
     prefix = f"coastlines/{output_version}"
     start_year = 2000
     end_year = 2023
