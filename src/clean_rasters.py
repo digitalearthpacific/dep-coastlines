@@ -29,7 +29,7 @@ from dep_tools.utils import (
 )
 from dep_tools.writers import Writer
 
-from raster_cleaning import contours_preprocess
+from raster_cleaning_og import contours_preprocess
 from utils import load_blobs
 
 
@@ -59,16 +59,6 @@ class CompositeLoader(Loader):
             chunks=True,
         )
 
-        #        yearly_mosaic = load_blobs(
-        #            "annual-mosaic",
-        #            area.index[0],
-        #            "coastlines/0_3_4",
-        #            range(self.start_year, self.end_year),
-        #            chunks=True,
-        #        )
-        #        yearly_ds["gss"] = yearly_mosaic.green - yearly_mosaic.swir16
-        #        yearly_ds["gns"] = yearly_mosaic.green - yearly_mosaic.nir08
-
         composite_years = [f"{year-1}_{year+1}" for year in late_range]
         composite_ds = load_blobs(
             self.dataset, area.index[0], self.prefix, composite_years, chunks=True
@@ -95,16 +85,6 @@ class CompositeLoader(Loader):
         if yearly_ds is None:
             raise EmptyCollectionError()
 
-        #        composite_mosaic = load_blobs(
-        #            "annual-mosaic",
-        #            area.index[0],
-        #            "coastlines/0_3_4",
-        #            composite_years,
-        #            chunks=True,
-        #        )
-        #        composite_ds["gss"] = composite_mosaic.green - composite_mosaic.swir16
-        #        composite_ds["gns"] = composite_mosaic.green - composite_mosaic.nir08
-        #
         composite_ds = _set_year_to_middle_year(composite_ds)
 
         composite_ds = composite_ds.where(
@@ -148,10 +128,10 @@ class Cleaner(Processor):
             water_index=self.water_index,
             index_threshold=self.masking_threshold,
             masking_index=self.masking_index,
-            mask_temporal=True,
+            mask_temporal=False,
             mask_esa_water_land=True,
-            remove_tiny_areas=True,
-            remove_inland_water=True,
+            remove_tiny_areas=False,
+            #            remove_inland_water=True,
         )
 
         # We need to make it a string here or
@@ -160,7 +140,7 @@ class Cleaner(Processor):
         combined_ds["year"] = combined_ds.year.astype(str)
 
         combined_gdf = subpixel_contours(
-            combined_ds, dim="year", z_values=[self.index_threshold], min_vertices=10
+            combined_ds, dim="year", z_values=[self.index_threshold], min_vertices=2
         )
         combined_gdf.year = combined_gdf.year.astype(int)
 
@@ -202,19 +182,22 @@ def main(
     masking_index="nir08",
     masking_threshold=-1280.0,
 ) -> None:
-    aoi = gpd.read_file(
-        "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-    ).set_index(["PATH", "ROW"], drop=False)
+    aoi = (
+        gpd.read_file(
+            "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
+        ).set_index(["PATH", "ROW"], drop=False)
+        #        .query("PATH == 69 & ROW == 69")
+    )
 
     input_dataset = "water-indices"
     input_version = "4Sep2023"
     input_prefix = f"coastlines/{input_version}"
 
-    early_input_version = "0-3-16"
+    early_input_version = "0-3-14"
     early_input_prefix = f"coastlines/{early_input_version}"
 
     output_dataset = f"{water_index}-clean"
-    output_version = "0-3-18"
+    output_version = "0-3-16"
     prefix = f"coastlines/{output_version}"
     start_year = 2000
     end_year = 2023

@@ -14,94 +14,15 @@ additions to the workflow which are study area specific to the Pacific.
 from typing import Union
 
 import flox.xarray  # <- not positive this is in the planetary computer image
-from geopandas import GeoDataFrame
-import numpy as np
 import odc.algo
-from odc.geo.xr import xr_reproject
 from retry import retry
 from rasterio.errors import RasterioIOError
 from rasterio.warp import transform_bounds
 import rioxarray as rx
-from shapely import make_valid
-from skimage.measure import label, regionprops
-from skimage.morphology import binary_dilation, disk
+from skimage.measure import label
 import xarray as xr
 import xrspatial as xs
 from xarray import DataArray, Dataset
-
-
-def get_coastal_mask(areas: GeoDataFrame) -> GeoDataFrame:
-    land_plus = areas.buffer(1000)
-    land_minus = areas.buffer(-1000)
-    return make_valid(land_plus.difference(land_minus).unary_union)
-
-
-def find_inland_areas(water_bool_da, ocean_bool_da) -> DataArray:
-    def find_inland_2d(bool_da_2d: DataArray) -> DataArray:
-        zones = xr.apply_ufunc(label, bool_da_2d.astype("int8"), dask="parallelized")
-        location_by_zone = xs.zonal_stats(
-            zones, ocean_bool_da.astype(int), stats_funcs=["max"]
-        )
-        inland_zones = location_by_zone["zone"][location_by_zone["max"] == 0]
-        return bool_da_2d.where(zones.isin(inland_zones) == 1, False)
-
-    return water_bool_da.groupby("year").apply(find_inland_2d)
-
-
-def small_areas(bool_da: DataArray, min_size_in_pixels: int = 55) -> DataArray:
-    def _remove_2d(bool_da_2d: DataArray) -> DataArray:
-        zones = xr.apply_ufunc(label, bool_da_2d, None, 0, dask="parallelized")
-        size_by_zone = xs.zonal_stats(
-            zones, bool_da_2d.astype(int), stats_funcs=["sum"]
-        )
-        small_zones = size_by_zone["zone"][size_by_zone["sum"] < min_size_in_pixels]
-        return bool_da_2d.where(zones.isin(small_zones) == 1, False)
-
-    # I think this could be replaced with bool_da.groupby("year").apply(_remove_2d)?
-    return xr.concat(
-        [_remove_2d(bool_da.sel(year=year)) for year in bool_da.year], dim="year"
-    )
-
-
-def temporal_masking(ds: DataArray) -> DataArray:
-    """Dask-enabled version of coastlines.vector.temporal_masking from
-    the deafrica-coastlines (and dea-coastlines) work."""
-
-    # We could use xrspatial.zonal.regions but it's not xarray or dask aware yet
-    zones = xr.apply_ufunc(label, ds, None, 0, dask="parallelized")
-
-    neighbours = (
-        ds.shift(year=-1, fill_value=False) | ds.shift(year=1, fill_value=False)
-    ).astype("int8")
-
-    # deafrica code does the following steps in a different way. I chose this
-    # because it is less memory intensive and seems to work (betterish at least)
-    # with dask.
-
-    # I got out of memory errors with this
-    # zone_maxes = stats(zones, neighbours, stats_funcs=["max"])
-
-    # xarray docs say that flox is used by default if it is loaded, I did
-    # not find that to be the case. If it did work you could just do
-    # zone_maxes = neighbours.groupby(zones).max()
-    return flox.xarray.xarray_reduce(neighbours, by=zones, func="max")
-
-
-def load_esa_water_land(ds: Dataset) -> DataArray:
-    # This is from http://maps.elie.ucl.ac.be/CCI/viewer/download.php
-    # See Lamarche, C.; Santoro, M.; Bontemps, S.; Dâ€™Andrimont, R.; Radoux, J.; Giustarini, L.; Brockmann, C.; Wevers, J.; Defourny, P.; Arino, O. Compilation and Validation of SAR and Optical Data Products for a Complete and Global Map of Inland/Ocean Water Tailored to the Climate Modeling Community. Remote Sens. 2017, 9, 36. https://doi.org/10.3390/rs9010036
-    input_path = "https://deppcpublicstorage.blob.core.windows.net/output/src/ESACCI-LC-L4-WB-Ocean-Land-Map-150m-P13Y-2000-v4.0-8859.tif"
-
-    # In theory we could just use the `crs` arg of clip_box but that wasn't working
-    # for me with CRS 8859. This did.
-
-    # Also, if you're wondering why I reprojected to CRS 8859 it's because I couldn't
-    # reproject from 4326 for tiles that crossed the antimeridian.
-    # If you're wondering why I set the CRS manually it's because it's not being
-    # read from teh asset for some reason.
-    water_land = rx.open_rasterio(input_path, chunks=True).rio.write_crs(8859)
-    bounds = list(transform_bounds(ds.rio.crs, water_land.rio.crs, *ds.rio.bounds()))
-    return xr_reproject(water_land.rio.clip_box(*bounds).squeeze(), ds.odc.geobox)
 
 
 @retry(RasterioIOError, tries=10, delay=3)
@@ -121,7 +42,7 @@ def contours_preprocess(
 
     # Set any pixels with only one observation to NaN, as these
     # are extremely vulnerable to noise
-    combined_ds = combined_ds.where(yearly_ds["count"] > 1)
+    combined_ds = combined_ds.where(combined_ds["count"] > 1)
 
     # Identify and remove water noise. Basically areas which mndwi says are land
     # which nir08 thinks are probably not, and esa says are not too
@@ -155,7 +76,11 @@ def contours_preprocess(
     # all_time_land = land_mask.mean(dim="year") > (1 / 4.0)
     # land_mask = land_mask.where(all_time_land, 0)
     if remove_inland_water:
-        inland_water = find_inland_areas(~land_mask, esa_ocean)
+        # Using mndwi land mask here as that is the ultimate judge of water,
+        # and the combined land mask may say areas are connected to the Ocean
+        # that mndwi does not
+        gadm_ocean = ~load_gadm_land(yearly_ds)
+        inland_water = find_inland_areas(~mndwi_land_mask, gadm_ocean)
         analysis_mask = analysis_mask & ~inland_water
 
     if mask_temporal:
@@ -169,11 +94,10 @@ def contours_preprocess(
         # neighbouring timesteps. True land, however, is likely to appear
         # in proximity to land before or after the specific timestep.
 
-        # amask here
         analysis_mask = analysis_mask & temporal_masking(analysis_mask)
 
     if mask_esa_water_land:
-        close_to_coast = odc.algo.mask_cleanup(esa_ocean, [("dilation", 10)])
+        close_to_coast = ~odc.algo.mask_cleanup(esa_ocean, [("erosion", 5)])
         analysis_mask = analysis_mask & close_to_coast
 
     if remove_tiny_areas:
@@ -182,3 +106,81 @@ def contours_preprocess(
         analysis_mask = analysis_mask & ~small_areas(land_mask)
 
     return combined_ds[water_index].where(analysis_mask)
+
+
+def find_inland_areas(water_bool_da, ocean_bool_da) -> DataArray:
+    def _find_inland_2d(bool_da_2d: DataArray) -> DataArray:
+        zones = xr.full_like(bool_da_2d, 0, dtype="int16")
+        zones.values = label(bool_da_2d.astype("int8"), background=1)
+        location_by_zone = xs.zonal_stats(
+            zones, ocean_bool_da.astype("int8").compute(), stats_funcs=["max"]
+        )
+        inland_zones = location_by_zone["zone"][location_by_zone["max"] == 0]
+        return zones.isin(inland_zones)
+
+    # Can't do this in chunks because the labels would be repeated across chunks.
+    # but could parallelize across years I think
+    return water_bool_da.groupby("year").apply(_find_inland_2d)
+
+
+def small_areas(bool_da: DataArray, min_size_in_pixels: int = 55) -> DataArray:
+    def _remove_2d(bool_da_2d: DataArray) -> DataArray:
+        # For now, ok doing this in chunks, but could remove some bigger areas
+        # if they span chunks
+        zones = xr.apply_ufunc(label, bool_da_2d, None, 0, dask="parallelized")
+        size_by_zone = xs.zonal_stats(
+            zones, bool_da_2d.astype(int), stats_funcs=["sum"]
+        )
+        small_zones = size_by_zone["zone"][size_by_zone["sum"] < min_size_in_pixels]
+        return bool_da_2d.where(zones.isin(small_zones) == 1, False)
+
+    return bool_da.groupby("year").apply(_remove_2d)
+
+
+def temporal_masking(ds: DataArray) -> DataArray:
+    """Dask-enabled version of coastlines.vector.temporal_masking from
+    the deafrica-coastlines (and dea-coastlines) work."""
+
+    zones = xr.apply_ufunc(label, ds, None, 0, dask="parallelized")
+
+    neighbours = (
+        ds.shift(year=-1, fill_value=False) | ds.shift(year=1, fill_value=False)
+    ).astype("int8")
+
+    # deafrica code does the following steps in a different way. I chose this
+    # because it is less memory intensive and seems to work (betterish at least)
+    # with dask.
+
+    # I got out of memory errors with this
+    # zone_maxes = stats(zones, neighbours, stats_funcs=["max"])
+
+    # xarray docs say that flox is used by default if it is loaded, I did
+    # not find that to be the case. If it did work you could just do
+    # zone_maxes = neighbours.groupby(zones).max()
+    return flox.xarray.xarray_reduce(neighbours, by=zones, func="max") == 1
+
+
+def load_esa_water_land(ds: Dataset) -> DataArray:
+    # This is from http://maps.elie.ucl.ac.be/CCI/viewer/download.php
+    # See Lamarche, C.; Santoro, M.; Bontemps, S.; Dâ€™Andrimont, R.; Radoux, J.; Giustarini, L.; Brockmann, C.; Wevers, J.; Defourny, P.; Arino, O. Compilation and Validation of SAR and Optical Data Products for a Complete and Global Map of Inland/Ocean Water Tailored to the Climate Modeling Community. Remote Sens. 2017, 9, 36. https://doi.org/10.3390/rs9010036
+    input_path = "https://deppcpublicstorage.blob.core.windows.net/output/src/ESACCI-LC-L4-WB-Ocean-Land-Map-150m-P13Y-2000-v4.0-8859.tif"
+
+    # In theory we could just use the `crs` arg of clip_box but that wasn't working
+    # for me with CRS 8859. This did.
+
+    # Also, if you're wondering why I reprojected to CRS 8859 it's because I couldn't
+    # reproject from 4326 for tiles that crossed the antimeridian.
+    # If you're wondering why I set the CRS manually it's because it's not being
+    # read from teh asset for some reason.
+    water_land = rx.open_rasterio(input_path, chunks=True).rio.write_crs(8859)
+    bounds = list(transform_bounds(ds.rio.crs, water_land.rio.crs, *ds.rio.bounds()))
+    return water_land.rio.clip_box(*bounds).squeeze().rio.reproject_match(ds)
+
+
+def load_gadm_land(ds: Dataset) -> DataArray:
+    # This is a rasterized version of gadm. It seems better than any ESA product
+    # at defining land (see for instance Vanuatu).
+    input_path = "https://deppcpublicstorage.blob.core.windows.net/output/aoi/aoi.tif"
+    land = rx.open_rasterio(input_path, chunks=True).rio.write_crs(8859).astype("bool")
+    bounds = list(transform_bounds(ds.rio.crs, land.rio.crs, *ds.rio.bounds()))
+    return land.rio.clip_box(*bounds).squeeze().rio.reproject_match(ds)

@@ -33,10 +33,9 @@ class NirProcessor(LandsatProcessor):
         xr = super().process(xr).drop_duplicates(...)
         xr = filter_by_tides(xr, area.index[0], area)
 
-        # working_ds = mndwi(xr).to_dataset()
-        # working_ds["ndwi"] = ndwi(xr)
-        # working_ds["nir08"] = xr.sel(band="nir08")
-        working_ds = xr.sel(band="nir08").to_dataset(name="nir08")
+        working_ds = mndwi(xr).to_dataset()
+        working_ds["ndwi"] = ndwi(xr)
+        working_ds["nir08"] = xr.sel(band="nir08")
 
         # In case we filtered out all the data
         if not "time" in working_ds or len(working_ds.time) == 0:
@@ -55,13 +54,9 @@ class NirProcessor(LandsatProcessor):
 
 
 def main(datetime: str, version: str) -> None:
-    aoi_by_tile = (
-        gpd.read_file(
-            "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-        )
-        .set_index(["PATH", "ROW"], drop=False)
-        .query("PATH == 87 & ROW == 56")
-    )
+    aoi_by_tile = gpd.read_file(
+        "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
+    ).set_index(["PATH", "ROW"], drop=False)
 
     dataset_id = "water-indices"
     prefix = f"coastlines/{version}"
@@ -74,8 +69,8 @@ def main(datetime: str, version: str) -> None:
             fail_on_error=False,
             bands=["qa_pixel", "nir08", "green", "swir16"],
         ),
-        pystac_client_search_kwargs=dict(query=["landsat:collection_category=T1"]),
-        exclude_platforms=["landsat-7"],
+        # pystac_client_search_kwargs=dict(query=["landsat:collection_category=T1"]),
+        #        exclude_platforms=["landsat-7"],
     )
 
     processor = NirProcessor(
@@ -113,10 +108,9 @@ def main(datetime: str, version: str) -> None:
 
 
 if __name__ == "__main__":
-    single_years = list(range(2013, 2024))
+    single_years = list(range(1999, 2012))
     composite_years = [f"{y[0]}/{y[2]}" for y in sliding_window_view(single_years, 3)]
     all_years = single_years + composite_years
 
-    all_years = ["2013/2015", "2020", "2021", "2022", "2023"]
-    for year in all_years:
-        main(str(year), "12Sep2023")
+    # for year in composite_years:
+    main("2010/2012", "0-3-14")
