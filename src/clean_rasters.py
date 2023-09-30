@@ -131,7 +131,7 @@ class Cleaner(Processor):
             mask_temporal=True,
             mask_esa_water_land=False,
             remove_tiny_areas=True,
-            remove_inland_water=False,
+            remove_inland_water=True,
             remove_water_noise=True,
         )
 
@@ -196,7 +196,7 @@ def main(
     early_input_prefix = f"coastlines/{early_input_version}"
 
     output_dataset = f"{water_index}-clean"
-    output_version = "0-4-8"
+    output_version = "0-4-9"
     prefix = f"coastlines/{output_version}"
     start_year = 2000
     end_year = 2023

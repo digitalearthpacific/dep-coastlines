@@ -54,16 +54,18 @@ def contours_preprocess(
 
     nodata = combined_ds[water_index].isnull()
     analysis_mask = land_mask.where(~nodata, False)
+    analysis_mask = odc.algo.mask_cleanup(analysis_mask, mask_filters=[("dilation", 2)])
+
+    if mask_nir:
+        nir08_land = yearly_ds["nir08"] < -1280.0
+        nir08_land = odc.algo.mask_cleanup(nir08_land, mask_filters=[("dilation", 2)])
+        analysis_mask = analysis_mask & nir08_land
 
     if mask_esa_water_land:
         esa_water_land = load_esa_water_land(yearly_ds)
         esa_ocean = esa_water_land == 0
         close_to_coast = ~odc.algo.mask_cleanup(esa_ocean, [("erosion", 5)])
         analysis_mask = analysis_mask & close_to_coast
-
-    if mask_nir:
-        nir08_land = yearly_ds["nir08"] < -1280.0
-        analysis_mask = analysis_mask & nir08_land
 
     if mask_temporal:
         # Create a temporal mask by identifying land pixels with a direct
@@ -80,9 +82,6 @@ def contours_preprocess(
 
     gadm_land = load_gadm_land(yearly_ds)
     if remove_inland_water:
-        # Using mndwi land mask here as that is the ultimate judge of water,
-        # and the combined land mask may say areas are connected to the Ocean
-        # that mndwi does not
         gadm_ocean = ~gadm_land
         inland_water = find_inland_areas(~land_mask, gadm_ocean)
         analysis_mask = analysis_mask & ~inland_water
@@ -93,6 +92,10 @@ def contours_preprocess(
         analysis_mask = analysis_mask & ~small_areas(land_mask)
 
     if remove_water_noise:
+        # Identify and remove water noise. Basically areas which mndwi says are land
+        # which nir08 thinks are probably not, and esa says are not too
+        # usual cutoff is -1280, I relax a bit to soften the impact on true coastal
+        # areas.
         esa_water_land = load_esa_water_land(yearly_ds)
         esa_ocean = esa_water_land == 0
         water_noise = (combined_ds.mndwi < 0) & (combined_ds.nir08 > -800) & (esa_ocean)
@@ -103,15 +106,9 @@ def contours_preprocess(
         # combined_ds = combined_ds.where(~water_noise, thats_water)
         analysis_mask = analysis_mask & ~water_noise
 
-    # Identify and remove water noise. Basically areas which mndwi says are land
-    # which nir08 thinks are probably not, and esa says are not too
-    # usual cutoff is -1280, I relax a bit to soften the impact on true coastal
-    # areas.
-
     inland = odc.algo.mask_cleanup(gadm_land, mask_filters=[("erosion", 5)])
     deep_ocean = odc.algo.mask_cleanup(~gadm_land, mask_filters=[("erosion", 10)])
 
-    analysis_mask = odc.algo.mask_cleanup(analysis_mask, mask_filters=[("dilation", 2)])
     analysis_mask = analysis_mask & ~inland & ~deep_ocean
 
     return combined_ds[water_index].where(analysis_mask)
@@ -119,13 +116,13 @@ def contours_preprocess(
 
 def find_inland_areas(water_bool_da, ocean_bool_da) -> DataArray:
     def _find_inland_2d(bool_da_2d: DataArray) -> DataArray:
-        zones = xr.full_like(bool_da_2d, 0, dtype="int16")
-        zones.values = label(bool_da_2d.astype("int8"), background=1)
+        water_zones = xr.full_like(bool_da_2d, 0, dtype="int16")
+        water_zones.values = label(bool_da_2d.astype("int8"), background=0)
         location_by_zone = xs.zonal_stats(
-            zones, ocean_bool_da.astype("int8").compute(), stats_funcs=["max"]
+            water_zones, ocean_bool_da.astype("int8").compute(), stats_funcs=["max"]
         )
         inland_zones = location_by_zone["zone"][location_by_zone["max"] == 0]
-        return zones.isin(inland_zones)
+        return water_zones.isin(inland_zones)
 
     # Can't do this in chunks because the labels would be repeated across chunks.
     # but could parallelize across years I think
