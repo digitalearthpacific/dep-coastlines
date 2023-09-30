@@ -29,11 +29,11 @@ from xarray import DataArray, Dataset
 def contours_preprocess(
     yearly_ds: Dataset,
     gapfill_ds: Dataset,
-    water_index: str = "nir08",
+    water_index: str = "mndwi",
     index_threshold: float = 0,
-    masking_index: str = "nir08",
     mask_temporal: bool = True,
     mask_esa_water_land: bool = True,
+    mask_nir: bool = True,
     remove_tiny_areas: bool = True,
     remove_inland_water: bool = True,
 ) -> Union[Dataset, DataArray]:
@@ -46,42 +46,34 @@ def contours_preprocess(
 
     # Identify and remove water noise. Basically areas which mndwi says are land
     # which nir08 thinks are probably not, and esa says are not too
-    esa_water_land = load_esa_water_land(yearly_ds)
-    esa_ocean = esa_water_land == 0
     # usual cutoff is -1280, I relax a bit to soften the impact on true coastal
     # areas.
-    water_noise = (combined_ds.mndwi < 0) & (combined_ds.nir08 > -800) & (esa_ocean)
+    # water_noise = (combined_ds.mndwi < 0) & (combined_ds.nir08 > -800) & (esa_ocean)
     # The choice to be made is whether to simply mask out the water areas, or
     # recode. The recoding is not the best, and we should probably mask out when
     # we are certain we are only getting noise. Otherwise we remove some usable areas.
-    thats_water = 100
-    combined_ds = combined_ds.where(~water_noise, thats_water)
+    # thats_water = 100
+    # combined_ds = combined_ds.where(~water_noise, thats_water)
 
     # Apply water index threshold and re-apply nodata values
     # Here we use both the thresholded nir08 and mndwi to define land. They must
     # both agree. This helps to remove both water noise from mndwi and surf
     # (and other) artifacts from nir08. (I'll also add, in general, nir08 is more
     # dependable at identifying land than mndwi.)
-    land_mask = combined_ds[masking_index] < index_threshold
-    mndwi_land_mask = combined_ds["mndwi"] < 0.0
-    land_mask = land_mask & mndwi_land_mask
+    land_mask = combined_ds[water_index] < index_threshold
 
-    nodata = combined_ds[masking_index].isnull()
+    nodata = combined_ds[water_index].isnull()
     analysis_mask = land_mask.where(~nodata, False)
-    analysis_mask = odc.algo.mask_cleanup(analysis_mask, [("dilation", 3)])
 
-    # The threshold here should checked out a bit more. It varies for Australia
-    # and Africa, and for the shortertime period we are starting with (i.e.
-    # 2013-2023) a stray year could me amplified if other years are missing
-    # all_time_land = land_mask.mean(dim="year") > (1 / 4.0)
-    # land_mask = land_mask.where(all_time_land, 0)
-    if remove_inland_water:
-        # Using mndwi land mask here as that is the ultimate judge of water,
-        # and the combined land mask may say areas are connected to the Ocean
-        # that mndwi does not
-        gadm_ocean = ~load_gadm_land(yearly_ds)
-        inland_water = find_inland_areas(~mndwi_land_mask, gadm_ocean)
-        analysis_mask = analysis_mask & ~inland_water
+    if mask_esa_water_land:
+        esa_water_land = load_esa_water_land(yearly_ds)
+        esa_ocean = esa_water_land == 0
+        close_to_coast = ~odc.algo.mask_cleanup(esa_ocean, [("erosion", 5)])
+        analysis_mask = analysis_mask & close_to_coast
+
+    if mask_nir:
+        nir08_land = yearly_ds["nir08"] < -1280.0
+        analysis_mask = analysis_mask & nir08_land
 
     if mask_temporal:
         # Create a temporal mask by identifying land pixels with a direct
@@ -96,14 +88,25 @@ def contours_preprocess(
 
         analysis_mask = analysis_mask & temporal_masking(analysis_mask)
 
-    if mask_esa_water_land:
-        close_to_coast = ~odc.algo.mask_cleanup(esa_ocean, [("erosion", 5)])
-        analysis_mask = analysis_mask & close_to_coast
+    gadm_land = load_gadm_land(yearly_ds)
+    if remove_inland_water:
+        # Using mndwi land mask here as that is the ultimate judge of water,
+        # and the combined land mask may say areas are connected to the Ocean
+        # that mndwi does not
+        gadm_ocean = ~gadm_land
+        inland_water = find_inland_areas(~land_mask, gadm_ocean)
+        analysis_mask = analysis_mask & ~inland_water
 
     if remove_tiny_areas:
         # This was created mainly for surf artifacts in nir08, and may not be
         # needed if using e.g. mndwi
         analysis_mask = analysis_mask & ~small_areas(land_mask)
+
+    inland = odc.algo.mask_cleanup(gadm_land, mask_filters=[("erosion", 10)])
+    deep_ocean = odc.algo.mask_cleanup(~gadm_land, mask_filters=[("erosion", 10)])
+
+    analysis_mask = odc.algo.mask_cleanup(analysis_mask, mask_filters=[("dilation", 2)])
+    analysis_mask = analysis_mask & ~inland & ~deep_ocean
 
     return combined_ds[water_index].where(analysis_mask)
 
@@ -181,6 +184,6 @@ def load_gadm_land(ds: Dataset) -> DataArray:
     # This is a rasterized version of gadm. It seems better than any ESA product
     # at defining land (see for instance Vanuatu).
     input_path = "https://deppcpublicstorage.blob.core.windows.net/output/aoi/aoi.tif"
-    land = rx.open_rasterio(input_path, chunks=True).rio.write_crs(8859).astype("bool")
+    land = rx.open_rasterio(input_path, chunks=True).rio.write_crs(8859)
     bounds = list(transform_bounds(ds.rio.crs, land.rio.crs, *ds.rio.bounds()))
-    return land.rio.clip_box(*bounds).squeeze().rio.reproject_match(ds)
+    return land.rio.clip_box(*bounds).squeeze().rio.reproject_match(ds).astype(bool)

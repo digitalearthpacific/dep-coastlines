@@ -29,7 +29,7 @@ from dep_tools.utils import (
 )
 from dep_tools.writers import Writer
 
-from raster_cleaning_og import contours_preprocess
+from raster_cleaning import contours_preprocess
 from utils import load_blobs
 
 
@@ -127,11 +127,11 @@ class Cleaner(Processor):
             composite_ds,
             water_index=self.water_index,
             index_threshold=self.masking_threshold,
-            masking_index=self.masking_index,
-            mask_temporal=False,
-            mask_esa_water_land=True,
-            remove_tiny_areas=False,
-            #            remove_inland_water=True,
+            mask_nir=True,
+            mask_temporal=True,
+            mask_esa_water_land=False,
+            remove_tiny_areas=True,
+            remove_inland_water=False,
         )
 
         # We need to make it a string here or
@@ -185,8 +185,9 @@ def main(
     aoi = (
         gpd.read_file(
             "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-        ).set_index(["PATH", "ROW"], drop=False)
-        #        .query("PATH == 69 & ROW == 69")
+        )
+        .set_index(["PATH", "ROW"], drop=False)
+        .query("PATH == 70 & ROW == 75")
     )
 
     input_dataset = "water-indices"
@@ -197,7 +198,7 @@ def main(
     early_input_prefix = f"coastlines/{early_input_version}"
 
     output_dataset = f"{water_index}-clean"
-    output_version = "0-3-16"
+    output_version = "0-4-8"
     prefix = f"coastlines/{output_version}"
     start_year = 2000
     end_year = 2023
