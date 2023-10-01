@@ -128,7 +128,7 @@ class Cleaner(Processor):
             water_index=self.water_index,
             index_threshold=self.masking_threshold,
             mask_nir=True,
-            mask_temporal=True,
+            mask_temporal=False,
             mask_esa_water_land=False,
             remove_tiny_areas=False,
             remove_inland_water=False,
@@ -177,19 +177,14 @@ class CleanedWriter(Writer):
             )
 
 
-def main(
-    water_index="nir08",
-    threshold=-1280.0,
-    masking_index="nir08",
-    masking_threshold=-1280.0,
-) -> None:
-    aoi = (
-        gpd.read_file(
-            "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-        )
-        .set_index(["PATH", "ROW"], drop=False)
-        .query("PATH == 74 & ROW == 73")
-    )
+def main(water_index="mndwi", threshold=0) -> None:
+    aoi = gpd.read_file(
+        "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
+    ).set_index(["PATH", "ROW"], drop=False)
+
+    test_scenes = [(75, 73), (74, 73), (82, 71), (70, 75), (87, 56), (87, 66), (75, 66)]
+
+    aoi = aoi.loc[test_scenes]
 
     input_dataset = "water-indices"
     input_version = "4Sep2023"
@@ -210,8 +205,6 @@ def main(
     processor = Cleaner(
         water_index=water_index,
         index_threshold=threshold,
-        masking_index=masking_index,
-        masking_threshold=masking_threshold,
     )
     writer = CleanedWriter(output_dataset, prefix, overwrite=True)
     logger = CsvLogger(
@@ -239,6 +232,4 @@ if __name__ == "__main__":
     main(
         water_index="mndwi",
         threshold=0,
-        masking_index="nir08",
-        masking_threshold=-1280.0,
     )

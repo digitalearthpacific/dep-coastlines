@@ -39,26 +39,26 @@ def contours_preprocess(
     remove_water_noise: bool = True,
 ) -> Union[Dataset, DataArray]:
     # Remove low obs pixels and replace with 3-year gapfill
-    combined_ds = yearly_ds.where(yearly_ds["count"] > 5, gapfill_ds)
+    yearly_ds = yearly_ds.where(yearly_ds["count"] > 5, gapfill_ds)
 
     # Set any pixels with only one observation to NaN, as these
     # are extremely vulnerable to noise
-    combined_ds = combined_ds.where(combined_ds["count"] > 1)
+    yearly_ds = yearly_ds.where(yearly_ds["count"] > 1)
 
     # Apply water index threshold and re-apply nodata values
     # Here we use both the thresholded nir08 and mndwi to define land. They must
     # both agree. This helps to remove both water noise from mndwi and surf
     # (and other) artifacts from nir08. (I'll also add, in general, nir08 is more
     # dependable at identifying land than mndwi.)
-    land_mask = combined_ds[water_index] < index_threshold
-    nir08_land = yearly_ds["nir08"] < -1280.0
-    analysis_mask = land_mask & nir08_land
+    land_mask = yearly_ds[water_index] < index_threshold
 
-    nodata = combined_ds[water_index].isnull()
+    if mask_nir:
+        nir08_land = yearly_ds["nir08"] < -1280.0
+        land_mask = land_mask & nir08_land
+
+    nodata = yearly_ds[water_index].isnull()
     analysis_mask = land_mask.where(~nodata, False)
     analysis_mask = odc.algo.mask_cleanup(analysis_mask, mask_filters=[("dilation", 3)])
-
-    # if mask_nir:
 
     if mask_esa_water_land:
         esa_water_land = load_esa_water_land(yearly_ds)
@@ -97,12 +97,12 @@ def contours_preprocess(
         # areas.
         esa_water_land = load_esa_water_land(yearly_ds)
         esa_ocean = esa_water_land == 0
-        water_noise = (combined_ds.mndwi < 0) & (combined_ds.nir08 > -800) & (esa_ocean)
+        water_noise = (yearly_ds.mndwi < 0) & (yearly_ds.nir08 > -800) & (esa_ocean)
         # The choice to be made is whether to simply mask out the water areas, or
         # recode. The recoding is not the best, and we should probably mask out when
         # we are certain we are only getting noise. Otherwise we remove some usable areas.
         # thats_water = 100
-        # combined_ds = combined_ds.where(~water_noise, thats_water)
+        # yearly_ds = yearly_ds.where(~water_noise, thats_water)
         analysis_mask = analysis_mask & ~water_noise
 
     # inland = odc.algo.mask_cleanup(gadm_land, mask_filters=[("erosion", 5)])
@@ -110,7 +110,7 @@ def contours_preprocess(
 
     # analysis_mask = analysis_mask & ~inland & ~deep_ocean
 
-    return combined_ds[water_index].where(analysis_mask)
+    return yearly_ds[water_index].where(analysis_mask)
 
 
 def find_inland_areas(water_bool_da, ocean_bool_da) -> DataArray:
