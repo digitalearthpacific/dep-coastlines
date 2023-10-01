@@ -128,12 +128,12 @@ class Cleaner(Processor):
             water_index=self.water_index,
             index_threshold=self.masking_threshold,
             mask_nir=True,
-            mask_ephemeral_land=False,
-            mask_ephemeral_water=False,
+            mask_ephemeral_land=True,
+            mask_ephemeral_water=True,
             mask_esa_water_land=False,
             remove_tiny_areas=False,
-            remove_inland_water=False,
-            remove_water_noise=False,
+            remove_inland_water=True,
+            remove_water_noise=True,
         )
 
         # We need to make it a string here or
@@ -195,7 +195,7 @@ def main(water_index="mndwi", threshold=0) -> None:
     early_input_prefix = f"coastlines/{early_input_version}"
 
     output_dataset = f"{water_index}-clean"
-    output_version = "0-4-10"
+    output_version = "0-4-11"
     prefix = f"coastlines/{output_version}"
     start_year = 2000
     end_year = 2023
