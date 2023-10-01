@@ -128,7 +128,8 @@ class Cleaner(Processor):
             water_index=self.water_index,
             index_threshold=self.masking_threshold,
             mask_nir=True,
-            mask_temporal=False,
+            mask_ephemeral_land=False,
+            mask_ephemeral_water=False,
             mask_esa_water_land=False,
             remove_tiny_areas=False,
             remove_inland_water=False,
@@ -141,7 +142,7 @@ class Cleaner(Processor):
         combined_ds["year"] = combined_ds.year.astype(str)
 
         combined_gdf = subpixel_contours(
-            combined_ds, dim="year", z_values=[self.index_threshold], min_vertices=2
+            combined_ds, dim="year", z_values=[self.index_threshold], min_vertices=3
         )
         combined_gdf.year = combined_gdf.year.astype(int)
 
@@ -182,9 +183,9 @@ def main(water_index="mndwi", threshold=0) -> None:
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
     ).set_index(["PATH", "ROW"], drop=False)
 
-    test_scenes = [(75, 73), (74, 73), (82, 71), (70, 75), (87, 56), (87, 66), (75, 66)]
+    test_scenes = [(74, 73), (70, 75), (75, 73), (82, 71), (87, 56), (87, 66), (75, 66)]
 
-    aoi = aoi.loc[test_scenes]
+    # aoi = aoi.loc[test_scenes]
 
     input_dataset = "water-indices"
     input_version = "4Sep2023"

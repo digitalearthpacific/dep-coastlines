@@ -31,7 +31,8 @@ def contours_preprocess(
     gapfill_ds: Dataset,
     water_index: str = "mndwi",
     index_threshold: float = 0,
-    mask_temporal: bool = True,
+    mask_ephemeral_land: bool = True,
+    mask_ephemeral_water: bool = True,
     mask_esa_water_land: bool = True,
     mask_nir: bool = True,
     remove_tiny_areas: bool = True,
@@ -66,7 +67,7 @@ def contours_preprocess(
         close_to_coast = ~odc.algo.mask_cleanup(esa_ocean, [("erosion", 5)])
         analysis_mask = analysis_mask & close_to_coast
 
-    if mask_temporal:
+    if mask_ephemeral_land:
         # Create a temporal mask by identifying land pixels with a direct
         # spatial connection (e.g. contiguous) to land pixels in either the
         # previous or subsequent timestep.
@@ -79,6 +80,9 @@ def contours_preprocess(
 
         analysis_mask = analysis_mask & temporal_masking(analysis_mask)
 
+    if mask_ephemeral_water:
+        analysis_mask = analysis_mask & ~temporal_masking(~analysis_mask)
+
     gadm_land = load_gadm_land(yearly_ds)
     if remove_inland_water:
         gadm_ocean = ~gadm_land
@@ -86,9 +90,7 @@ def contours_preprocess(
         analysis_mask = analysis_mask & ~inland_water
 
     if remove_tiny_areas:
-        # This was created mainly for surf artifacts in nir08, and may not be
-        # needed if using e.g. mndwi
-        analysis_mask = analysis_mask & ~small_areas(land_mask)
+        analysis_mask = analysis_mask & ~small_areas(analysis_mask)
 
     if remove_water_noise:
         # Identify and remove water noise. Basically areas which mndwi says are land
@@ -105,10 +107,15 @@ def contours_preprocess(
         # yearly_ds = yearly_ds.where(~water_noise, thats_water)
         analysis_mask = analysis_mask & ~water_noise
 
-    # inland = odc.algo.mask_cleanup(gadm_land, mask_filters=[("erosion", 5)])
-    # deep_ocean = odc.algo.mask_cleanup(~gadm_land, mask_filters=[("erosion", 10)])
+    all_time_land = analysis_mask.mean(dim="year") >= 0.15
+    gadm_land = load_gadm_land(yearly_ds)
+    gadm_core_land = odc.algo.mask_cleanup(gadm_land, mask_filters=[("erosion", 10)])
+    all_time_land = all_time_land | gadm_core_land
 
-    # analysis_mask = analysis_mask & ~inland & ~deep_ocean
+    inland = odc.algo.mask_cleanup(all_time_land, mask_filters=[("erosion", 15)])
+    deep_ocean = odc.algo.mask_cleanup(~all_time_land, mask_filters=[("erosion", 15)])
+
+    analysis_mask = analysis_mask & ~inland & ~deep_ocean
 
     return yearly_ds[water_index].where(analysis_mask)
 
