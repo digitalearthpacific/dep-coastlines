@@ -51,15 +51,14 @@ def contours_preprocess(
     # (and other) artifacts from nir08. (I'll also add, in general, nir08 is more
     # dependable at identifying land than mndwi.)
     land_mask = combined_ds[water_index] < index_threshold
+    nir08_land = yearly_ds["nir08"] < -1280.0
+    analysis_mask = land_mask & nir08_land
 
     nodata = combined_ds[water_index].isnull()
     analysis_mask = land_mask.where(~nodata, False)
-    analysis_mask = odc.algo.mask_cleanup(analysis_mask, mask_filters=[("dilation", 2)])
+    analysis_mask = odc.algo.mask_cleanup(analysis_mask, mask_filters=[("dilation", 3)])
 
-    if mask_nir:
-        nir08_land = yearly_ds["nir08"] < -1280.0
-        nir08_land = odc.algo.mask_cleanup(nir08_land, mask_filters=[("dilation", 2)])
-        analysis_mask = analysis_mask & nir08_land
+    # if mask_nir:
 
     if mask_esa_water_land:
         esa_water_land = load_esa_water_land(yearly_ds)
@@ -106,10 +105,10 @@ def contours_preprocess(
         # combined_ds = combined_ds.where(~water_noise, thats_water)
         analysis_mask = analysis_mask & ~water_noise
 
-    inland = odc.algo.mask_cleanup(gadm_land, mask_filters=[("erosion", 5)])
-    deep_ocean = odc.algo.mask_cleanup(~gadm_land, mask_filters=[("erosion", 10)])
+    # inland = odc.algo.mask_cleanup(gadm_land, mask_filters=[("erosion", 5)])
+    # deep_ocean = odc.algo.mask_cleanup(~gadm_land, mask_filters=[("erosion", 10)])
 
-    analysis_mask = analysis_mask & ~inland & ~deep_ocean
+    # analysis_mask = analysis_mask & ~inland & ~deep_ocean
 
     return combined_ds[water_index].where(analysis_mask)
 
