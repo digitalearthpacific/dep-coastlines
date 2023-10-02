@@ -13,7 +13,7 @@ additions to the workflow which are study area specific to the Pacific.
 
 from typing import Union
 
-import flox.xarray  # <- not positive this is in the planetary computer image
+# import flox.xarray  # <- not positive this is in the planetary computer image
 import odc.algo
 from retry import retry
 from rasterio.errors import RasterioIOError
@@ -53,8 +53,13 @@ def contours_preprocess(
     # dependable at identifying land than mndwi.)
     land_mask = yearly_ds[water_index] < index_threshold
 
+    gadm_land = load_gadm_land(yearly_ds)
+    gadm_core_land = odc.algo.mask_cleanup(gadm_land, mask_filters=[("erosion", 15)])
+    full_land_mask = land_mask | gadm_core_land
+
     if mask_nir:
-        nir08_land = yearly_ds["nir08"] < -1280.0
+        nir08_threshold = -1280.0
+        nir08_land = yearly_ds["nir08"] < nir08_threshold
         land_mask = land_mask & nir08_land
 
     nodata = yearly_ds[water_index].isnull()
@@ -68,20 +73,12 @@ def contours_preprocess(
         analysis_mask = analysis_mask & close_to_coast
 
     if mask_ephemeral_land:
-        # Create a temporal mask by identifying land pixels with a direct
-        # spatial connection (e.g. contiguous) to land pixels in either the
-        # previous or subsequent timestep.
-
-        # This is used to clean up noisy land pixels (e.g. caused by clouds,
-        # white water, sensor issues), as these pixels typically occur
-        # randomly with no relationship to the distribution of land in
-        # neighbouring timesteps. True land, however, is likely to appear
-        # in proximity to land before or after the specific timestep.
-
-        analysis_mask = analysis_mask & temporal_masking(analysis_mask)
+        ephemeral_land = ephemeral_areas(full_land_mask)
+        analysis_mask = analysis_mask & ~ephemeral_land
 
     if mask_ephemeral_water:
-        analysis_mask = analysis_mask & ~temporal_masking(~analysis_mask)
+        ephemeral_water = ephemeral_areas(~full_land_mask)
+        analysis_mask = analysis_mask & ~ephemeral_water
 
     gadm_land = load_gadm_land(yearly_ds)
     if remove_inland_water:
@@ -108,8 +105,6 @@ def contours_preprocess(
         analysis_mask = analysis_mask & ~water_noise
 
     all_time_land = analysis_mask.mean(dim="year") >= 0.15
-    gadm_land = load_gadm_land(yearly_ds)
-    gadm_core_land = odc.algo.mask_cleanup(gadm_land, mask_filters=[("erosion", 10)])
     all_time_land = all_time_land | gadm_core_land
 
     inland = odc.algo.mask_cleanup(all_time_land, mask_filters=[("erosion", 15)])
@@ -149,27 +144,45 @@ def small_areas(bool_da: DataArray, min_size_in_pixels: int = 55) -> DataArray:
     return bool_da.groupby("year").apply(_remove_2d)
 
 
-def temporal_masking(ds: DataArray) -> DataArray:
+def ephemeral_areas(bool_da: DataArray) -> DataArray:
     """Dask-enabled version of coastlines.vector.temporal_masking from
-    the deafrica-coastlines (and dea-coastlines) work."""
+    the deafrica-coastlines (and dea-coastlines) work. I renamed it so it
+    was clear what the return was.
+    """
 
-    zones = xr.apply_ufunc(label, ds, None, 0, dask="parallelized")
+    # Create a temporal mask by identifying true pixels with a direct
+    # spatial connection (e.g. contiguous) to true pixels in either the
+    # previous or subsequent timestep.
 
-    neighbours = (
-        ds.shift(year=-1, fill_value=False) | ds.shift(year=1, fill_value=False)
-    ).astype("int8")
+    # This is used to clean up noisy land pixels (e.g. caused by clouds,
+    # white water, sensor issues), as these pixels typically occur
+    # randomly with no relationship to the distribution of land in
+    # neighbouring timesteps. True land, however, is likely to appear
+    # in proximity to land before or after the specific timestep.
 
-    # deafrica code does the following steps in a different way. I chose this
-    # because it is less memory intensive and seems to work (betterish at least)
-    # with dask.
+    def _temporal_masking_2d(da_year):
+        zones = xr.apply_ufunc(label, da_year, None, 0, dask="parallelized")
 
-    # I got out of memory errors with this
-    # zone_maxes = stats(zones, neighbours, stats_funcs=["max"])
+        # neighbours is 1 if the pixel was True in the prior or next year
+        neighbours = (
+            (
+                bool_da.shift(year=-1, fill_value=False)
+                | bool_da.shift(year=1, fill_value=False)
+            )
+            .sel(year=da_year.year)
+            .astype("int8")
+        )
 
-    # xarray docs say that flox is used by default if it is loaded, I did
-    # not find that to be the case. If it did work you could just do
-    # zone_maxes = neighbours.groupby(zones).max()
-    return flox.xarray.xarray_reduce(neighbours, by=zones, func="max") == 1
+        # a zone with any pixel which was True in the year before after will
+        # have value = 1
+        location_by_zone = xs.zonal_stats(
+            zones, neighbours.astype("int8"), stats_funcs=["max"]
+        )
+
+        stable_zones = location_by_zone["zone"][location_by_zone["max"] == 1]
+        return zones.isin(stable_zones)
+
+    return ~bool_da.groupby("year").apply(_temporal_masking_2d)
 
 
 def load_esa_water_land(ds: Dataset) -> DataArray:

@@ -183,7 +183,16 @@ def main(water_index="mndwi", threshold=0) -> None:
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
     ).set_index(["PATH", "ROW"], drop=False)
 
-    test_scenes = [(74, 73), (70, 75), (75, 73), (82, 71), (87, 56), (87, 66), (75, 66)]
+    test_scenes = [
+        (81, 71),
+        (74, 73),
+        (70, 75),
+        (75, 73),
+        (82, 71),
+        (87, 56),
+        (87, 66),
+        (75, 66),
+    ]
 
     # aoi = aoi.loc[test_scenes]
 
@@ -192,10 +201,11 @@ def main(water_index="mndwi", threshold=0) -> None:
     input_prefix = f"coastlines/{input_version}"
 
     early_input_version = "0-3-14"
+    early_input_version = input_version
     early_input_prefix = f"coastlines/{early_input_version}"
 
     output_dataset = f"{water_index}-clean"
-    output_version = "0-4-11"
+    output_version = "test-5"
     prefix = f"coastlines/{output_version}"
     start_year = 2000
     end_year = 2023
