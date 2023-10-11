@@ -206,7 +206,7 @@ def main(water_index, **kwargs) -> None:
     early_input_prefix = f"coastlines/{early_input_version}"
 
     output_dataset = f"{water_index}-clean"
-    output_version = "0-4-14"
+    output_version = "0-4-15"
     prefix = f"coastlines/{output_version}"
     start_year = 2000
     end_year = 2023
@@ -241,6 +241,6 @@ if __name__ == "__main__":
     main(
         water_index="nir08",
         index_threshold=-1280.0,
-        masking_index="nir08",
-        masking_threshold=-1280.0,
+        masking_index="mndwi",
+        masking_threshold=0,
     )
