@@ -16,7 +16,7 @@ import geopandas as gpd
 from numpy import mean
 from rasterio.errors import RasterioIOError
 from retry import retry
-from xarray import Dataset
+from xarray import Dataset, concat
 
 from azure_logger import CsvLogger, get_log_path
 from dep_tools.exceptions import EmptyCollectionError
@@ -43,32 +43,63 @@ def _set_year_to_middle_year(xr: Dataset) -> Dataset:
 
 
 class CompositeLoader(Loader):
-    def __init__(self, prefix, start_year, end_year, **kwargs):
+    def __init__(
+        self,
+        prefix,
+        early_prefix,
+        start_year,
+        end_year,
+        dataset,
+        early_dataset,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.prefix = prefix
+        self.early_prefix = early_prefix
         self.start_year = start_year
         self.end_year = end_year
+        self.dataset = dataset
+        self.early_dataset = early_dataset
 
     def load(self, area) -> Tuple[Dataset, Dataset]:
+        late_range = range(2013, self.end_year)
         yearly_ds = load_blobs(
-            "nir08",
+            self.dataset,
             area.index[0],
             self.prefix,
-            range(self.start_year, self.end_year),
+            late_range,
             chunks=True,
         )
 
+        composite_years = [f"{year-1}_{year+1}" for year in late_range]
+        composite_ds = load_blobs(
+            self.dataset, area.index[0], self.prefix, composite_years, chunks=True
+        )
+
+        early_range = range(self.start_year, 2013)
+
+        if len(early_range) > 0:
+            early_yearly_ds = load_blobs(
+                self.early_dataset,
+                area.index[0],
+                self.early_prefix,
+                early_range,
+                chunks=True,
+            )
+            yearly_ds = concat([early_yearly_ds, yearly_ds], dim="year")
+
+            early_composite_years = [f"{year-1}_{year+1}" for year in early_range]
+            early_composite_ds = load_blobs(
+                self.early_dataset,
+                area.index[0],
+                self.early_prefix,
+                early_composite_years,
+                chunks=True,
+            )
+            composite_ds = concat([early_composite_ds, composite_ds], dim="year")
+
         if yearly_ds is None:
             raise EmptyCollectionError()
-
-        yearly_ds = yearly_ds[["nir08", "count"]]
-
-        composite_years = [
-            f"{year-1}_{year+1}" for year in range(self.start_year, self.end_year)
-        ]
-        composite_ds = load_blobs(
-            "nir08", area.index[0], self.prefix, composite_years, chunks=True
-        )[["nir08", "count"]]
 
         composite_ds = _set_year_to_middle_year(composite_ds)
 
@@ -151,19 +182,44 @@ def main() -> None:
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
     ).set_index(["PATH", "ROW"], drop=False)
 
+    test_scenes = [
+        (81, 71),
+        (74, 73),
+        (70, 75),
+        (75, 73),
+        (82, 71),
+        (87, 56),
+        (87, 66),
+        (75, 66),
+        (82, 55),
+    ]
+
+    # aoi = aoi.loc[test_scenes]
+
     dataset_id = "nir08-clean"
 
     input_version = "3Aug2023"
     input_prefix = f"coastlines/{input_version}"
 
-    output_version = "10Aug2023"
+    early_input_version = "0-3-14"
+    early_dataset = "water-indices"
+    early_input_prefix = f"coastlines/{early_input_version}"
+
+    output_version = "11Aug2023-2"
     prefix = f"coastlines/{output_version}"
-    start_year = 2014
+    start_year = 2000
     end_year = 2023
 
     index_threshold = -1280.0
 
-    loader = CompositeLoader(input_prefix, start_year, end_year)
+    loader = CompositeLoader(
+        prefix=input_prefix,
+        early_prefix=early_input_prefix,
+        start_year=start_year,
+        end_year=end_year,
+        dataset="nir08",
+        early_dataset=early_dataset,
+    )
     processor = Cleaner(index_threshold=index_threshold)
     writer = CleanedWriter(dataset_id, prefix, overwrite=False)
     logger = CsvLogger(
