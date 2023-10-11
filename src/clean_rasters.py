@@ -131,10 +131,10 @@ class Cleaner(Processor):
             mask_nir=True,
             mask_ephemeral_land=True,
             mask_ephemeral_water=True,
-            mask_esa_water_land=False,
+            mask_esa_water_land=True,
             remove_tiny_areas=True,
             remove_inland_water=True,
-            remove_water_noise=False,
+            remove_water_noise=True,
         )
 
         # We need to make it a string here or
