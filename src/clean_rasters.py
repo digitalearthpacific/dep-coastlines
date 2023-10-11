@@ -240,7 +240,7 @@ def main(water_index, **kwargs) -> None:
 if __name__ == "__main__":
     main(
         water_index="nir08",
-        threshold=-1280.0,
+        index_threshold=-1280.0,
         masking_index="nir08",
         masking_threshold=-1280.0,
     )
