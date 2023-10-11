@@ -131,10 +131,10 @@ class Cleaner(Processor):
             mask_nir=True,
             mask_ephemeral_land=True,
             mask_ephemeral_water=True,
-            mask_esa_water_land=True,
+            mask_esa_water_land=False,
             remove_tiny_areas=True,
             remove_inland_water=True,
-            remove_water_noise=True,
+            remove_water_noise=False,
         )
 
         # We need to make it a string here or
@@ -206,7 +206,7 @@ def main(water_index, **kwargs) -> None:
     early_input_prefix = f"coastlines/{early_input_version}"
 
     output_dataset = f"{water_index}-clean"
-    output_version = "0-4-16"
+    output_version = "0-4-18"
     prefix = f"coastlines/{output_version}"
     start_year = 2000
     end_year = 2023
