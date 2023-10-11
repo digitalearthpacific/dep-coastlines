@@ -143,7 +143,7 @@ class Cleaner(Processor):
         combined_ds["year"] = combined_ds.year.astype(str)
 
         combined_gdf = subpixel_contours(
-            combined_ds, dim="year", z_values=[self.index_threshold], min_vertices=3
+            combined_ds, dim="year", z_values=[self.index_threshold], min_vertices=
         )
         combined_gdf.year = combined_gdf.year.astype(int)
 
@@ -198,7 +198,7 @@ def main(water_index, **kwargs) -> None:
     # aoi = aoi.loc[test_scenes]
 
     input_dataset = "water-indices"
-    input_version = "4Sep2023"
+    input_version = "3Aug2023"
     input_prefix = f"coastlines/{input_version}"
 
     early_input_version = "0-3-14"
@@ -206,7 +206,7 @@ def main(water_index, **kwargs) -> None:
     early_input_prefix = f"coastlines/{early_input_version}"
 
     output_dataset = f"{water_index}-clean"
-    output_version = "0-4-18"
+    output_version = "0-4-19"
     prefix = f"coastlines/{output_version}"
     start_year = 2000
     end_year = 2023
