@@ -30,7 +30,8 @@ def contours_preprocess(
     yearly_ds: Dataset,
     gapfill_ds: Dataset,
     water_index: str = "mndwi",
-    index_threshold: float = 0,
+    masking_index: str = "mndwi",
+    masking_threshold: float = 0,
     mask_ephemeral_land: bool = True,
     mask_ephemeral_water: bool = True,
     mask_esa_water_land: bool = True,
@@ -51,7 +52,7 @@ def contours_preprocess(
     # both agree. This helps to remove both water noise from mndwi and surf
     # (and other) artifacts from nir08. (I'll also add, in general, nir08 is more
     # dependable at identifying land than mndwi.)
-    land_mask = yearly_ds[water_index] < index_threshold
+    land_mask = yearly_ds[masking_index] < masking_threshold
 
     gadm_land = load_gadm_land(yearly_ds)
     gadm_core_land = odc.algo.mask_cleanup(gadm_land, mask_filters=[("erosion", 15)])

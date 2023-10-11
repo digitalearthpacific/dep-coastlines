@@ -102,9 +102,9 @@ class Cleaner(Processor):
     def __init__(
         self,
         water_index: str = "nir08",
-        masking_index: str = "nir08",
         index_threshold: float = -1280.0,
-        masking_threshold: float = -1280.0,
+        masking_index: str = "mndwi",
+        masking_threshold: float = 0,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -126,7 +126,8 @@ class Cleaner(Processor):
             yearly_ds,
             composite_ds,
             water_index=self.water_index,
-            index_threshold=self.masking_threshold,
+            masking_index=self.masking_index,
+            masking_threshold=self.masking_threshold,
             mask_nir=True,
             mask_ephemeral_land=False,
             mask_ephemeral_water=False,
@@ -178,7 +179,7 @@ class CleanedWriter(Writer):
             )
 
 
-def main(water_index="mndwi", threshold=0) -> None:
+def main(water_index, **kwargs) -> None:
     aoi = gpd.read_file(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
     ).set_index(["PATH", "ROW"], drop=False)
@@ -205,7 +206,7 @@ def main(water_index="mndwi", threshold=0) -> None:
     early_input_prefix = f"coastlines/{early_input_version}"
 
     output_dataset = f"{water_index}-clean"
-    output_version = "0-4-13"
+    output_version = "0-4-14"
     prefix = f"coastlines/{output_version}"
     start_year = 2000
     end_year = 2023
@@ -213,10 +214,7 @@ def main(water_index="mndwi", threshold=0) -> None:
     loader = CompositeLoader(
         input_prefix, early_input_prefix, start_year, end_year, input_dataset
     )
-    processor = Cleaner(
-        water_index=water_index,
-        index_threshold=threshold,
-    )
+    processor = Cleaner(water_index=water_index, **kwargs)
     writer = CleanedWriter(output_dataset, prefix, overwrite=True)
     logger = CsvLogger(
         name=output_dataset,
@@ -241,6 +239,8 @@ def main(water_index="mndwi", threshold=0) -> None:
 
 if __name__ == "__main__":
     main(
-        water_index="mndwi",
-        threshold=0,
+        water_index="nir08",
+        threshold=-1280.0,
+        masking_index="nir08",
+        masking_threshold=-1280.0,
     )
