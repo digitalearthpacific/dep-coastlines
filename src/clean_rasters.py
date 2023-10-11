@@ -129,11 +129,11 @@ class Cleaner(Processor):
             masking_index=self.masking_index,
             masking_threshold=self.masking_threshold,
             mask_nir=True,
-            mask_ephemeral_land=False,
-            mask_ephemeral_water=False,
+            mask_ephemeral_land=True,
+            mask_ephemeral_water=True,
             mask_esa_water_land=False,
-            remove_tiny_areas=False,
-            remove_inland_water=False,
+            remove_tiny_areas=True,
+            remove_inland_water=True,
             remove_water_noise=False,
         )
 
@@ -206,7 +206,7 @@ def main(water_index, **kwargs) -> None:
     early_input_prefix = f"coastlines/{early_input_version}"
 
     output_dataset = f"{water_index}-clean"
-    output_version = "0-4-15"
+    output_version = "0-4-16"
     prefix = f"coastlines/{output_version}"
     start_year = 2000
     end_year = 2023
