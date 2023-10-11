@@ -41,13 +41,23 @@ def _set_year_to_middle_year(xr: Dataset) -> Dataset:
 
 
 class CompositeLoader(Loader):
-    def __init__(self, prefix, early_prefix, start_year, end_year, dataset, **kwargs):
+    def __init__(
+        self,
+        prefix,
+        early_prefix,
+        start_year,
+        end_year,
+        dataset,
+        early_dataset,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.prefix = prefix
         self.early_prefix = early_prefix
         self.start_year = start_year
         self.end_year = end_year
         self.dataset = dataset
+        self.early_dataset = early_dataset
 
     def load(self, area) -> Tuple[Dataset, Dataset]:
         late_range = range(2013, self.end_year)
@@ -68,13 +78,17 @@ class CompositeLoader(Loader):
 
         if len(early_range) > 0:
             early_yearly_ds = load_blobs(
-                self.dataset, area.index[0], self.early_prefix, early_range, chunks=True
+                self.early_dataset,
+                area.index[0],
+                self.early_prefix,
+                early_range,
+                chunks=True,
             )
             yearly_ds = concat([early_yearly_ds, yearly_ds], dim="year")
 
             early_composite_years = [f"{year-1}_{year+1}" for year in early_range]
             early_composite_ds = load_blobs(
-                self.dataset,
+                self.early_dataset,
                 area.index[0],
                 self.early_prefix,
                 early_composite_years,
@@ -129,11 +143,11 @@ class Cleaner(Processor):
             masking_index=self.masking_index,
             masking_threshold=self.masking_threshold,
             mask_nir=True,
-            mask_ephemeral_land=True,
-            mask_ephemeral_water=True,
+            mask_ephemeral_land=False,
+            mask_ephemeral_water=False,
             mask_esa_water_land=False,
-            remove_tiny_areas=True,
-            remove_inland_water=True,
+            remove_tiny_areas=False,
+            remove_inland_water=False,
             remove_water_noise=False,
         )
 
@@ -143,7 +157,7 @@ class Cleaner(Processor):
         combined_ds["year"] = combined_ds.year.astype(str)
 
         combined_gdf = subpixel_contours(
-            combined_ds, dim="year", z_values=[self.index_threshold], min_vertices=
+            combined_ds, dim="year", z_values=[self.index_threshold], min_vertices=3
         )
         combined_gdf.year = combined_gdf.year.astype(int)
 
@@ -197,22 +211,27 @@ def main(water_index, **kwargs) -> None:
 
     # aoi = aoi.loc[test_scenes]
 
-    input_dataset = "water-indices"
+    input_dataset = "nir08"
     input_version = "3Aug2023"
     input_prefix = f"coastlines/{input_version}"
 
     early_input_version = "0-3-14"
-    early_input_version = input_version
+    early_dataset = "water-indices"
     early_input_prefix = f"coastlines/{early_input_version}"
 
     output_dataset = f"{water_index}-clean"
-    output_version = "0-4-19"
+    output_version = "0-4-20"
     prefix = f"coastlines/{output_version}"
     start_year = 2000
     end_year = 2023
 
     loader = CompositeLoader(
-        input_prefix, early_input_prefix, start_year, end_year, input_dataset
+        input_prefix,
+        early_input_prefix,
+        start_year,
+        end_year,
+        input_dataset,
+        early_dataset,
     )
     processor = Cleaner(water_index=water_index, **kwargs)
     writer = CleanedWriter(output_dataset, prefix, overwrite=True)
