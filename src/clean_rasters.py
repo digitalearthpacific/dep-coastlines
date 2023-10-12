@@ -143,9 +143,9 @@ class Cleaner(Processor):
             masking_index=self.masking_index,
             masking_threshold=self.masking_threshold,
             mask_nir=True,
-            mask_ephemeral_land=False,
+            mask_ephemeral_land=True,
             mask_ephemeral_water=False,
-            mask_esa_water_land=False,
+            mask_esa_water_land=True,
             remove_tiny_areas=False,
             remove_inland_water=False,
             remove_water_noise=False,
@@ -207,6 +207,7 @@ def main(water_index, **kwargs) -> None:
         (87, 56),
         (87, 66),
         (75, 66),
+        (82, 55),
     ]
 
     # aoi = aoi.loc[test_scenes]
@@ -220,7 +221,7 @@ def main(water_index, **kwargs) -> None:
     early_input_prefix = f"coastlines/{early_input_version}"
 
     output_dataset = f"{water_index}-clean"
-    output_version = "0-4-20"
+    output_version = "0-4-21"
     prefix = f"coastlines/{output_version}"
     start_year = 2000
     end_year = 2023
@@ -234,14 +235,14 @@ def main(water_index, **kwargs) -> None:
         early_dataset,
     )
     processor = Cleaner(water_index=water_index, **kwargs)
-    writer = CleanedWriter(output_dataset, prefix, overwrite=True)
+    writer = CleanedWriter(output_dataset, prefix, overwrite=False)
     logger = CsvLogger(
         name=output_dataset,
         container_client=get_container_client(),
         path=get_log_path(
             prefix, output_dataset, output_version, f"{start_year}_{end_year}"
         ),
-        overwrite=True,
+        overwrite=False,
         header="time|index|status|paths|comment\n",
     )
 
@@ -260,6 +261,6 @@ if __name__ == "__main__":
     main(
         water_index="nir08",
         index_threshold=-1280.0,
-        masking_index="mndwi",
-        masking_threshold=0,
+        masking_index="nir08",
+        masking_threshold=-1280.0,
     )
