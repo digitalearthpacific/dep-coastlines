@@ -12,6 +12,18 @@ from xarray import DataArray, Dataset, align, concat
 from dep_tools.utils import make_geocube_dask
 
 
+def tides_highres(da: DataArray, item_id, area=None) -> DataArray:
+    tides_lowres = load_tides(item_id)
+    da = da.sel(time=da.time[da.time.isin(tides_lowres.time)])
+
+    # Now filter out tide times that are not in the ds
+    tides_lowres = tides_lowres.sel(
+        time=tides_lowres.time[tides_lowres.time.isin(da.time)]
+    ).chunk(dict(x=1, y=1))
+
+    return tides_lowres.interp(x=da.x, y=da.y)
+
+
 @retry(tries=10, delay=3)
 def filter_by_tides(da: DataArray, item_id, area=None) -> DataArray:
     """Remove out of range tide values from a given dataset."""
@@ -30,8 +42,12 @@ def filter_by_tides(da: DataArray, item_id, area=None) -> DataArray:
     # Now filter out tide times that are not in the ds
     tides_lowres = tides_lowres.sel(
         time=tides_lowres.time[tides_lowres.time.isin(ds.time)]
-    )
+    ).chunk(dict(x=1, y=1))
 
+    sm = tides_lowres.interp(x=ds.x, y=ds.y)
+    breakpoint()
+    ds["tide_m"] = tides_lowres.interp(x=ds.x, y=ds.y)
+    return ds
     from rasterio.fill import fillnodata
 
     # memory spike from this

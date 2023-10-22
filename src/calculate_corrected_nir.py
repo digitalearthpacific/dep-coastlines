@@ -24,18 +24,20 @@ from dep_tools.loaders import LandsatOdcLoader
 from dep_tools.processors import LandsatProcessor
 from dep_tools.utils import get_container_client
 from dep_tools.writers import AzureXrWriter
-from tide_utils import filter_by_tides
+from tide_utils import filter_by_tides, tides_highres
 from water_indices import mndwi, ndwi
 
 
 class NirProcessor(LandsatProcessor):
     def process(self, xr: DataArray, area) -> Union[Dataset, None]:
         xr = super().process(xr).drop_duplicates(...)
-        xr = filter_by_tides(xr, area.index[0], area)
+        # xr = filter_by_tides(xr, area.index[0], area)
 
         working_ds = mndwi(xr).to_dataset()
         working_ds["ndwi"] = ndwi(xr)
         working_ds["nir08"] = xr.sel(band="nir08")
+        working_ds["tide_m"] = tides_highres(xr, area.index[0], area).astype("float32")
+        breakpoint()
 
         # In case we filtered out all the data
         if not "time" in working_ds or len(working_ds.time) == 0:
@@ -54,9 +56,13 @@ class NirProcessor(LandsatProcessor):
 
 
 def main(datetime: str, version: str) -> None:
-    aoi_by_tile = gpd.read_file(
-        "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-    ).set_index(["PATH", "ROW"], drop=False)
+    aoi_by_tile = (
+        gpd.read_file(
+            "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
+        )
+        .set_index(["PATH", "ROW"], drop=False)
+        .query("PATH == 74 & ROW == 72")
+    )
 
     dataset_id = "water-indices"
     prefix = f"coastlines/{version}"
@@ -69,8 +75,8 @@ def main(datetime: str, version: str) -> None:
             fail_on_error=False,
             bands=["qa_pixel", "nir08", "green", "swir16"],
         ),
-        # pystac_client_search_kwargs=dict(query=["landsat:collection_category=T1"]),
-        #        exclude_platforms=["landsat-7"],
+        pystac_client_search_kwargs=dict(query=["landsat:collection_category=T1"]),
+        exclude_platforms=["landsat-7"],
     )
 
     processor = NirProcessor(
@@ -112,5 +118,4 @@ if __name__ == "__main__":
     composite_years = [f"{y[0]}/{y[2]}" for y in sliding_window_view(single_years, 3)]
     all_years = single_years + composite_years
 
-    # for year in composite_years:
-    main("2010/2012", "0-3-14")
+    main("2018", "0-5-0")
