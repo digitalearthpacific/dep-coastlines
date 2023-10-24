@@ -42,6 +42,18 @@ def _set_year_to_middle_year(xr: Dataset) -> Dataset:
     return xr
 
 
+def _concat_or_select(xr_1, xr_2):
+    if xr_1 is None and xr_2 is None:
+        raise EmptyCollectionError
+
+    if xr_1 is None:
+        return xr_2
+
+    if xr_2 is None:
+        return xr_1
+    return concat([xr_1, xr_2], dim="year")
+
+
 class CompositeLoader(Loader):
     def __init__(
         self,
@@ -86,7 +98,8 @@ class CompositeLoader(Loader):
                 early_range,
                 chunks=True,
             )
-            yearly_ds = concat([early_yearly_ds, yearly_ds], dim="year")
+
+            yearly_ds = _concat_or_select(early_yearly_ds, yearly_ds)
 
             early_composite_years = [f"{year-1}_{year+1}" for year in early_range]
             early_composite_ds = load_blobs(
@@ -96,7 +109,7 @@ class CompositeLoader(Loader):
                 early_composite_years,
                 chunks=True,
             )
-            composite_ds = concat([early_composite_ds, composite_ds], dim="year")
+            composite_ds = _concat_or_select(early_composite_ds, composite_ds)
 
         if yearly_ds is None:
             raise EmptyCollectionError()

@@ -2,7 +2,7 @@
 pydantic<2
 
 git+https://github.com/digitalearthpacific/dep-tools.git@dev/modularize
-git+https://github.com/jessjaco/azure-logger.git
+git+https://github.com/jessjaco/azure-logger.git@d47c955
 git+https://github.com/jessjaco/odc-stac.git@exception-fix
 
 # latest tested version
