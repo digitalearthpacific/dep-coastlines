@@ -21,7 +21,16 @@ def tides_highres(da: DataArray, item_id, area=None) -> DataArray:
         time=tides_lowres.time[tides_lowres.time.isin(da.time)]
     ).chunk(dict(x=1, y=1))
 
-    return tides_lowres.interp(x=da.x, y=da.y)
+    from rasterio.fill import fillnodata
+
+    # memory spike from this
+    values = tides_lowres.to_numpy()
+    mask = ~np.isnan(values)
+    tides_lowres.values = fillnodata(values, mask)
+    tides_lowres = tides_lowres.chunk(x=1, y=1, time=1)
+    # .rio.clip( area.to_crs(tides_lowres.rio.crs).geometry, all_touched=True, from_disk=True)
+
+    return tides_lowres.chunk(time=1, x=1, y=1).interp(x=da.x, y=da.y)
 
 
 @retry(tries=10, delay=3)
@@ -45,7 +54,6 @@ def filter_by_tides(da: DataArray, item_id, area=None) -> DataArray:
     ).chunk(dict(x=1, y=1))
 
     sm = tides_lowres.interp(x=ds.x, y=ds.y)
-    breakpoint()
     ds["tide_m"] = tides_lowres.interp(x=ds.x, y=ds.y)
     return ds
     from rasterio.fill import fillnodata
@@ -193,7 +201,7 @@ def load_tides(
     suffix = "_".join([str(i) for i in item_id])
     da = rx.open_rasterio(
         f"https://{storage_account}.blob.core.windows.net/{container_name}/coastlines/{dataset_id}/{dataset_id}_{suffix}.tif",
-        chunks=True,
+        chunks={"x": 1, "y": 1},
     )
     time_strings = da.attrs["long_name"]
     band_names = (

@@ -15,6 +15,7 @@ processes you can calculate for all years within a day or so.
 from typing import Union
 
 import geopandas as gpd
+from numpy import isnan
 from numpy.lib.stride_tricks import sliding_window_view
 from xarray import DataArray, Dataset
 
@@ -36,8 +37,30 @@ class NirProcessor(LandsatProcessor):
         working_ds = mndwi(xr).to_dataset()
         working_ds["ndwi"] = ndwi(xr)
         working_ds["nir08"] = xr.sel(band="nir08")
-        working_ds["tide_m"] = tides_highres(xr, area.index[0], area).astype("float32")
+        nir = working_ds.nir08.chunk(time=-1, x=256, y=256)
+        thr = tides_highres(xr, area.index[0], area).chunk(time=-1, x=256, y=256)
+
+        def lr(x, m, b):
+            return m * x + b
+
+        bad = (~isnan(nir)).sum(dim="time") <= 1
+        # dask needs bools like this loaded
+        bad_z = bad.stack(z=("y", "x")).compute()
+        nir_z = nir.stack(z=("y", "x")).where(~bad_z, drop=True)
+        thr_z = thr.stack(z=("y", "x")).where(~bad_z, drop=True)
+
+        nir_z.curvefit(thr_z, func=lr, reduce_dims="time", skipna=True).unstack().sel(
+            param="b"
+        ).curvefit_coefficients.rio.to_raster("fit2.tif", driver="COG")
         breakpoint()
+
+        fit = nir.where(~bad, drop=True).curvefit(
+            thr.where(~bad, drop=True),
+            func=lr,
+            reduce_dims="time",
+            errors="ignore",
+            skipna=True,
+        )
 
         # In case we filtered out all the data
         if not "time" in working_ds or len(working_ds.time) == 0:
@@ -100,7 +123,7 @@ def main(datetime: str, version: str) -> None:
         overwrite=False,
         header="time|index|status|paths|comment\n",
     )
-    aoi_by_tile = filter_by_log(aoi_by_tile, logger.parse_log())
+    # aoi_by_tile = filter_by_log(aoi_by_tile, logger.parse_log())
 
     run_by_area_dask(
         areas=aoi_by_tile,
