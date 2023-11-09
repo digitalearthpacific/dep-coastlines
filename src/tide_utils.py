@@ -1,15 +1,15 @@
-from typing import Tuple, Union
+from typing import Tuple
 
 import dask
-from geocube.api.core import make_geocube
 import numpy as np
 from pandas import Timestamp
 from retry import retry
 import rioxarray as rx
 from scipy.interpolate import griddata
-from xarray import DataArray, Dataset, align, concat
+from xarray import DataArray, concat, apply_ufunc
 
-from dep_tools.utils import make_geocube_dask
+
+from rasterio.fill import fillnodata
 
 
 def tides_highres(da: DataArray, item_id, area=None) -> DataArray:
@@ -19,16 +19,13 @@ def tides_highres(da: DataArray, item_id, area=None) -> DataArray:
     # Now filter out tide times that are not in the ds
     tides_lowres = tides_lowres.sel(
         time=tides_lowres.time[tides_lowres.time.isin(da.time)]
-    ).chunk(dict(x=1, y=1))
+    ).chunk(dict(x=-1, y=-1, time=1))
 
-    from rasterio.fill import fillnodata
-
-    # memory spike from this
-    values = tides_lowres.to_numpy()
-    mask = ~np.isnan(values)
-    tides_lowres.values = fillnodata(values, mask)
-    tides_lowres = tides_lowres.chunk(x=1, y=1, time=1)
-    # .rio.clip( area.to_crs(tides_lowres.rio.crs).geometry, all_touched=True, from_disk=True)
+    tides_lowres = apply_ufunc(
+        lambda da: fillnodata(da, ~np.isnan(da), max_search_distance=2),
+        tides_lowres,
+        dask="parallelized",
+    )
 
     return tides_lowres.chunk(time=1, x=1, y=1).interp(x=da.x, y=da.y)
 

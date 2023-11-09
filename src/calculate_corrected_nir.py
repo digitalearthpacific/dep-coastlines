@@ -32,49 +32,41 @@ from water_indices import mndwi, ndwi
 class NirProcessor(LandsatProcessor):
     def process(self, xr: DataArray, area) -> Union[Dataset, None]:
         xr = super().process(xr).drop_duplicates(...)
-        # xr = filter_by_tides(xr, area.index[0], area)
 
-        working_ds = mndwi(xr).to_dataset()
-        working_ds["ndwi"] = ndwi(xr)
-        working_ds["nir08"] = xr.sel(band="nir08")
-        nir = working_ds.nir08.chunk(time=-1, x=256, y=256)
-        thr = tides_highres(xr, area.index[0], area).chunk(time=-1, x=256, y=256)
+        # No chunking along time dimension to be able to use curvefit
+        nir = xr.sel(band="nir08").chunk(time=-1)
+        thr = tides_highres(xr, area.index[0], area).chunk(time=-1)
+
+        # dask needs bools like this loaded to use .where
+        count = nir.count("time", keep_attrs=True).compute()
+        # This is not the final determination (that's done in cleaning)
+        # Just here because curvefit can't fit only 1 point
+        unfittable = count <= 1
+
+        # The fitting is (somewhat) computationally expensive. So as to
+        # not fit places we don't need to, stack the x & y then filter
+        # out the "unfittable" areas above -> places that are either all nan
+        # of only have one usable value. This would all work without this step,
+        # just take longer (you'd just use nir and thr below).
+
+        bad_z = unfittable.stack(z=("y", "x"))
+
+        nir_z = nir.stack(z=("y", "x")).where(~bad_z, drop=True)
+        thr_z = thr.stack(z=("y", "x")).where(~bad_z, drop=True)
 
         def lr(x, m, b):
             return m * x + b
 
-        bad = (~isnan(nir)).sum(dim="time") <= 1
-        # dask needs bools like this loaded
-        bad_z = bad.stack(z=("y", "x")).compute()
-        nir_z = nir.stack(z=("y", "x")).where(~bad_z, drop=True)
-        thr_z = thr.stack(z=("y", "x")).where(~bad_z, drop=True)
-
-        nir_z.curvefit(thr_z, func=lr, reduce_dims="time", skipna=True).unstack().sel(
-            param="b"
-        ).curvefit_coefficients.rio.to_raster("fit2.tif", driver="COG")
-        breakpoint()
-
-        fit = nir.where(~bad, drop=True).curvefit(
-            thr.where(~bad, drop=True),
-            func=lr,
-            reduce_dims="time",
-            errors="ignore",
-            skipna=True,
+        output = (
+            nir_z.curvefit(thr_z, func=lr, reduce_dims="time")
+            .unstack()
+            # this is necessary or output is shifted because of gaps in
+            # coordinate values due to filtering
+            .reindex(nir.indexes, fill_value=float("nan"))
+            .curvefit_coefficients.to_dataset("param")
         )
 
-        # In case we filtered out all the data
-        if not "time" in working_ds or len(working_ds.time) == 0:
-            return None
-
-        working_ds.coords["time"] = xr.time.dt.floor("1D")
-
-        # or mean or median or whatever
-        working_ds = working_ds.groupby("time").first()
-        output = working_ds.median("time", keep_attrs=True)
-        output["count"] = working_ds.nir08.count("time", keep_attrs=True).astype(
-            "int16"
-        )
-        output["nir_stdev"] = working_ds.nir08.std("time", keep_attrs=True)
+        output["count"] = count
         return output
 
 
@@ -97,9 +89,10 @@ def main(datetime: str, version: str) -> None:
             resampling={"qa_pixel": "nearest", "*": "cubic"},
             fail_on_error=False,
             bands=["qa_pixel", "nir08", "green", "swir16"],
+            groupby="solar_day",
         ),
-        pystac_client_search_kwargs=dict(query=["landsat:collection_category=T1"]),
-        exclude_platforms=["landsat-7"],
+        # pystac_client_search_kwargs=dict(query=["landsat:collection_category=T1"]),
+        # exclude_platforms=["landsat-7"],
     )
 
     processor = NirProcessor(
@@ -141,4 +134,4 @@ if __name__ == "__main__":
     composite_years = [f"{y[0]}/{y[2]}" for y in sliding_window_view(single_years, 3)]
     all_years = single_years + composite_years
 
-    main("2018", "0-5-0")
+    main("2000", "0-5-0")
