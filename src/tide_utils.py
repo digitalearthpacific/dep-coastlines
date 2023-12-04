@@ -12,7 +12,7 @@ from xarray import DataArray, concat, apply_ufunc
 from rasterio.fill import fillnodata
 
 
-def tides_highres(da: DataArray, item_id, area=None) -> DataArray:
+def tides_highres(da: DataArray, item_id) -> DataArray:
     tides_lowres = load_tides(item_id)
     da = da.sel(time=da.time[da.time.isin(tides_lowres.time)])
 

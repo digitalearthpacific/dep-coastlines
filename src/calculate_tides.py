@@ -1,5 +1,4 @@
-"""
-Calculates low-resolution tide rasters for all areas and times using 
+"""Calculates low-resolution tide rasters for all areas and times using 
 functionality from the Digital Earth Austalia project. In the DEA and DEAfrica
 coastline processing this is included with other raster processing but 
 1) For this project all the water index, etc. calculations are dask-enabled,
@@ -63,11 +62,6 @@ class TideProcessor(Processor):
             .chunk(time=1)
         )
 
-        # date bands are type pd.Timestamp, need to change them to string
-        # Watch though as (apparently) older versions of rioxarray do not write the
-        # band names (times) as `long_name` attribute on output files. Probably
-        # worth checking the first few outputs to see.
-
         tides_lowres.coords["time"] = tides_lowres.coords["time"].astype("str")
 
         #        tide_cutoff_min, tide_cutoff_max = tide_cutoffs_dask(
@@ -95,7 +89,7 @@ class TideProcessor(Processor):
 
 
 def main(datetime: str, version: str, client) -> None:
-    dataset_id = "tide-mask"
+    dataset_id = "tpx09"
     prefix = f"coastlines/{version}"
 
     aoi_by_tile = gpd.read_file(
@@ -143,4 +137,4 @@ def main(datetime: str, version: str, client) -> None:
 
 if __name__ == "__main__":
     with Client() as client:
-        main("2013/2023", "4Sep2023", client)
+        main("2013/2023", "0.6.0", client)

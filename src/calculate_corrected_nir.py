@@ -12,6 +12,7 @@ Each year took an hour or two to run, so if you start multiple
 processes you can calculate for all years within a day or so.
 
 """
+from dask.distributed import Client
 from typing import Union
 
 import geopandas as gpd
@@ -26,7 +27,6 @@ from dep_tools.processors import LandsatProcessor
 from dep_tools.utils import get_container_client
 from dep_tools.writers import AzureXrWriter
 from tide_utils import filter_by_tides, tides_highres
-from water_indices import mndwi, ndwi
 
 
 class NirProcessor(LandsatProcessor):
@@ -35,10 +35,10 @@ class NirProcessor(LandsatProcessor):
 
         # No chunking along time dimension to be able to use curvefit
         nir = xr.sel(band="nir08").chunk(time=-1)
-        thr = tides_highres(xr, area.index[0], area).chunk(time=-1)
+        thr = tides_highres(xr, area.index[0]).chunk(time=-1)
 
         # dask needs bools like this loaded to use .where
-        count = nir.count("time", keep_attrs=True).compute()
+        count = nir.count("time", keep_attrs=True).compute().astype("uint16")
         # This is not the final determination (that's done in cleaning)
         # Just here because curvefit can't fit only 1 point
         unfittable = count <= 1
@@ -58,12 +58,13 @@ class NirProcessor(LandsatProcessor):
             return m * x + b
 
         output = (
-            nir_z.curvefit(thr_z, func=lr, reduce_dims="time")
-            .unstack()
+            nir.curvefit(thr, func=lr, reduce_dims="time")
+            # nir_z.curvefit(thr_z, func=lr, reduce_dims="time")
+            # .unstack()
             # this is necessary or output is shifted because of gaps in
             # coordinate values due to filtering
-            .reindex(nir.indexes, fill_value=float("nan"))
-            .curvefit_coefficients.to_dataset("param")
+            # .reindex(nir.indexes, fill_value=float("nan"))
+            .curvefit_coefficients.to_dataset("param").rio.write_crs(xr.rio.crs)
         )
 
         output["count"] = count
@@ -71,15 +72,11 @@ class NirProcessor(LandsatProcessor):
 
 
 def main(datetime: str, version: str) -> None:
-    aoi_by_tile = (
-        gpd.read_file(
-            "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-        )
-        .set_index(["PATH", "ROW"], drop=False)
-        .query("PATH == 74 & ROW == 72")
-    )
+    aoi_by_tile = gpd.read_file(
+        "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
+    ).set_index(["PATH", "ROW"], drop=False)
 
-    dataset_id = "water-indices"
+    dataset_id = "nir-fit"
     prefix = f"coastlines/{version}"
 
     loader = LandsatOdcLoader(
@@ -97,7 +94,7 @@ def main(datetime: str, version: str) -> None:
 
     processor = NirProcessor(
         send_area_to_processor=True,
-        dilate_mask=True,
+        dilate_mask=False,
     )
 
     writer = AzureXrWriter(
@@ -116,17 +113,18 @@ def main(datetime: str, version: str) -> None:
         overwrite=False,
         header="time|index|status|paths|comment\n",
     )
-    # aoi_by_tile = filter_by_log(aoi_by_tile, logger.parse_log())
+    aoi_by_tile = filter_by_log(aoi_by_tile, logger.parse_log())
 
-    run_by_area_dask(
-        areas=aoi_by_tile,
-        loader=loader,
-        processor=processor,
-        writer=writer,
-        logger=logger,
-        n_workers=20,
-        worker_memory=16,
-    )
+    with Client():  # (n_workers=2, memory_limit="16GB"):
+        run_by_area(
+            areas=aoi_by_tile,
+            loader=loader,
+            processor=processor,
+            writer=writer,
+            logger=logger,
+            #        n_workers=20,
+            #        worker_memory=16,
+        )
 
 
 if __name__ == "__main__":
