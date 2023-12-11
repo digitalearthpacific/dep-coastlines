@@ -21,6 +21,12 @@ def tides_highres(da: DataArray, item_id) -> DataArray:
         time=tides_lowres.time[tides_lowres.time.isin(da.time)]
     ).chunk(dict(x=-1, y=-1, time=1))
 
+    # For some areas, some tidal data does not actual extend into
+    # the tidal zone. This fills these values with the nearest value.
+    # This is perhaps not the ideal approach (but neither is using
+    # 5-km tidal data!), an alternative might be to fill the values
+    # with a different tidal dataset, or at least fill / average
+    # values among them.
     tides_lowres = apply_ufunc(
         lambda da: fillnodata(da, ~np.isnan(da), max_search_distance=2),
         tides_lowres,
@@ -33,6 +39,9 @@ def tides_highres(da: DataArray, item_id) -> DataArray:
 @retry(tries=10, delay=3)
 def filter_by_tides(da: DataArray, item_id, area=None) -> DataArray:
     """Remove out of range tide values from a given dataset."""
+    # This is currently broken. If looking to use, likely combine
+    # with the (functional but un-stress-tested) tides_highres above
+
     tides_lowres = load_tides(item_id)
 
     # Just be aware if you rerun that the cutoffs will likely change ever so slightly

@@ -24,26 +24,24 @@ TODO: If revisiting this file, consider abstracting some of the constant values
 set in the main script body and using typer.
 """
 
-from ast import literal_eval
-from typing import Union
+from itertools import product
+import json
+import sys
 
-from dask.distributed import Client, Lock
+from dask.distributed import Client
 import geopandas as gpd
-from pandas import DataFrame
 from xarray import DataArray, Dataset
 
 from dea_tools.coastal import pixel_tides
 
-from azure_logger import CsvLogger, get_log_path, filter_by_log
-from dep_tools.runner import run_by_area
-from dep_tools.processors import Processor
+from azure_logger import CsvLogger, filter_by_log
 from dep_tools.loaders import LandsatOdcLoader
+from dep_tools.namers import DepItemPath
+from dep_tools.processors import Processor
+from dep_tools.runner import run_by_area
 from dep_tools.utils import get_container_client
 
-from dep_tools.writers import AzureXrWriter
-
-# from dep_tools.writers2 import LocalXrWriter
-from tide_utils import fill_and_interp, tide_cutoffs_dask
+from dep_tools.writers import DsWriter
 
 
 class TideProcessor(Processor):
@@ -57,44 +55,64 @@ class TideProcessor(Processor):
                 model="TPXO9-atlas-v5",
                 directory="../coastlines-local/tidal-models/",
                 resolution=4980,
-            )
-            .transpose("time", "y", "x")
-            .chunk(time=1)
+            ).transpose("time", "y", "x")
+            # For 5km resolution, this is reasonable chunking
+            .chunk(time=1, x=1, y=1)
         )
 
         tides_lowres.coords["time"] = tides_lowres.coords["time"].astype("str")
-
-        #        tide_cutoff_min, tide_cutoff_max = tide_cutoffs_dask(
-        #            tides_lowres, tide_centre=0.0
-        #        )
-
-        a_band = working_ds.isel(time=0).to_array().squeeze()
-        # effectively replaces all values with constant
-        unmasked_band = a_band.where(0, 1)
-        interp_to = unmasked_band.rio.clip(area.to_crs(unmasked_band.rio.crs).geometry)
-
-        output = fill_and_interp(tides_lowres, interp_to)
-
-        output.coords["time"] = output.time.astype(str)
-        return output.to_dataset("time").astype("int8")
-
-        # Do this  _after_ interpolation
-        #        if area is not None:
-        #            tides_highres = tides_highres.rio.clip(
-        #                area.to_crs(tides_highres.rio.crs).geometry,
-        #                all_touched=True,
-        #                from_disk=True,
-        #            )
-        # return tides_highres
+        return tides_lowres
 
 
-def main(datetime: str, version: str, client) -> None:
-    dataset_id = "tpx09"
-    prefix = f"coastlines/{version}"
-
-    aoi_by_tile = gpd.read_file(
+def get_ids(datetime, version, dataset_id, retry_errors)
+    grid = gpd.read_file(
         "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
     ).set_index(["PATH", "ROW"])
+
+    namer = DepItemPath(
+        sensor="ls", dataset_id="coastlines/tpx09", version=version, time=datetime
+    )
+
+    logger = CsvLogger(
+        name=dataset_id,
+        container_client=get_container_client(),
+        path=namer.log_path(),
+        overwrite=False,
+        header="time|index|status|paths|comment\n",
+    )
+    grid = filter_by_log(grid, logger.parse_log(), retry_errors)
+    years = get_years_from_datetime(datetime)
+    return product(grid.index, years)
+
+
+def get_years_from_datetime(datetime):
+    years = datetime.split("-")
+    if len(years) == 2:
+        years = range(int(years[0]), int(years[1]) + 1)
+    elif len(years) > 2:
+        ValueError(f"{datetime} is not a valid value for --datetime")
+    return years
+
+
+def print_tasks(datetime, version, limit, no_retry_errors, dataset_id):
+    ids = get_ids(datetime, version, dataset_id, not no_retry_errors)
+    params = [
+        {
+            "region-code": region[0][0],
+            "region-index": region[0][1],
+            "datetime": region[1],
+        }
+        for id in ids
+    ]
+
+    if limit is not None:
+        params = params[0 : int(limit)]
+
+    json.dump(params, sys.stdout)
+
+
+def run(task_id: str | list[str], datetime: str, version: str) -> None:
+    dataset_id = "coastlines/tpx09"
 
     loader = LandsatOdcLoader(
         datetime=datetime,
@@ -104,37 +122,33 @@ def main(datetime: str, version: str, client) -> None:
 
     processor = TideProcessor(send_area_to_processor=True)
 
-    writer = AzureXrWriter(
-        dataset_id=dataset_id,
-        prefix=prefix,
-        convert_to_int16=False,
+    writer = DsWriter(
+        itempath=namer,
         overwrite=False,
+        convert_to_int16=False,
         extra_attrs=dict(dep_version=version),
-        output_nodata=0
-        #        write_kwargs=dict(
-        #            tiled=True, windowed=True
-        #        ),  # lock=Lock("rio", client=client)),
+        output_nodata=0,  # <- check this
     )
 
-    logger = CsvLogger(
-        name=dataset_id,
-        container_client=get_container_client(),
-        path=get_log_path(prefix, dataset_id, version, datetime),
+    logger = CsvLogger( name=dataset_id, container_client=get_container_client(),
+        path=namer.log_path(),
         overwrite=False,
         header="time|index|status|paths|comment\n",
     )
 
-    aoi_by_tile = filter_by_log(aoi_by_tile, logger.parse_log())
+    if isinstance(task_id, list):
+        MultiTask(task_id, 
+                  grid,
+        ErrorCategoryAreaTask,
+                  loader, processor,writer,logger).run()
+    else:
+        ErrorCategoryAreaTask(task_id, grid.loc[[task_id]], loader, processor, writer, logger).run()
 
-    run_by_area(
-        areas=aoi_by_tile,
-        loader=loader,
-        processor=processor,
-        writer=writer,
-        logger=logger,
-    )
+
+
+
 
 
 if __name__ == "__main__":
     with Client() as client:
-        main("2013/2023", "0.6.0", client)
+        main("1984/2023", "0.6.0", client)

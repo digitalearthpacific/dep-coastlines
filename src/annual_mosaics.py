@@ -1,3 +1,8 @@
+"""This was just for visualization / debugging sake, and outputs
+are not used in a technical way for the coastline model. This is
+hopefully made obsolete by other annual mosaicking effors (like
+geomedian).
+"""
 from typing import Union
 
 import geopandas as gpd
