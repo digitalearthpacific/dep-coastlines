@@ -30,47 +30,47 @@ import sys
 
 from dask.distributed import Client
 import geopandas as gpd
+import planetary_computer
+import pystac_client
 from xarray import DataArray, Dataset
 
 from dea_tools.coastal import pixel_tides
 
 from azure_logger import CsvLogger, filter_by_log
-from dep_tools.loaders import LandsatOdcLoader
+from dep_tools.loaders2 import LandsatPystacSearcher, OdcLoader, SearchLoader
 from dep_tools.namers import DepItemPath
 from dep_tools.processors import Processor
 from dep_tools.runner import run_by_area
+from dep_tools.task import ErrorCategoryAreaTask, MultiAreaTask
 from dep_tools.utils import get_container_client
-
 from dep_tools.writers import DsWriter
+
+from grid import grid
+from writer import DaWriter
 
 
 class TideProcessor(Processor):
-    def process(self, xr: DataArray, area) -> Dataset:
-        working_ds = xr.isel(band=0).to_dataset().drop_duplicates(...)
+    def process(self, xr: Dataset) -> Dataset:
+        working_ds = xr.red.drop_duplicates(...)
 
-        tides_lowres = (
-            pixel_tides(
-                working_ds,
-                resample=False,
-                model="TPXO9-atlas-v5",
-                directory="../coastlines-local/tidal-models/",
-                resolution=4980,
-            ).transpose("time", "y", "x")
-            # For 5km resolution, this is reasonable chunking
-            .chunk(time=1, x=1, y=1)
-        )
+        tides_lowres = pixel_tides(
+            working_ds,
+            resample=False,
+            model="TPXO9-atlas-v5",
+            directory="../coastlines-local/tidal-models/",
+            resolution=4980,
+        ).transpose("time", "y", "x")
 
         tides_lowres.coords["time"] = tides_lowres.coords["time"].astype("str")
-        return tides_lowres
+        return tides_lowres.to_dataset("time")
 
 
-def get_ids(datetime, version, dataset_id, retry_errors)
-    grid = gpd.read_file(
-        "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-    ).set_index(["PATH", "ROW"])
-
+def get_ids(datetime, version, dataset_id, retry_errors=True) -> list:
     namer = DepItemPath(
-        sensor="ls", dataset_id="coastlines/tpx09", version=version, time=datetime
+        sensor="ls",
+        dataset_id="coastlines/tpx09",
+        version=version,
+        time=datetime.replace("/", "_"),
     )
 
     logger = CsvLogger(
@@ -80,9 +80,7 @@ def get_ids(datetime, version, dataset_id, retry_errors)
         overwrite=False,
         header="time|index|status|paths|comment\n",
     )
-    grid = filter_by_log(grid, logger.parse_log(), retry_errors)
-    years = get_years_from_datetime(datetime)
-    return product(grid.index, years)
+    return filter_by_log(grid, logger.parse_log(), retry_errors).index.to_list()
 
 
 def get_years_from_datetime(datetime):
@@ -111,44 +109,52 @@ def print_tasks(datetime, version, limit, no_retry_errors, dataset_id):
     json.dump(params, sys.stdout)
 
 
-def run(task_id: str | list[str], datetime: str, version: str) -> None:
-    dataset_id = "coastlines/tpx09"
+def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) -> None:
+    client = pystac_client.Client.open(
+        "https://planetarycomputer.microsoft.com/api/stac/v1",
+        modifier=planetary_computer.sign_inplace,
+    )
+    searcher = LandsatPystacSearcher(client=client, datetime=datetime)
+    stacloader = OdcLoader(
+        fail_on_error=False,
+        chunks=dict(band=1, time=1, x=1024, y=1024),
+        groupby="solar_day",
+    )
+    loader = SearchLoader(searcher, stacloader)
 
-    loader = LandsatOdcLoader(
-        datetime=datetime,
-        dask_chunksize=dict(band=1, time=1, x=1024, y=1024),
-        odc_load_kwargs=dict(fail_on_error=False),
+    processor = TideProcessor(send_area_to_processor=False)
+    namer = DepItemPath(
+        sensor="ls",
+        dataset_id=dataset_id,
+        version=version,
+        time=datetime.replace("/", "_"),
+        zero_pad_numbers=True,
     )
 
-    processor = TideProcessor(send_area_to_processor=True)
+    writer = DaWriter(itempath=namer, driver="COG", blocksize=16)
 
-    writer = DsWriter(
-        itempath=namer,
-        overwrite=False,
-        convert_to_int16=False,
-        extra_attrs=dict(dep_version=version),
-        output_nodata=0,  # <- check this
-    )
-
-    logger = CsvLogger( name=dataset_id, container_client=get_container_client(),
+    logger = CsvLogger(
+        name=dataset_id,
+        container_client=get_container_client(),
         path=namer.log_path(),
         overwrite=False,
         header="time|index|status|paths|comment\n",
     )
 
     if isinstance(task_id, list):
-        MultiTask(task_id, 
-                  grid,
-        ErrorCategoryAreaTask,
-                  loader, processor,writer,logger).run()
+        MultiAreaTask(
+            task_id, grid, ErrorCategoryAreaTask, loader, processor, writer, logger
+        ).run()
     else:
-        ErrorCategoryAreaTask(task_id, grid.loc[[task_id]], loader, processor, writer, logger).run()
-
-
-
-
+        ErrorCategoryAreaTask(
+            task_id, grid.loc[[task_id]], loader, processor, writer, logger
+        ).run()
 
 
 if __name__ == "__main__":
-    with Client() as client:
-        main("1984/2023", "0.6.0", client)
+    datetime = "1984/2023"
+    version = "0.6.0"
+    dataset_id = "coastlines/tpx09"
+    task_ids = get_ids(datetime, version, dataset_id)
+    with Client():
+        run(task_ids, datetime, version, dataset_id)
