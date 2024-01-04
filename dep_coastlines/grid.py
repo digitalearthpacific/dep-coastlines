@@ -4,11 +4,15 @@ import geopandas as gpd
 from shapely import make_valid
 
 from dep_grid.grid import grid, PACIFIC_EPSG
+from dep_tools.azure import blob_exists
+from dep_tools.utils import write_to_blob_storage
 
-grid_file = "data/coastlines_grid.gpkg"
+grid_blob_path = "aoi/coastline_grid.gpkg"
+url_prefix = "https://deppcpublicstorage.blob.core.windows.net/output/"
+grid_url = url_prefix + grid_blob_path
 
-if not Path(grid_file).exists():
-    aoi = gpd.read_file("data/aoi.gpkg")
+if not blob_exists(grid_blob_path):
+    aoi = gpd.read_file(url_prefix + "aoi/aoi.gpkg")
 
     # A buffer of the exterior line created weird interior gaps,
     # (See https://github.com/locationtech/jts/issues/876)
@@ -42,19 +46,14 @@ if not Path(grid_file).exists():
     coastline_grid = full_grid.intersection(coast_buffer)
     coastline_grid = gpd.GeoDataFrame(
         geometry=coastline_grid[~coastline_grid.geometry.is_empty]
+    ).reset_index(names=["column", "row"])
+    coastline_grid["id"] = coastline_grid.apply(
+        lambda r: f"{str(r.column).zfill(3)}{str(r.row).zfill(3)}", axis=1
     )
-    coastline_grid.reset_index(names=["column", "row"]).to_file(
-        "data/coastlines_grid.gpkg"
+    write_to_blob_storage(
+        coastline_grid,
+        grid_blob_path,
+        write_args=dict(driver="GPKG", layer_name="coastline_grid"),
     )
 
-grid = gpd.read_file(grid_file).set_index(["column", "row"])
-# pathrows = gpd.read_file(
-#    "https://d9-wret.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/atoms/files/WRS2_descending_0.zip"
-# )
-#
-# intersection = pathrows.intersection(coast_buffer)
-#
-# pathrows.geometry = intersection
-# output = pathrows[~pathrows.is_empty]
-#
-# output.to_file("data/coastline_split_by_pathrow.gpkg")
+grid = gpd.read_file(grid_url).set_index(["column", "row"])

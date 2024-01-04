@@ -24,34 +24,41 @@ TODO: If revisiting this file, consider abstracting some of the constant values
 set in the main script body and using typer.
 """
 
-from itertools import product
 import json
 import sys
 
-from dask.distributed import Client
-import geopandas as gpd
 import planetary_computer
 import pystac_client
-from xarray import DataArray, Dataset
+from xarray import Dataset
 
 from dea_tools.coastal import pixel_tides
 
 from azure_logger import CsvLogger, filter_by_log
-from dep_tools.loaders2 import LandsatPystacSearcher, OdcLoader, SearchLoader
+from dep_tools.loaders2 import PathrowPystacSearcher, OdcLoader, SearchLoader
 from dep_tools.namers import DepItemPath
 from dep_tools.processors import Processor
-from dep_tools.runner import run_by_area
 from dep_tools.task import ErrorCategoryAreaTask, MultiAreaTask
 from dep_tools.utils import get_container_client
-from dep_tools.writers import DsWriter
 
 from grid import grid
 from writer import DaWriter
 
+import geopandas as gpd
+from antimeridian import fix_shape
+
+
+landsat_pathrows = gpd.read_file(
+    "https://d9-wret.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/atoms/files/WRS2_descending_0.zip"
+)
+
+from shapely.geometry import box
+
 
 class TideProcessor(Processor):
-    def process(self, xr: Dataset) -> Dataset:
-        working_ds = xr.red.drop_duplicates(...)
+    def process(self, xr: Dataset, area) -> Dataset:
+        working_ds = xr.rio.clip(
+            area.to_crs(xr.red.rio.crs).geometry, all_touched=True, from_disk=True
+        ).red.drop_duplicates(...)
 
         tides_lowres = pixel_tides(
             working_ds,
@@ -59,6 +66,7 @@ class TideProcessor(Processor):
             model="TPXO9-atlas-v5",
             directory="../coastlines-local/tidal-models/",
             resolution=4980,
+            parallel=False,
         ).transpose("time", "y", "x")
 
         tides_lowres.coords["time"] = tides_lowres.coords["time"].astype("str")
@@ -68,7 +76,7 @@ class TideProcessor(Processor):
 def get_ids(datetime, version, dataset_id, retry_errors=True) -> list:
     namer = DepItemPath(
         sensor="ls",
-        dataset_id="coastlines/tpx09",
+        dataset_id=dataset_id,
         version=version,
         time=datetime.replace("/", "_"),
     )
@@ -114,15 +122,15 @@ def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) 
         "https://planetarycomputer.microsoft.com/api/stac/v1",
         modifier=planetary_computer.sign_inplace,
     )
-    searcher = LandsatPystacSearcher(client=client, datetime=datetime)
+    searcher = PathrowPystacSearcher(client=client, datetime=datetime)
     stacloader = OdcLoader(
         fail_on_error=False,
         chunks=dict(band=1, time=1, x=1024, y=1024),
-        groupby="solar_day",
+        bands=["red"],
     )
     loader = SearchLoader(searcher, stacloader)
 
-    processor = TideProcessor(send_area_to_processor=False)
+    processor = TideProcessor(send_area_to_processor=True)
     namer = DepItemPath(
         sensor="ls",
         dataset_id=dataset_id,
@@ -143,7 +151,13 @@ def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) 
 
     if isinstance(task_id, list):
         MultiAreaTask(
-            task_id, grid, ErrorCategoryAreaTask, loader, processor, writer, logger
+            task_id,
+            grid,
+            ErrorCategoryAreaTask,
+            loader,
+            processor,
+            writer,
+            logger,
         ).run()
     else:
         ErrorCategoryAreaTask(
@@ -153,8 +167,7 @@ def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) 
 
 if __name__ == "__main__":
     datetime = "1984/2023"
-    version = "0.6.0"
-    dataset_id = "coastlines/tpx09"
+    version = "0.6.2"
+    dataset_id = "coastlines/tpxo9"
     task_ids = get_ids(datetime, version, dataset_id)
-    with Client():
-        run(task_ids, datetime, version, dataset_id)
+    run(task_ids, datetime, version, dataset_id)
