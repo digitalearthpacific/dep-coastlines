@@ -33,29 +33,35 @@ def tides_lowres(da: Dataset, item_id, tide_loader: Loader) -> DataArray:
     return tides_lowres
 
 
-def tides_highres(da: Dataset, item_id, tide_loader: Loader) -> DataArray:
-    return (
-        tides_lowres(da, item_id, tide_loader)
-        .chunk(time=1, x=1, y=1)
-        .interp(x=da.x, y=da.y)
-        .chunk(x=128, y=128)
-    )
-
-
 @retry(tries=10, delay=3)
 def filter_by_tides(ds: Dataset, item_id, tide_loader: Loader, area=None) -> Dataset:
     """Remove out of range tide values from a given dataset."""
-    tides = tides_highres(ds, item_id, tide_loader)
+    tides_lr = tide_loader.load(item_id)
 
-    # Just be aware if you rerun that the cutoffs will likely change ever so slightly
-    # as new data are added.
-    # Perhaps not enough to change the "quality" data readings though.
-    tide_cutoff_min, tide_cutoff_max = tide_cutoffs_dask(tides, tide_centre=0.0)
-    tide_bool = (tides >= tide_cutoff_min) & (tides <= tide_cutoff_max)
-    ds = ds.sel(time=tide_bool.sum(dim=["x", "y"]) > 0)
+    tide_cutoff_min, tide_cutoff_max = tide_cutoffs_dask(tides_lr, tide_centre=0.0)
+
+    tides_lr = tides_lr.sel(time=ds.time[ds.time.isin(tides_lr.time)])
+
+    # Now filter out tide times that are not in the ds
+    tides_lr = tides_lr.sel(time=tides_lr.time[tides_lr.time.isin(ds.time)])
+
+    tide_bool_lr = (tides_lr >= tide_cutoff_min) & (tides_lr <= tide_cutoff_max)
+
+    # Filter to times that have _any_ tides within the range
+    ds = ds.sel(time=tide_bool_lr.sum(dim=["x", "y"]) > 0)
+
+    # Filter tides again
+    tides_lr = tides_lr.sel(time=tides_lr.time[tides_lr.time.isin(ds.time)])
+
+    tide_cutoff_min_hr = tide_cutoff_min.interp(x=ds.x, y=ds.y)
+    tide_cutoff_max_hr = tide_cutoff_max.interp(x=ds.x, y=ds.y)
+
+    tides_hr = tides_lr.chunk(time=1).interp(x=ds.x, y=ds.y)
+
+    tide_bool_hr = (tides_hr >= tide_cutoff_min_hr) & (tides_hr <= tide_cutoff_max_hr)
 
     # Apply mask, and load in corresponding tide masked data
-    return ds.where(tide_bool)
+    return ds.where(tide_bool_hr)
 
 
 def tide_cutoffs_dask(
@@ -85,7 +91,7 @@ class TideLoader(Loader):
         self._storage_account = storage_account
         self._container_name = container_name
 
-    def load(self, item_id):
+    def load(self, item_id) -> DataArray:
         da = rx.open_rasterio(
             f"https://{self._storage_account}.blob.core.windows.net/{self._container_name}/{self._itempath.path(item_id)}",
             chunks={"x": 1, "y": 1},

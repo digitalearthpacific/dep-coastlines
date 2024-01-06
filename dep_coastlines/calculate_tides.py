@@ -24,34 +24,23 @@ TODO: If revisiting this file, consider abstracting some of the constant values
 set in the main script body and using typer.
 """
 
-import json
-import sys
-
 import planetary_computer
 import pystac_client
 from xarray import Dataset
 
 from dea_tools.coastal import pixel_tides
 
-from azure_logger import CsvLogger, filter_by_log
-from dep_tools.loaders2 import PathrowPystacSearcher, OdcLoader, SearchLoader
+from azure_logger import CsvLogger
+from dep_tools.loaders import OdcLoader, SearchLoader
+from dep_tools.searchers import LandsatPystacSearcher
 from dep_tools.namers import DepItemPath
 from dep_tools.processors import Processor
 from dep_tools.task import ErrorCategoryAreaTask, MultiAreaTask
 from dep_tools.utils import get_container_client
 
 from grid import grid
+from task_utils import get_ids
 from writer import DaWriter
-
-import geopandas as gpd
-from antimeridian import fix_shape
-
-
-landsat_pathrows = gpd.read_file(
-    "https://d9-wret.s3.us-west-2.amazonaws.com/assets/palladium/production/s3fs-public/atoms/files/WRS2_descending_0.zip"
-)
-
-from shapely.geometry import box
 
 
 class TideProcessor(Processor):
@@ -73,56 +62,14 @@ class TideProcessor(Processor):
         return tides_lowres.to_dataset("time")
 
 
-def get_ids(datetime, version, dataset_id, retry_errors=True) -> list:
-    namer = DepItemPath(
-        sensor="ls",
-        dataset_id=dataset_id,
-        version=version,
-        time=datetime.replace("/", "_"),
-    )
-
-    logger = CsvLogger(
-        name=dataset_id,
-        container_client=get_container_client(),
-        path=namer.log_path(),
-        overwrite=False,
-        header="time|index|status|paths|comment\n",
-    )
-    return filter_by_log(grid, logger.parse_log(), retry_errors).index.to_list()
-
-
-def get_years_from_datetime(datetime):
-    years = datetime.split("-")
-    if len(years) == 2:
-        years = range(int(years[0]), int(years[1]) + 1)
-    elif len(years) > 2:
-        ValueError(f"{datetime} is not a valid value for --datetime")
-    return years
-
-
-def print_tasks(datetime, version, limit, no_retry_errors, dataset_id):
-    ids = get_ids(datetime, version, dataset_id, not no_retry_errors)
-    params = [
-        {
-            "region-code": region[0][0],
-            "region-index": region[0][1],
-            "datetime": region[1],
-        }
-        for id in ids
-    ]
-
-    if limit is not None:
-        params = params[0 : int(limit)]
-
-    json.dump(params, sys.stdout)
-
-
 def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) -> None:
     client = pystac_client.Client.open(
         "https://planetarycomputer.microsoft.com/api/stac/v1",
         modifier=planetary_computer.sign_inplace,
     )
-    searcher = PathrowPystacSearcher(client=client, datetime=datetime)
+    searcher = LandsatPystacSearcher(
+        search_intersecting_pathrows=True, client=client, datetime=datetime
+    )
     stacloader = OdcLoader(
         fail_on_error=False,
         chunks=dict(band=1, time=1, x=1024, y=1024),
