@@ -1,12 +1,6 @@
-# error in planetary_computer package, likely to be fixed by MS
-pydantic<2
+git+https://github.com/jessjaco/azure-logger.git
+git+https://github.com/digitalearthpacific/dep-tools.git@develop
+git+https://github.com/digitalearthpacific/dep-grid.git@cleanup
 
-git+https://github.com/digitalearthpacific/dep-tools.git@coastline-fixes
-git+https://github.com/jessjaco/azure-logger.git@0376f92
-git+https://github.com/jessjaco/odc-stac.git@exception-fix
-
-# latest tested version
-dea-tools==0.2.8dev80
-flox
-xarray-spatial>=0.3.7
 odc-geo>=0.4.1
+typer
