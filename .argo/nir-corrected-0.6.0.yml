@@ -1,0 +1,163 @@
+kind: Workflow
+metadata:
+  name: coastlines-nir08-corrected
+  namespace: argo
+spec:
+  entrypoint: workflow-entrypoint
+  serviceAccountName: argo-workflow-sa
+  podGC:
+    strategy: OnWorkflowSuccess
+    deleteDelayDuration: 600s
+  parallelism: 10
+  nodeSelector:
+    digitalearthpacific.org/node-size: argo-d64
+  tolerations:
+  - key: digitalearthpacific.org/node-purpose
+    operator: Equal
+    value: argo
+    effect: NoSchedule
+  - key: kubernetes.azure.com/scalesetpriority
+    operator: Equal
+    value: spot
+    effect: NoSchedule
+  workflowMetadata:
+    labels:
+      app: dep_ls_coastlines
+  arguments:
+    parameters:
+    - name: version
+      value: "0.6.0"  # The version of the data product being made
+    - name: image-tag
+      value: "0.0.3-8-gfd4d519"  # The Docker image and code version
+    - name: memory-limit-per-worker
+      value: "120GB"   # Dask's memory limit per worker. There's 2 workers by default.
+    - name: overwrite
+      value: "--no-overwrite"  # Can be "--overwrite" or "--no-overwrite"
+  templates:
+  - name: workflow-entrypoint
+    dag:
+      tasks:
+        - name: generate-ids
+          template: generate
+          arguments:
+            parameters:
+              - name: limit
+                value: "9999"
+              - name: datetime
+                value: "2023"  # One year "2022", or a period "2020-2021"
+              - name: version
+                value: "{{ workflow.parameters.version }}"
+              - name: row
+                value: "73"
+              - name: column
+                value: "73"
+
+        - name: process-id
+          depends: generate-ids.Succeeded
+          template: process
+          arguments:
+            parameters:
+            - name: base-product
+              value: "{{item.base-product}}"
+            - name: region-code
+              value: "{{item.region-code}}"
+            - name: datetime
+              value: "{{item.datetime}}"
+            - name: version
+              value: "{{ workflow.parameters.version }}"
+            - name: memory-limit-per-worker
+              value: " {{ workflow.parameters.memory-limit-per-worker }}"
+            - name: overwrite
+              value: "{{ workflow.parameters.overwrite }}"
+          withParam: "{{ tasks.generate-ids.outputs.result }}"
+
+  - name: generate
+    inputs:
+      parameters:
+      - name: base-product
+      - name: regions
+      - name: limit
+      - name: datetime
+      - name: version
+      - name: overwrite
+    container:
+      image: "ghcr.io/digitalearthpacific/dep-geomad:{{ workflow.parameters.image-tag }}"
+      imagePullPolicy: IfNotPresent
+      resources:
+        requests: 
+          memory: 100Mi
+          cpu: 1.0
+      command: [ python ]
+      args:
+        - src/print_tasks.py
+        - --regions
+        - "{{ inputs.parameters.regions }}"
+        - --datetime
+        - "{{ inputs.parameters.datetime }}"
+        - --version
+        - "{{ inputs.parameters.version }}"
+        - --limit
+        - "{{ inputs.parameters.limit }}"
+        - --base-product
+        - "{{ inputs.parameters.base-product }}"
+        - "{{ inputs.parameters.overwrite }}"
+      env:
+        - name: AZURE_STORAGE_ACCOUNT
+          valueFrom:
+            secretKeyRef:
+              name: deppcpublicstorage-output-read-write
+              key: AZURE_STORAGE_ACCOUNT
+        - name: AZURE_STORAGE_SAS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: deppcpublicstorage-output-read-write
+              key: AZURE_STORAGE_SAS_TOKEN
+
+  - name: process
+    inputs:
+      parameters:
+      - name: base-product
+      - name: region-code
+      - name: datetime
+      - name: version
+      - name: memory-limit-per-worker
+      - name: overwrite
+    container:
+      image: "ghcr.io/digitalearthpacific/dep-geomad:{{ workflow.parameters.image-tag }}"
+      imagePullPolicy: IfNotPresent
+      resources:
+        requests: 
+          memory: 200Gi
+          cpu: 60
+        limits:
+          cpu: 64
+          memory: 240Gi
+      command: [ python ]
+      args:
+        - src/run_task.py
+        - --region-code
+        - "{{ inputs.parameters.region-code }}"
+        - --datetime
+        - "{{ inputs.parameters.datetime }}"
+        - --version
+        - "{{ inputs.parameters.version }}"
+        - --base-product
+        - "{{ inputs.parameters.base-product }}"
+        - --memory-limit-per-worker
+        - "{{ inputs.parameters.memory-limit-per-worker }}"
+        - --n-workers
+        - "2"
+        - --threads-per-worker
+        - "64"
+        - "{{ inputs.parameters.overwrite }}"
+      env:
+        - name: AZURE_STORAGE_ACCOUNT
+          valueFrom:
+            secretKeyRef:
+              name: deppcpublicstorage-output-read-write
+              key: AZURE_STORAGE_ACCOUNT
+        - name: AZURE_STORAGE_SAS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: deppcpublicstorage-output-read-write
+              key: AZURE_STORAGE_SAS_TOKEN

@@ -11,12 +11,12 @@ Each year took an hour or two to run, so if you start multiple
 processes you can calculate for all years within a day or so.
 
 """
-from typing import Union, Iterable, Tuple
+from typing import Iterable, Tuple
 
 from dask.distributed import Client
-from odc.algo import erase_bad
 import planetary_computer
 import pystac_client
+import typer
 from xarray import Dataset, DataArray
 
 from azure_logger import CsvLogger
@@ -31,31 +31,37 @@ from dep_tools.utils import get_container_client
 from dep_tools.writers import DsWriter
 from tide_utils import filter_by_tides, TideLoader
 
-from task_utils import get_ids
+from task_utils import get_ids, print_tasks
 from grid import test_grid
+
+app = typer.Typer()
 
 
 def mask_clouds_by_day(
     xr: DataArray | Dataset,
     filters: Iterable[Tuple[str, int]] | None = None,
-    keep_ints: bool = False,
 ) -> DataArray | Dataset:
     mask = cloud_mask(xr, filters)
     mask.coords["day"] = mask.time.dt.floor("1D")
     mask_by_day = mask.groupby("day").max().sel(day=mask.day)
 
-    if keep_ints:
-        return erase_bad(xr, mask_by_day)
+    if isinstance(xr, DataArray):
+        return xr.where(~mask_by_day, xr.rio.nodata)
     else:
-        return xr.where(~mask_by_day)
+        for variable in xr:
+            xr[variable] = xr[variable].where(~mask_by_day, xr[variable].rio.nodata)
+        return xr
+
+
+def mad(da, median_da):
+    return abs(da - median_da).median(dim="time")
 
 
 class NirProcessor(LandsatProcessor):
-    def process(self, xr: Dataset, area) -> Union[Dataset, None]:
-        # Check this for misalignment
-        xr = mask_clouds_by_day(
-            super().process(xr).drop_duplicates(...), keep_ints=True
-        )
+    def process(self, xr: Dataset, area) -> Dataset | None:
+        # Do the cloud mask first before scale and offset are done
+        # When masking by day is stable, move to LandsatProcessor
+        xr = super().process(mask_clouds_by_day(xr)).drop_duplicates(...)
 
         tide_namer = DepItemPath(
             sensor="ls",
@@ -73,12 +79,12 @@ class NirProcessor(LandsatProcessor):
 
         # TODO:
         # ✔ check cloud mask merging,
-        # calc geomad,
+        # ✓ calc geomad,
         # make all_times mosaic and
         # tier 1 only mosaic, etc
         # ✔ set stac properties
-        # check CRS
-        # Any way to not load so many times? In the writer maybe?
+        # ✔ check CRS
+        # ✓ Any way to not load so many times? In the writer maybe?
         # ✔ clip to area
 
         xr.coords["time"] = xr.time.dt.floor("1D")
@@ -86,12 +92,17 @@ class NirProcessor(LandsatProcessor):
         # or mean or median or whatever
         xr = xr.groupby("time").first()
         output = xr.nir08.median("time", keep_attrs=True).to_dataset()
-        output["count"] = xr.nir08.count("time", keep_attrs=True).astype("int16")
-        output["nir_stdev"] = xr.nir08.std("time", keep_attrs=True)
+        output["nir08_mad"] = mad(xr.nir08, output.nir08)
+        output["count"] = (
+            xr.nir08.count("time", keep_attrs=True).fillna(0).astype("int16")
+        )
+        output["nir08_stdev"] = xr.nir08.std("time", keep_attrs=True)
         return set_stac_properties(xr, output)
 
 
-def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) -> None:
+def main(
+    task_id: str | list[str] | None, datetime: str, version: str, dataset_id: str
+) -> None:
     client = pystac_client.Client.open(
         "https://planetarycomputer.microsoft.com/api/stac/v1",
         modifier=planetary_computer.sign_inplace,
@@ -105,7 +116,7 @@ def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) 
     )
     stacloader = OdcLoader(
         datetime=datetime,
-        chunks=dict(band=1, time=1, x=4096, y=4096),
+        chunks=dict(band=1, time=1, x=8192, y=8192),
         resampling={"qa_pixel": "nearest", "*": "cubic"},
         fail_on_error=False,
         bands=["qa_pixel", "nir08"],
@@ -115,7 +126,7 @@ def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) 
     loader = SearchLoader(searcher, stacloader)
 
     processor = NirProcessor(
-        mask_clouds=False, scale_and_offset=False, send_area_to_processor=True
+        mask_clouds=True, scale_and_offset=True, send_area_to_processor=True
     )
 
     namer = DepItemPath(
@@ -134,7 +145,7 @@ def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) 
         name=dataset_id,
         container_client=get_container_client(),
         path=namer.log_path(),
-        overwrite=True,
+        overwrite=False,
         header="time|index|status|paths|comment\n",
     )
 
@@ -154,11 +165,18 @@ def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) 
         ).run()
 
 
-if __name__ == "__main__":
-    datetime = "2018"
-    version = "0.6.0"
-    dataset_id = "coastlines/nir08-corrected"
+@app.callback(invoke_without_command=True)
+def run(datetime, version, dataset_id):
     task_ids = get_ids(datetime, version, dataset_id, grid=test_grid)
 
     with Client() as client:
         run(task_ids, datetime, version, dataset_id)
+
+
+@app.command()
+def print_ids():
+    print_tasks(datetime, version, limit, no_retry_errors, dataset_id)
+
+
+if __name__ == "__main__":
+    app()

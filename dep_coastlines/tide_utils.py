@@ -47,6 +47,7 @@ def filter_by_tides(ds: Dataset, item_id, tide_loader: Loader, area=None) -> Dat
 
     tide_bool_lr = (tides_lr >= tide_cutoff_min) & (tides_lr <= tide_cutoff_max)
 
+    ds = ds.sel(time=ds.time[ds.time.isin(tides_lr.time)])
     # Filter to times that have _any_ tides within the range
     ds = ds.sel(time=tide_bool_lr.sum(dim=["x", "y"]) > 0)
 

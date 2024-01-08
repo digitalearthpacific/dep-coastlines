@@ -39,7 +39,7 @@ def print_tasks(datetime, version, limit, no_retry_errors, dataset_id):
     ids = get_ids(datetime, version, dataset_id, not no_retry_errors)
     params = [
         {
-            "region-code": region[0][0],
+            "co-code": region[0][0],
             "region-index": region[0][1],
             "datetime": region[1],
         }
@@ -50,3 +50,7 @@ def print_tasks(datetime, version, limit, no_retry_errors, dataset_id):
         params = params[0 : int(limit)]
 
     json.dump(params, sys.stdout)
+
+
+if __name__ == "__main__":
+    typer.run(print_tasks)
