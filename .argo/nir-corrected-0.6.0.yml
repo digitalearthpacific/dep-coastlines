@@ -28,7 +28,7 @@ spec:
     - name: version
       value: "0.6.0"  # The version of the data product being made
     - name: image-tag
-      value: "0.0.3-8-gfd4d519"  # The Docker image and code version
+      value: "v0.4.13-27-g1ea476b"# The Docker image and code version
     - name: memory-limit-per-worker
       value: "120GB"   # Dask's memory limit per worker. There's 2 workers by default.
     - name: overwrite
@@ -47,41 +47,32 @@ spec:
                 value: "2023"  # One year "2022", or a period "2020-2021"
               - name: version
                 value: "{{ workflow.parameters.version }}"
-              - name: row
-                value: "73"
-              - name: column
-                value: "73"
-
+              - name: retry-errors
+                value: False
         - name: process-id
           depends: generate-ids.Succeeded
           template: process
           arguments:
             parameters:
-            - name: base-product
-              value: "{{item.base-product}}"
-            - name: region-code
-              value: "{{item.region-code}}"
+            - name: row
+              value: "73"
+            - name: column
+              value: "73"
             - name: datetime
               value: "{{item.datetime}}"
             - name: version
               value: "{{ workflow.parameters.version }}"
-            - name: memory-limit-per-worker
-              value: " {{ workflow.parameters.memory-limit-per-worker }}"
-            - name: overwrite
-              value: "{{ workflow.parameters.overwrite }}"
           withParam: "{{ tasks.generate-ids.outputs.result }}"
 
   - name: generate
     inputs:
       parameters:
-      - name: base-product
-      - name: regions
-      - name: limit
       - name: datetime
       - name: version
-      - name: overwrite
+      - name: limit
+      - name: retry-errors
     container:
-      image: "ghcr.io/digitalearthpacific/dep-geomad:{{ workflow.parameters.image-tag }}"
+      image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
       resources:
         requests: 
@@ -89,18 +80,17 @@ spec:
           cpu: 1.0
       command: [ python ]
       args:
-        - src/print_tasks.py
-        - --regions
-        - "{{ inputs.parameters.regions }}"
+        - dep_coastlines/calculate_corrected_nir.py
+        - print_ids
         - --datetime
         - "{{ inputs.parameters.datetime }}"
         - --version
         - "{{ inputs.parameters.version }}"
         - --limit
         - "{{ inputs.parameters.limit }}"
-        - --base-product
-        - "{{ inputs.parameters.base-product }}"
-        - "{{ inputs.parameters.overwrite }}"
+        - --retry-errors
+        - "{{ inputs.parameters.retry-errors }}"
+
       env:
         - name: AZURE_STORAGE_ACCOUNT
           valueFrom:
@@ -116,14 +106,12 @@ spec:
   - name: process
     inputs:
       parameters:
-      - name: base-product
-      - name: region-code
       - name: datetime
       - name: version
-      - name: memory-limit-per-worker
-      - name: overwrite
+      - name: row
+      - name: column
     container:
-      image: "ghcr.io/digitalearthpacific/dep-geomad:{{ workflow.parameters.image-tag }}"
+      image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
       resources:
         requests: 
@@ -134,22 +122,16 @@ spec:
           memory: 240Gi
       command: [ python ]
       args:
-        - src/run_task.py
-        - --region-code
-        - "{{ inputs.parameters.region-code }}"
+        - dep_coastlines/process_id.py
+        - process_id
         - --datetime
         - "{{ inputs.parameters.datetime }}"
         - --version
         - "{{ inputs.parameters.version }}"
-        - --base-product
-        - "{{ inputs.parameters.base-product }}"
-        - --memory-limit-per-worker
-        - "{{ inputs.parameters.memory-limit-per-worker }}"
-        - --n-workers
-        - "2"
-        - --threads-per-worker
-        - "64"
-        - "{{ inputs.parameters.overwrite }}"
+        - --row
+        - "{{ inputs.parameters.row }}"
+        - --column
+        - "{{ inputs.parameters.column }}"
       env:
         - name: AZURE_STORAGE_ACCOUNT
           valueFrom:

@@ -11,12 +11,12 @@ Each year took an hour or two to run, so if you start multiple
 processes you can calculate for all years within a day or so.
 
 """
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, Annotated, Optional
 
 from dask.distributed import Client
 import planetary_computer
 import pystac_client
-import typer
+from typer import Option, Typer
 from xarray import Dataset, DataArray
 
 from azure_logger import CsvLogger
@@ -34,7 +34,7 @@ from tide_utils import filter_by_tides, TideLoader
 from task_utils import get_ids, print_tasks
 from grid import test_grid
 
-app = typer.Typer()
+app = Typer()
 
 
 def mask_clouds_by_day(
@@ -100,8 +100,8 @@ class NirProcessor(LandsatProcessor):
         return set_stac_properties(xr, output)
 
 
-def main(
-    task_id: str | list[str] | None, datetime: str, version: str, dataset_id: str
+def run(
+    task_id: Tuple | list[Tuple] | None, datetime: str, version: str, dataset_id: str
 ) -> None:
     client = pystac_client.Client.open(
         "https://planetarycomputer.microsoft.com/api/stac/v1",
@@ -165,17 +165,36 @@ def main(
         ).run()
 
 
-@app.callback(invoke_without_command=True)
-def run(datetime, version, dataset_id):
+@app.command()
+def print_ids(
+    datetime: Annotated[str, Option()],
+    version: Annotated[str, Option()],
+    limit: Optional[str] = None,
+    retry_errors: Optional[bool] = False,
+    dataset_id="coastlines/nir08-corrected",
+):
+    print_tasks(datetime, version, limit, retry_errors, dataset_id)
+
+
+@app.command()
+def process_id(
+    datetime: Annotated[str, Option()],
+    version: Annotated[str, Option()],
+    row: Annotated[str, Option()],
+    column: Annotated[str, Option()],
+):
+    run((int(row), int(column)), datetime, version, "coastlines/nir08-corrected")
+
+
+def main(
+    datetime,
+    version,
+    dataset_id="coastlines/nir08-corrected",
+):
     task_ids = get_ids(datetime, version, dataset_id, grid=test_grid)
 
     with Client() as client:
         run(task_ids, datetime, version, dataset_id)
-
-
-@app.command()
-def print_ids():
-    print_tasks(datetime, version, limit, no_retry_errors, dataset_id)
 
 
 if __name__ == "__main__":

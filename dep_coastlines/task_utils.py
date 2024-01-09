@@ -5,7 +5,7 @@ from azure_logger import CsvLogger, filter_by_log
 from dep_tools.namers import DepItemPath
 from dep_tools.utils import get_container_client
 
-from grid import test_grid as GRID
+from dep_coastlines.grid import test_grid as GRID
 
 
 def get_ids(datetime, version, dataset_id, retry_errors=True, grid=GRID) -> list:
@@ -37,20 +37,9 @@ def get_years_from_datetime(datetime):
 
 def print_tasks(datetime, version, limit, no_retry_errors, dataset_id):
     ids = get_ids(datetime, version, dataset_id, not no_retry_errors)
-    params = [
-        {
-            "co-code": region[0][0],
-            "region-index": region[0][1],
-            "datetime": region[1],
-        }
-        for id in ids
-    ]
+    params = [{"row": id[0], "column": id[1], "datetime": datetime} for id in ids]
 
     if limit is not None:
         params = params[0 : int(limit)]
 
     json.dump(params, sys.stdout)
-
-
-if __name__ == "__main__":
-    typer.run(print_tasks)
