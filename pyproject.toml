@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dep-coastlines"
+version = "0.6.0"
+description = "Coastlines mapping for Digital Earth Pacific"
+authors = [{"name" = "Jesse Anderson <jesse.anderson@gmail.com>"}]
+license = {file = "LICENSE"}
+readme = "README.md"
+requires-python = ">=3.10"
+dynamic = ["dependencies"]
+
+[tool.setuptools]
+packages = ["dep_coastlines"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }

@@ -1,6 +1,6 @@
-git+https://github.com/jessjaco/azure-logger.git
-git+https://github.com/digitalearthpacific/dep-tools.git@develop
-git+https://github.com/digitalearthpacific/dep-grid.git@cleanup
+azure-logger @ git+https://github.com/jessjaco/azure-logger.git
+dep-tools @ git+https://github.com/digitalearthpacific/dep-tools.git@develop
+dep-grid @ git+https://github.com/digitalearthpacific/dep-grid.git@cleanup
 
 odc-geo>=0.4.1
 typer
