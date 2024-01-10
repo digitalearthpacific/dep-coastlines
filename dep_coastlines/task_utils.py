@@ -37,7 +37,11 @@ def get_years_from_datetime(datetime):
 
 def print_tasks(datetime, version, limit, no_retry_errors, dataset_id):
     ids = get_ids(datetime, version, dataset_id, not no_retry_errors)
-    params = [{"row": id[0], "column": id[1], "datetime": datetime} for id in ids]
+    params = [
+        {"row": id[0], "column": id[1], "datetime": year}
+        for id in ids
+        for year in get_years_from_datetime(datetime)
+    ]
 
     if limit is not None:
         params = params[0 : int(limit)]
