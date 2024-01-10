@@ -171,9 +171,12 @@ def print_ids(
     version: Annotated[str, Option()],
     limit: Optional[str] = None,
     retry_errors: Optional[bool] = False,
+    years_per_composite: Optional[str] = "1",
     dataset_id="coastlines/nir08-corrected",
 ):
-    print_tasks(datetime, version, limit, retry_errors, dataset_id)
+    print_tasks(
+        datetime, version, limit, retry_errors, int(years_per_composite), dataset_id
+    )
 
 
 @app.command()

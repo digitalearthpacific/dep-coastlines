@@ -28,7 +28,7 @@ spec:
     - name: version
       value: "0.6.0"  # The version of the data product being made
     - name: image-tag
-      value: "v0.4.13-32-gf4eef61"
+      value: "v0.4.13-33-g9249c53"
   templates:
   - name: workflow-entrypoint
     dag:
