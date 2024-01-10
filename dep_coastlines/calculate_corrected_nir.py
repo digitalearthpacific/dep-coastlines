@@ -183,7 +183,8 @@ def process_id(
     row: Annotated[str, Option()],
     column: Annotated[str, Option()],
 ):
-    run((int(row), int(column)), datetime, version, "coastlines/nir08-corrected")
+    with Client():
+        run((int(row), int(column)), datetime, version, "coastlines/nir08-corrected")
 
 
 def main(
@@ -193,7 +194,7 @@ def main(
 ):
     task_ids = get_ids(datetime, version, dataset_id, grid=test_grid)
 
-    with Client() as client:
+    with Client():
         run(task_ids, datetime, version, dataset_id)
 
 

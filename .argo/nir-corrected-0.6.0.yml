@@ -28,7 +28,7 @@ spec:
     - name: version
       value: "0.6.0"  # The version of the data product being made
     - name: image-tag
-      value: "v0.4.13-27-g1ea476b"# The Docker image and code version
+      value: "v0.4.13-30-ga6f95b2"
     - name: memory-limit-per-worker
       value: "120GB"   # Dask's memory limit per worker. There's 2 workers by default.
     - name: overwrite
@@ -47,50 +47,43 @@ spec:
                 value: "2023"  # One year "2022", or a period "2020-2021"
               - name: version
                 value: "{{ workflow.parameters.version }}"
-              - name: retry-errors
-                value: False
         - name: process-id
           depends: generate-ids.Succeeded
           template: process
           arguments:
             parameters:
             - name: row
-              value: "73"
+              value: "{{item.row}}"
             - name: column
-              value: "73"
+              value: "{{item.column}}"
             - name: datetime
               value: "{{item.datetime}}"
             - name: version
               value: "{{ workflow.parameters.version }}"
           withParam: "{{ tasks.generate-ids.outputs.result }}"
-
   - name: generate
     inputs:
       parameters:
       - name: datetime
       - name: version
       - name: limit
-      - name: retry-errors
     container:
       image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
       resources:
         requests: 
-          memory: 100Mi
+          memory: 256Mi
           cpu: 1.0
       command: [ python ]
       args:
         - dep_coastlines/calculate_corrected_nir.py
-        - print_ids
+        - print-ids
         - --datetime
         - "{{ inputs.parameters.datetime }}"
         - --version
         - "{{ inputs.parameters.version }}"
         - --limit
         - "{{ inputs.parameters.limit }}"
-        - --retry-errors
-        - "{{ inputs.parameters.retry-errors }}"
-
       env:
         - name: AZURE_STORAGE_ACCOUNT
           valueFrom:
@@ -115,15 +108,15 @@ spec:
       imagePullPolicy: IfNotPresent
       resources:
         requests: 
-          memory: 200Gi
-          cpu: 60
+          memory: 64Gi
+          cpu: 8
         limits:
           cpu: 64
           memory: 240Gi
       command: [ python ]
       args:
-        - dep_coastlines/process_id.py
-        - process_id
+        - dep_coastlines/calculate_corrected_nir.py
+        - process-id
         - --datetime
         - "{{ inputs.parameters.datetime }}"
         - --version
