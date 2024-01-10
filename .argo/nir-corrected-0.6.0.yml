@@ -28,11 +28,7 @@ spec:
     - name: version
       value: "0.6.0"  # The version of the data product being made
     - name: image-tag
-      value: "v0.4.13-30-ga6f95b2"
-    - name: memory-limit-per-worker
-      value: "120GB"   # Dask's memory limit per worker. There's 2 workers by default.
-    - name: overwrite
-      value: "--no-overwrite"  # Can be "--overwrite" or "--no-overwrite"
+      value: "v0.4.13-32-gf4eef61"
   templates:
   - name: workflow-entrypoint
     dag:
@@ -72,8 +68,8 @@ spec:
       imagePullPolicy: IfNotPresent
       resources:
         requests: 
-          memory: 256Mi
-          cpu: 1.0
+          memory: 4Gi
+          cpu: 2
       command: [ python ]
       args:
         - dep_coastlines/calculate_corrected_nir.py
