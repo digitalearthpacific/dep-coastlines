@@ -1,9 +1,11 @@
 FROM mcr.microsoft.com/planetary-computer/python:latest AS base
 
-ADD requirements.txt /tmp/requirements.txt
-RUN conda install gcc -y \
-  && pip install --no-cache-dir --upgrade pip \
-  && pip install .
+USER root
+
+ADD . /tmp/dep-coastlines
+WORKDIR /tmp
+RUN pip install --no-cache-dir --upgrade pip && pip install ./dep-coastlines
 
 ADD . /code
 WORKDIR /code
+
