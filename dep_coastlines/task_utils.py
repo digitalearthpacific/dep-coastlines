@@ -43,7 +43,8 @@ def print_tasks(datetime, version, limit, no_retry_errors, composite_years, data
     years = get_years_from_datetime(datetime)
     if composite_years > 1:
         years = [
-            f"{y[0]}/{y[2]}" for y in sliding_window_view(list(years), composite_years)
+            f"{y[0]}/{y[composite_years - 1]}"
+            for y in sliding_window_view(list(years), composite_years)
         ]
 
     params = [

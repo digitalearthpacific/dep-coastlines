@@ -28,7 +28,7 @@ spec:
     - name: version
       value: "0.6.0"  # The version of the data product being made
     - name: image-tag
-      value: "v0.4.13-33-g9249c53"
+      value: "v0.4.13-34-g7c48218"
   templates:
   - name: workflow-entrypoint
     dag:
@@ -40,7 +40,9 @@ spec:
               - name: limit
                 value: "9999"
               - name: datetime
-                value: "1999-2023"  # One year "2022", or a period "2020-2021"
+                value: "1997-2025"  # One year "2022", or a period "2020-2021"
+              - name: years-per-composite
+                value: "5"
               - name: version
                 value: "{{ workflow.parameters.version }}"
         - name: process-id
@@ -63,6 +65,7 @@ spec:
       - name: datetime
       - name: version
       - name: limit
+      - name: years-per-composite
     container:
       image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
@@ -80,6 +83,8 @@ spec:
         - "{{ inputs.parameters.version }}"
         - --limit
         - "{{ inputs.parameters.limit }}"
+        - --years-per-composite
+        - "{{ inputs.parameters.years-per-composite }}"
       env:
         - name: AZURE_STORAGE_ACCOUNT
           valueFrom:
