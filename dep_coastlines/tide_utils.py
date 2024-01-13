@@ -19,17 +19,6 @@ def tides_lowres(da: Dataset, item_id, tide_loader: Loader) -> DataArray:
         time=tides_lowres.time[tides_lowres.time.isin(da.time)]
     ).chunk(dict(x=-1, y=-1, time=1))
 
-    # For some areas, some tidal data does not actual extend into
-    # the tidal zone. This fills these values with the nearest value.
-    # This is perhaps not the ideal approach (but neither is using
-    # 5-km tidal data!), an alternative might be to fill the values
-    # with a different tidal dataset, or at least fill / average
-    # values among them.
-    # tides_lowres = apply_ufunc(
-    #    lambda da: fillnodata(da, ~np.isnan(da), max_search_distance=2),
-    #    tides_lowres,
-    #    dask="parallelized",
-    # )
     return tides_lowres
 
 
@@ -48,10 +37,11 @@ def filter_by_tides(ds: Dataset, item_id, tide_loader: Loader, area=None) -> Dat
     tide_bool_lr = (tides_lr >= tide_cutoff_min) & (tides_lr <= tide_cutoff_max)
 
     ds = ds.sel(time=ds.time[ds.time.isin(tides_lr.time)])
-    # Filter to times that have _any_ tides within the range
+    # Filter to times that have _any_ tides within the range.
+    # (this will load lr data into memory)
     ds = ds.sel(time=tide_bool_lr.sum(dim=["x", "y"]) > 0)
 
-    # Filter tides again
+    # Filter tides again, now that there are fewer times
     tides_lr = tides_lr.sel(time=tides_lr.time[tides_lr.time.isin(ds.time)])
 
     tide_cutoff_min_hr = tide_cutoff_min.interp(x=ds.x, y=ds.y)
@@ -59,6 +49,7 @@ def filter_by_tides(ds: Dataset, item_id, tide_loader: Loader, area=None) -> Dat
 
     tides_hr = tides_lr.chunk(time=1).interp(x=ds.x, y=ds.y)
 
+    # This will load cutoff arrays into memory
     tide_bool_hr = (tides_hr >= tide_cutoff_min_hr) & (tides_hr <= tide_cutoff_max_hr)
 
     # Apply mask, and load in corresponding tide masked data

@@ -34,6 +34,7 @@ from tide_utils import filter_by_tides, TideLoader
 from task_utils import get_ids, print_tasks
 from grid import test_grid
 
+DATASET_ID = "coastlines/nir08-corrected"
 app = Typer()
 
 
@@ -90,9 +91,13 @@ class NirProcessor(LandsatProcessor):
         xr.coords["time"] = xr.time.dt.floor("1D")
 
         # or mean or median or whatever
-        xr = xr.groupby("time").first()
-        output = xr.nir08.median("time", keep_attrs=True).to_dataset()
-        output["nir08_mad"] = mad(xr.nir08, output.nir08)
+        xr = xr.groupby("time").first().drop_vars(["qa_pixel"])
+        output = xr.median("time", keep_attrs=True)  # .to_dataset()
+        output_mad = mad(xr, output)
+        output_mad = output_mad.rename(
+            dict((variable, variable + "_mad") for variable in output_mad)
+        )
+        output = output.merge(output_mad)
         output["count"] = (
             xr.nir08.count("time", keep_attrs=True).fillna(0).astype("int16")
         )
@@ -101,7 +106,10 @@ class NirProcessor(LandsatProcessor):
 
 
 def run(
-    task_id: Tuple | list[Tuple] | None, datetime: str, version: str, dataset_id: str
+    task_id: Tuple | list[Tuple] | None,
+    datetime: str,
+    version: str,
+    dataset_id: str = DATASET_ID,
 ) -> None:
     client = pystac_client.Client.open(
         "https://planetarycomputer.microsoft.com/api/stac/v1",
@@ -111,15 +119,13 @@ def run(
         search_intersecting_pathrows=True,
         client=client,
         datetime=datetime,
-        # pystac_client_search_kwargs=dict(query=["landsat:collection_category=T1"]),
-        # exclude_platforms=["landsat-7"],
     )
     stacloader = OdcLoader(
         datetime=datetime,
         chunks=dict(band=1, time=1, x=8192, y=8192),
         resampling={"qa_pixel": "nearest", "*": "cubic"},
         fail_on_error=False,
-        bands=["qa_pixel", "nir08"],
+        bands=["qa_pixel", "nir08", "swir16", "swir22", "red", "blue", "green"],
         clip_to_area=True,
         dtype="float32",
     )
@@ -142,10 +148,10 @@ def run(
         extra_attrs=dict(dep_version=version),
     )
     logger = CsvLogger(
-        name=dataset_id,
+        name=DATASET_ID,
         container_client=get_container_client(),
         path=namer.log_path(),
-        overwrite=False,
+        overwrite=True,
         header="time|index|status|paths|comment\n",
     )
 
@@ -172,7 +178,7 @@ def print_ids(
     limit: Optional[str] = None,
     retry_errors: Optional[bool] = False,
     years_per_composite: Optional[str] = "1",
-    dataset_id="coastlines/nir08-corrected",
+    dataset_id=DATASET_ID,
 ):
     print_tasks(
         datetime, version, limit, retry_errors, int(years_per_composite), dataset_id
@@ -190,12 +196,16 @@ def process_id(
         run((int(row), int(column)), datetime, version, "coastlines/nir08-corrected")
 
 
-def main(
-    datetime,
-    version,
-    dataset_id="coastlines/nir08-corrected",
+@app.command()
+def process_all_ids(
+    datetime: Annotated[str, Option()],
+    version: Annotated[str, Option()],
+    dataset_id=DATASET_ID,
+    overwrite_log: Optional[bool] = False,
 ):
-    task_ids = get_ids(datetime, version, dataset_id, grid=test_grid)
+    task_ids = get_ids(
+        datetime, version, dataset_id, grid=test_grid, delete_existing_log=overwrite_log
+    )
 
     with Client():
         run(task_ids, datetime, version, dataset_id)

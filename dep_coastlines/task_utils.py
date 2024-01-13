@@ -11,7 +11,14 @@ from dep_tools.utils import get_container_client
 from dep_coastlines.grid import test_grid as GRID
 
 
-def get_ids(datetime, version, dataset_id, retry_errors=True, grid=GRID) -> list:
+def get_ids(
+    datetime,
+    version,
+    dataset_id,
+    retry_errors=True,
+    grid=GRID,
+    delete_existing_log: bool = False,
+) -> list:
     namer = DepItemPath(
         sensor="ls",
         dataset_id=dataset_id,
@@ -23,7 +30,7 @@ def get_ids(datetime, version, dataset_id, retry_errors=True, grid=GRID) -> list
         name=dataset_id,
         container_client=get_container_client(),
         path=namer.log_path(),
-        overwrite=False,
+        overwrite=delete_existing_log,
         header="time|index|status|paths|comment\n",
     )
     return filter_by_log(grid, logger.parse_log(), retry_errors).index.to_list()

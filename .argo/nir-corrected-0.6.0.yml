@@ -28,7 +28,7 @@ spec:
     - name: version
       value: "0.6.0"  # The version of the data product being made
     - name: image-tag
-      value: "v0.4.13-34-g7c48218"
+      value: "v0.4.13-35-g393d970"
   templates:
   - name: workflow-entrypoint
     dag:
@@ -40,9 +40,9 @@ spec:
               - name: limit
                 value: "9999"
               - name: datetime
-                value: "1997-2025"  # One year "2022", or a period "2020-2021"
+                value: "1999/2023"  # One year "2022", or a period "2020-2021"
               - name: years-per-composite
-                value: "5"
+                value: "1"
               - name: version
                 value: "{{ workflow.parameters.version }}"
         - name: process-id
