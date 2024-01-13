@@ -171,17 +171,33 @@ def run(
         ).run()
 
 
+def int_or_none(raw: str) -> Optional[int]:
+    return None if raw == "None" else int(raw)
+
+
+def bool_parser(raw: str):
+    return False if raw == "False" else True
+
+
 @app.command()
 def print_ids(
     datetime: Annotated[str, Option()],
     version: Annotated[str, Option()],
-    limit: Optional[str] = None,
-    retry_errors: Optional[bool] = False,
+    limit: Optional[str] = Option(None, parser=int_or_none),
+    # Would be better to make this an Optional[bool] but argo can't do that
+    retry_errors: Annotated[str, Option(parser=bool)] = "True",
+    overwrite_logs: Annotated[str, Option(parser=bool)] = "False",
     years_per_composite: Optional[str] = "1",
     dataset_id=DATASET_ID,
 ):
     print_tasks(
-        datetime, version, limit, retry_errors, int(years_per_composite), dataset_id
+        datetime,
+        version,
+        limit,
+        retry_errors,
+        int(years_per_composite),
+        dataset_id,
+        delete_existing_log=overwrite_logs,
     )
 
 
@@ -201,7 +217,7 @@ def process_all_ids(
     datetime: Annotated[str, Option()],
     version: Annotated[str, Option()],
     dataset_id=DATASET_ID,
-    overwrite_log: Optional[bool] = False,
+    overwrite_log: Annotated[bool, Option()] = False,
 ):
     task_ids = get_ids(
         datetime, version, dataset_id, grid=test_grid, delete_existing_log=overwrite_log

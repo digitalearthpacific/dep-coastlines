@@ -28,7 +28,7 @@ spec:
     - name: version
       value: "0.6.0"  # The version of the data product being made
     - name: image-tag
-      value: "v0.4.13-35-g393d970"
+      value: "v0.4.13-36-gb01996a"
   templates:
   - name: workflow-entrypoint
     dag:
@@ -38,13 +38,15 @@ spec:
           arguments:
             parameters:
               - name: limit
-                value: "9999"
+                value: "None"
               - name: datetime
-                value: "1999/2023"  # One year "2022", or a period "2020-2021"
+                value: "1999" 
               - name: years-per-composite
                 value: "1"
               - name: version
                 value: "{{ workflow.parameters.version }}"
+              - name: overwrite-logs
+                value: "False"
         - name: process-id
           depends: generate-ids.Succeeded
           template: process
@@ -66,6 +68,7 @@ spec:
       - name: version
       - name: limit
       - name: years-per-composite
+      - name: overwrite-log
     container:
       image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
@@ -85,6 +88,8 @@ spec:
         - "{{ inputs.parameters.limit }}"
         - --years-per-composite
         - "{{ inputs.parameters.years-per-composite }}"
+        - --overwrite-logs
+        - "{{ inputs.parameters.overwrite-logs }}"
       env:
         - name: AZURE_STORAGE_ACCOUNT
           valueFrom:

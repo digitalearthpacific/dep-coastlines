@@ -45,8 +45,22 @@ def get_years_from_datetime(datetime):
     return years
 
 
-def print_tasks(datetime, version, limit, no_retry_errors, composite_years, dataset_id):
-    ids = get_ids(datetime, version, dataset_id, not no_retry_errors)
+def print_tasks(
+    datetime,
+    version,
+    limit,
+    no_retry_errors,
+    composite_years,
+    dataset_id,
+    delete_existing_log: bool = False,
+):
+    ids = get_ids(
+        datetime=datetime,
+        version=version,
+        dataset_id=dataset_id,
+        retry_errors=not no_retry_errors,
+        delete_existing_log=delete_existing_log,
+    )
     years = get_years_from_datetime(datetime)
     if composite_years > 1:
         years = [
