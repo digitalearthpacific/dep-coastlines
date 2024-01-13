@@ -102,7 +102,7 @@ class NirProcessor(LandsatProcessor):
             xr.nir08.count("time", keep_attrs=True).fillna(0).astype("int16")
         )
         output["nir08_stdev"] = xr.nir08.std("time", keep_attrs=True)
-        return set_stac_properties(xr, output)
+        return set_stac_properties(xr, output).chunk(dict(x=1024, y=1024))
 
 
 def run(
@@ -223,7 +223,7 @@ def process_all_ids(
         datetime, version, dataset_id, grid=test_grid, delete_existing_log=overwrite_log
     )
 
-    with Client():
+    with Client(memory_limit="16GiB"):
         run(task_ids, datetime, version, dataset_id)
 
 
