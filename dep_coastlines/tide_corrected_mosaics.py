@@ -181,7 +181,7 @@ def process_id(
     column: Annotated[str, Option()],
 ):
     with Client():
-        run((int(row), int(column)), datetime, version, "coastlines/nir08-corrected")
+        run((int(row), int(column)), datetime, version)
 
 
 @app.command()
@@ -199,8 +199,6 @@ def process_all_ids(
     with Client(memory_limit="16GiB"):
         run(task_ids, datetime, version, dataset_id)
 
-
-## If you're looking for print_ids I moved it to task_utils
 
 if __name__ == "__main__":
     app()
