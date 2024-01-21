@@ -35,7 +35,7 @@ from tide_utils import filter_by_tides, TideLoader
 from task_utils import get_ids
 from grid import test_grid
 
-DATASET_ID = "coastlines/nir08-corrected"
+DATASET_ID = "coastlines/mosiacs-corrected"
 app = Typer()
 
 

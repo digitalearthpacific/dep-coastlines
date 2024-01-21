@@ -8,108 +8,87 @@ so things may move around / get renamed some in the coming weeks.
 Please refer to raster_cleaning.py for specific functions.
 """
 
+from typing import Tuple, Annotated
 
-from typing import Tuple
-
+from dask.distributed import Client
 from dea_tools.spatial import subpixel_contours
-import geopandas as gpd
+from geopandas import GeoDataFrame
 from numpy import mean
+from numpy.lib.stride_tricks import sliding_window_view
+from typer import Option, Typer
 from xarray import Dataset, concat
 
-from azure_logger import CsvLogger, get_log_path
-from dep_tools.exceptions import EmptyCollectionError
+from azure_logger import CsvLogger
 from dep_tools.loaders import Loader
+from dep_tools.namers import DepItemPath
 from dep_tools.processors import Processor
-from dep_tools.runner import run_by_area_dask
-from dep_tools.utils import (
-    blob_exists,
-    write_to_blob_storage,
-    get_blob_path,
-    get_container_client,
-)
-from dep_tools.writers import Writer
+from dep_tools.task import MultiAreaTask, ErrorCategoryAreaTask
+from dep_tools.utils import get_container_client
 
+from MosaicLoader import MosaicLoader
 from raster_cleaning import contours_preprocess
-from utils import load_blobs
+from grid import test_grid
+from task_utils import get_ids
+from writer import CoastlineWriter
+
+
+app = Typer()
+DATASET_ID = "coastlines/nir08-clean"
 
 
 def _set_year_to_middle_year(xr: Dataset) -> Dataset:
-    edge_years = [y.split("_") for y in xr.year.to_numpy()]
+    edge_years = [y.split("/") for y in xr.year.to_numpy()]
     middle_years = [int(mean([int(y[0]), int(y[1])])) for y in edge_years]
     xr["year"] = middle_years
     return xr
 
 
-class CompositeLoader(Loader):
-    def __init__(
-        self,
-        prefix,
-        early_prefix,
-        start_year,
-        end_year,
-        dataset,
-        early_dataset,
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
-        self.prefix = prefix
-        self.early_prefix = early_prefix
-        self.start_year = start_year
-        self.end_year = end_year
-        self.dataset = dataset
-        self.early_dataset = early_dataset
+def get_datetimes(start_year, end_year, years_per_composite):
+    # nearly duplicated in task_utils, should probably refactor
+    # yeah, just switch to get_composite_datetime and make years separate
+    assert years_per_composite % 2 == 1
+    year_buffer = int((years_per_composite - 1) / 2)
+    years = range(int(start_year) - year_buffer, int(end_year) + 1 + year_buffer)
+    if years_per_composite > 1:
+        years = [
+            f"{y[0]}/{y[years_per_composite - 1]}"
+            for y in sliding_window_view(list(years), years_per_composite)
+        ]
+    return [str(y) for y in years]
+
+
+class MultiyearMosaicLoader(Loader):
+    def __init__(self, start_year, end_year, years_per_composite=1):
+        super().__init__()
+        self._start_year = start_year
+        self._end_year = end_year
+        self._years_per_composite = years_per_composite
+        self._container_client = get_container_client()
 
     def load(self, area) -> Tuple[Dataset, Dataset]:
-        late_range = range(2013, self.end_year)
-        yearly_ds = load_blobs(
-            self.dataset,
-            area.index[0],
-            self.prefix,
-            late_range,
-            chunks=True,
-        )
-
-        composite_years = [f"{year-1}_{year+1}" for year in late_range]
-        composite_ds = load_blobs(
-            self.dataset, area.index[0], self.prefix, composite_years, chunks=True
-        )
-
-        early_range = range(self.start_year, 2013)
-
-        if len(early_range) > 0:
-            early_yearly_ds = load_blobs(
-                self.early_dataset,
-                area.index[0],
-                self.early_prefix,
-                early_range,
-                chunks=True,
+        dss = []
+        for datetime in get_datetimes(
+            self._start_year, self._end_year, self._years_per_composite
+        ):
+            itempath = DepItemPath(
+                sensor="ls",
+                dataset_id="coastlines/nir08-corrected",
+                version="0.6.0",
+                time=datetime.replace("/", "_"),
+                zero_pad_numbers=True,
             )
-            yearly_ds = concat([early_yearly_ds, yearly_ds], dim="year")
-
-            early_composite_years = [f"{year-1}_{year+1}" for year in early_range]
-            early_composite_ds = load_blobs(
-                self.early_dataset,
-                area.index[0],
-                self.early_prefix,
-                early_composite_years,
-                chunks=True,
+            loader = MosaicLoader(
+                itempath=itempath, container_client=self._container_client
             )
-            composite_ds = concat([early_composite_ds, composite_ds], dim="year")
+            dss.append(
+                loader.load(area.index.values[0]).assign_coords({"year": datetime})
+            )
 
-        if yearly_ds is None:
-            raise EmptyCollectionError()
+        output = concat(dss, dim="year")
+        if self._years_per_composite > 1:
+            output = _set_year_to_middle_year(output)
 
-        composite_ds = _set_year_to_middle_year(composite_ds)
-
-        composite_ds = composite_ds.where(
-            composite_ds.year.isin(yearly_ds.year), drop=True
-        )
-        yearly_ds = yearly_ds.where(yearly_ds.year.isin(composite_ds.year), drop=True)
-
-        if len(yearly_ds.year) == 0:
-            raise EmptyCollectionError()
-
-        return (yearly_ds, composite_ds)
+        return output
 
 
 class Cleaner(Processor):
@@ -119,148 +98,117 @@ class Cleaner(Processor):
         index_threshold: float = -1280.0,
         masking_index: str = "mndwi",
         masking_threshold: float = 0,
-        **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__()
         self.index_threshold = index_threshold
         self.water_index = water_index
         self.masking_index = masking_index
         self.masking_threshold = masking_threshold
 
-    def process(self, input: Tuple[Dataset, Dataset]) -> Dataset:
-        yearly_ds, composite_ds = input
+    def process(self, input: Tuple[Dataset, Dataset]) -> Tuple[Dataset, GeoDataFrame]:
+        # yearly_ds, composite_ds = input
 
         # thresholding for nir band is the opposite direction of
         # all other indices, so we multiply by negative 1.
-        if "nir08" in yearly_ds:
-            yearly_ds["nir08"] = yearly_ds.nir08 * -1
-            composite_ds["nir08"] = composite_ds.nir08 * -1
+        #        if "nir08" in yearly_ds:
+        #            yearly_ds["nir08"] = yearly_ds.nir08 * -1
+        #            composite_ds["nir08"] = composite_ds.nir08 * -1
 
-        combined_ds = contours_preprocess(
-            yearly_ds,
-            composite_ds,
-            water_index=self.water_index,
-            masking_index=self.masking_index,
-            masking_threshold=self.masking_threshold,
-            mask_nir=True,
-            mask_ephemeral_land=True,
-            mask_ephemeral_water=False,
-            mask_esa_water_land=True,
-            remove_tiny_areas=False,
-            remove_inland_water=False,
-            remove_water_noise=False,
-        )
+        #        combined_ds = contours_preprocess(
+        #            yearly_ds,
+        #            composite_ds,
+        #            water_index=self.water_index,
+        #            masking_index=self.masking_index,
+        #            masking_threshold=self.masking_threshold,
+        #            mask_nir=True,
+        #            mask_ephemeral_land=True,
+        #            mask_ephemeral_water=False,
+        #            mask_esa_water_land=True,
+        #            remove_tiny_areas=False,
+        #            remove_inland_water=False,
+        #            remove_water_noise=False,
+        #        )
 
         # We need to make it a string here or
         # rioxarray has problems writing it ("numpy.int64 has no attribute
         # encode")
-        combined_ds["year"] = combined_ds.year.astype(str)
+        output = input.nir08
 
         combined_gdf = subpixel_contours(
-            combined_ds, dim="year", z_values=[self.index_threshold], min_vertices=3
+            output * -1, dim="year", z_values=[self.index_threshold], min_vertices=3
         )
         combined_gdf.year = combined_gdf.year.astype(int)
 
-        return (combined_ds.to_dataset("year"), combined_gdf)
+        output["year"] = output.year.astype(str)
+        return output.to_dataset("year"), combined_gdf
 
 
-class CleanedWriter(Writer):
-    def __init__(self, dataset_id: str, prefix: str, overwrite: bool = False) -> None:
-        self.dataset_id = dataset_id
-        self.prefix = prefix
-        self.overwrite = overwrite
-
-    def write(self, output, item_id):
-        xr, gdf = output
-        output_path = get_blob_path(self.dataset_id, item_id, self.prefix)
-        if not blob_exists(output_path) or self.overwrite:
-            write_to_blob_storage(
-                xr,
-                path=output_path,
-                write_args=dict(driver="COG"),
-                overwrite=self.overwrite,
-            )
-
-        lines_path = get_blob_path(
-            f"{self.dataset_id}-lines", item_id, self.prefix, ext="gpkg"
-        )
-        if not blob_exists(lines_path) or self.overwrite:
-            write_to_blob_storage(
-                gdf,
-                lines_path,
-                write_args=dict(driver="GPKG", layer=f"lines_{item_id}"),
-                overwrite=self.overwrite,
-            )
-
-
-def main(water_index, **kwargs) -> None:
-    aoi = gpd.read_file(
-        "https://deppcpublicstorage.blob.core.windows.net/output/aoi/coastline_split_by_pathrow.gpkg"
-    ).set_index(["PATH", "ROW"], drop=False)
-
-    test_scenes = [
-        (81, 71),
-        (74, 73),
-        (70, 75),
-        (75, 73),
-        (82, 71),
-        (87, 56),
-        (87, 66),
-        (75, 66),
-        (82, 55),
-    ]
-
-    # aoi = aoi.loc[test_scenes]
-
-    input_dataset = "nir08"
-    input_version = "3Aug2023"
-    input_prefix = f"coastlines/{input_version}"
-
-    early_input_version = "0-3-14"
-    early_dataset = "water-indices"
-    early_input_prefix = f"coastlines/{early_input_version}"
-
-    output_dataset = f"{water_index}-clean"
-    output_version = "0-4-21"
-    prefix = f"coastlines/{output_version}"
-    start_year = 2000
+def run(task_id: Tuple | list[Tuple] | None, dataset_id=DATASET_ID) -> None:
+    version = "0.6.0"
+    start_year = 1999
     end_year = 2023
-
-    loader = CompositeLoader(
-        input_prefix,
-        early_input_prefix,
-        start_year,
-        end_year,
-        input_dataset,
-        early_dataset,
+    namer = DepItemPath(
+        sensor="ls",
+        dataset_id=dataset_id,
+        version=version,
+        time=f"{start_year}_{end_year}",
+        zero_pad_numbers=True,
     )
-    processor = Cleaner(water_index=water_index, **kwargs)
-    writer = CleanedWriter(output_dataset, prefix, overwrite=False)
+
+    loader = MultiyearMosaicLoader(start_year, end_year, years_per_composite=5)
+    processor = Cleaner()
+    writer = CoastlineWriter(
+        namer,
+        overwrite=False,
+        extra_attrs=dict(dep_version=version),
+    )
     logger = CsvLogger(
-        name=output_dataset,
+        name=dataset_id,
         container_client=get_container_client(),
-        path=get_log_path(
-            prefix, output_dataset, output_version, f"{start_year}_{end_year}"
-        ),
+        path=namer.log_path(),
         overwrite=False,
         header="time|index|status|paths|comment\n",
     )
 
-    aoi = logger.filter_by_log(aoi)
+    if isinstance(task_id, list):
+        MultiAreaTask(
+            task_id,
+            test_grid,
+            ErrorCategoryAreaTask,
+            loader,
+            processor,
+            writer,
+            logger,
+        ).run()
+    else:
+        ErrorCategoryAreaTask(
+            task_id, test_grid.loc[[task_id]], loader, processor, writer, logger
+        ).run()
 
-    run_by_area_dask(
-        areas=aoi,
-        loader=loader,
-        processor=processor,
-        writer=writer,
-        logger=logger,
+
+@app.command()
+def process_id(
+    row: Annotated[str, Option()],
+    column: Annotated[str, Option()],
+):
+    with Client():
+        run((int(row), int(column)))
+
+
+@app.command()
+def process_all_ids(
+    version: Annotated[str, Option()],
+    overwrite_log: Annotated[bool, Option()] = False,
+    dataset_id=DATASET_ID,
+    datetime="1999/2023",
+):
+    task_ids = get_ids(
+        datetime, version, dataset_id, grid=test_grid, delete_existing_log=overwrite_log
     )
+
+    with Client():
+        run(task_ids)
 
 
 if __name__ == "__main__":
-    main(
-        water_index="nir08",
-        index_threshold=-1280.0,
-        masking_index="nir08",
-        masking_threshold=-1280.0,
-    )
+    app()

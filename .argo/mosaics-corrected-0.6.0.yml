@@ -25,8 +25,10 @@ spec:
       app: dep_ls_coastlines
   arguments:
     parameters:
+    - name: code-file
+      value: "dep-coastlines/tide_corrected_mosaics.py"
     - name: version
-      value: "0.6.0"  # The version of the data product being made
+      value: "0.6.0"
     - name: image-tag
       value: "v0.4.13-38-g14e167d"
   templates:
@@ -40,13 +42,13 @@ spec:
               - name: limit
                 value: "None"
               - name: datetime
-                value: "1997/1999" 
+                value: "1999" 
               - name: years-per-composite
                 value: "1"
               - name: version
                 value: "{{ workflow.parameters.version }}"
               - name: overwrite-logs
-                value: "True"
+                value: "False"
         - name: process-id
           depends: generate-ids.Succeeded
           template: process
@@ -78,7 +80,7 @@ spec:
           cpu: 2
       command: [ python ]
       args:
-        - dep_coastlines/calculate_corrected_nir.py
+        - dep_coastlines/task_utils.py
         - print-ids
         - --datetime
         - "{{ inputs.parameters.datetime }}"
@@ -115,13 +117,13 @@ spec:
       resources:
         requests: 
           memory: 64Gi
-          cpu: 8
+          cpu: 4
         limits:
-          cpu: 64
+          cpu: 16
           memory: 240Gi
       command: [ python ]
       args:
-        - dep_coastlines/calculate_corrected_nir.py
+        - "{{ workflow.parameters.code_file }}"
         - process-id
         - --datetime
         - "{{ inputs.parameters.datetime }}"
