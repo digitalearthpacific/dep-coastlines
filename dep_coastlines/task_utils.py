@@ -60,28 +60,49 @@ def print_ids(
     years_per_composite: Annotated[str, Option(parser=cs_list_of_ints)] = "1",
     limit: Optional[str] = Option(None, parser=int_or_none),
     # Would be better to make this an Optional[bool] but argo can't do that
-    retry_errors: Annotated[str, Option(parser=bool)] = "True",
-    overwrite_logs: Annotated[str, Option(parser=bool)] = "False",
+    retry_errors: Annotated[str, Option(parser=bool_parser)] = "True",
+    overwrite_logs: Annotated[str, Option(parser=bool_parser)] = "False",
 ):
-    ids = get_ids(
-        datetime=datetime,
-        version=version,
-        dataset_id=dataset_id,
-        retry_errors=retry_errors,
-        delete_existing_log=overwrite_logs,
-    )
+    params = []
+    for year in composite_from_years(parse_datetime(datetime), years_per_composite):
+        ids = get_ids(
+            datetime=year,
+            version=version,
+            dataset_id=dataset_id,
+            retry_errors=retry_errors,
+            delete_existing_log=overwrite_logs,
+        )
 
-    years = composite_from_years(parse_datetime(datetime), years_per_composite)
-    params = [
-        {"row": id[0], "column": id[1], "datetime": year}
-        for id in ids
-        for year in years
-    ]
+        params += [{"row": id[0], "column": id[1], "datetime": year} for id in ids]
 
     if limit is not None:
         params = params[0 : int(limit)]
 
     json.dump(params, sys.stdout)
+
+
+def _remove_existing_stac(grid_subset, version, dataset_id, years):
+    def _remove_existing_stac_year(
+        grid_subset: DataFrame | Series, itempath: DepItemPath
+    ) -> DataFrame | Series | None:
+        container_client = get_container_client()
+        blobs_exist = grid_subset.apply(
+            lambda row: blob_exists(
+                itempath.stac_path(row.name),
+                container_client=container_client,
+            ),
+            axis=1,
+        )
+        return grid_subset[~blobs_exist]
+
+    return concat(
+        [
+            _remove_existing_stac_year(
+                grid_subset, DepItemPath("ls", dataset_id, version, year)
+            )
+            for year in years
+        ]
+    )
 
 
 if __name__ == "__main__":
