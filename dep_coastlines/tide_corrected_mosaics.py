@@ -11,7 +11,7 @@ Each year took an hour or two to run, so if you start multiple
 processes you can calculate for all years within a day or so.
 
 """
-from typing import Iterable, Tuple, Annotated, Optional
+from typing import Iterable, Tuple, Annotated
 
 from dask.distributed import Client
 from odc.geo.geobox import AnchorEnum
@@ -59,7 +59,7 @@ def mad(da, median_da):
     return abs(da - median_da).median(dim="time")
 
 
-class NirProcessor(LandsatProcessor):
+class MosaicProcessor(LandsatProcessor):
     def process(self, xr: Dataset, area) -> Dataset | None:
         # Do the cloud mask first before scale and offset are done
         # When masking by day is stable, move to LandsatProcessor
@@ -133,7 +133,7 @@ def run(
     )
     loader = SearchLoader(searcher, stacloader)
 
-    processor = NirProcessor(
+    processor = MosaicProcessor(
         mask_clouds=True, scale_and_offset=True, send_area_to_processor=True
     )
 
