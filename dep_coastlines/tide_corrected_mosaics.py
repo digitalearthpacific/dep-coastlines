@@ -180,7 +180,7 @@ def process_id(
     row: Annotated[str, Option()],
     column: Annotated[str, Option()],
 ):
-    with Client():
+    with Client(memory_limit="16GiB"):
         run((int(row), int(column)), datetime, version)
 
 

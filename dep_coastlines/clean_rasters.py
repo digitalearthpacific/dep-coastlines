@@ -8,9 +8,11 @@ so things may move around / get renamed some in the coming weeks.
 Please refer to raster_cleaning.py for specific functions.
 """
 
+from joblib import load
 from typing import Tuple, Annotated
 
 from dask.distributed import Client
+from dea_tools.classification import predict_xr
 from dea_tools.spatial import subpixel_contours
 from geopandas import GeoDataFrame
 from numpy import mean
@@ -26,6 +28,7 @@ from dep_tools.task import MultiAreaTask, ErrorCategoryAreaTask
 from dep_tools.utils import get_container_client
 
 from MosaicLoader import MosaicLoader
+from water_indices import mndwi, ndwi, wofs
 from raster_cleaning import contours_preprocess
 from grid import test_grid
 from task_utils import get_ids
@@ -33,7 +36,7 @@ from writer import CoastlineWriter
 
 
 app = Typer()
-DATASET_ID = "coastlines/nir08-clean"
+DATASET_ID = "coastlines/coastlines"
 
 
 def _set_year_to_middle_year(xr: Dataset) -> Dataset:
@@ -72,7 +75,7 @@ class MultiyearMosaicLoader(Loader):
         ):
             itempath = DepItemPath(
                 sensor="ls",
-                dataset_id="coastlines/nir08-corrected",
+                dataset_id="coastlines/mosaics-corrected",
                 version="0.6.0",
                 time=datetime.replace("/", "_"),
                 zero_pad_numbers=True,
@@ -88,6 +91,9 @@ class MultiyearMosaicLoader(Loader):
         if self._years_per_composite > 1:
             output = _set_year_to_middle_year(output)
 
+        # output["mndwi"] = mndwi(output)
+        # output["ndwi"] = ndwi(output)
+        # output["wofs"] = wofs(output)
         return output
 
 
@@ -104,6 +110,17 @@ class Cleaner(Processor):
         self.water_index = water_index
         self.masking_index = masking_index
         self.masking_threshold = masking_threshold
+        self.mask_model = load("data/cleaning_model.joblib")
+
+    def _calculate_mask(self, input):
+        masks = []
+        for year in input.year:
+            year_mask = predict_xr(
+                self.mask_model, input.sel(year=year), clean=True
+            ).Predictions.astype(bool)
+            year_mask.coords["year"] = year
+            masks.append(year_mask)
+        return concat(masks, dim="year")
 
     def process(self, input: Tuple[Dataset, Dataset]) -> Tuple[Dataset, GeoDataFrame]:
         # yearly_ds, composite_ds = input
@@ -129,13 +146,18 @@ class Cleaner(Processor):
         #            remove_water_noise=False,
         #        )
 
-        # We need to make it a string here or
-        # rioxarray has problems writing it ("numpy.int64 has no attribute
-        # encode")
-        output = input.nir08
+        # TODO
+        # save mask somehow
+        # fill in empty from other composites
+
+        mask = self._calculate_mask(input)
+        output = input[self.water_index].where(~mask)
+
+        if self.water_index == "nir08":
+            output *= -1
 
         combined_gdf = subpixel_contours(
-            output * -1, dim="year", z_values=[self.index_threshold], min_vertices=3
+            output, dim="year", z_values=[self.index_threshold], min_vertices=3
         )
         combined_gdf.year = combined_gdf.year.astype(int)
 
@@ -159,7 +181,7 @@ def run(task_id: Tuple | list[Tuple] | None, dataset_id=DATASET_ID) -> None:
     processor = Cleaner()
     writer = CoastlineWriter(
         namer,
-        overwrite=False,
+        overwrite=True,
         extra_attrs=dict(dep_version=version),
     )
     logger = CsvLogger(

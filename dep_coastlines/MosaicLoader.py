@@ -16,18 +16,17 @@ class MosaicLoader(Loader):
         self._container_client = container_client
 
     def load(self, item_id):
-        dss = [
-            _load_single_path(path)
-            for path in list_blob_container(
-                self._container_client,
-                prefix=self._itempath._folder(item_id)
-                + "/",  # Add trailing slash or we get e.g. 1999_2001
-                suffix=".tif",
-            )
-        ]
-
-        # Necessary I think b/c we must have switched writers
-        return xr.merge([ds.rio.reproject_match(dss[0]) for ds in dss])
+        return xr.merge(
+            [
+                _load_single_path(path)
+                for path in list_blob_container(
+                    self._container_client,
+                    prefix=self._itempath._folder(item_id)
+                    + "/",  # Add trailing slash or we get e.g. 1999_2001
+                    suffix=".tif",
+                )
+            ]
+        )
 
 
 def _load_single_path(path) -> xr.Dataset:

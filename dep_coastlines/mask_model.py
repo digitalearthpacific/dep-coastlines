@@ -30,7 +30,9 @@ def add_image_values(pts: gpd.GeoDataFrame, image) -> gpd.GeoDataFrame:
     pts_da = pts_proj.assign(x=pts_proj.geometry.x, y=pts_proj.geometry.y).to_xarray()
 
     # a dataframe or series (for a single point)
-    pt_values_i = image.sel(pts_da[["x", "y"]], method="nearest").squeeze().to_pandas()
+    pt_values_i = (
+        image.sel(pts_da[["x", "y"]], method="nearest").squeeze().compute().to_pandas()
+    )
 
     if isinstance(pt_values_i, pd.Series):
         pt_values_i = pt_values_i.to_frame().transpose()
@@ -43,7 +45,7 @@ def add_image_values(pts: gpd.GeoDataFrame, image) -> gpd.GeoDataFrame:
 def pull_data_for_datetime(df):
     itempath = DepItemPath(
         sensor="ls",
-        dataset_id="coastlines/nir08-corrected",
+        dataset_id="coastlines/mosaics-corrected",
         version="0.6.0",
         time=df.time.iloc[0].replace("/", "_"),
         zero_pad_numbers=True,

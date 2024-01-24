@@ -1,6 +1,6 @@
 kind: Workflow
 metadata:
-  name: coastlines-nir08-corrected
+  name: mosaics-corrected-alltime
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
@@ -26,11 +26,13 @@ spec:
   arguments:
     parameters:
     - name: code-file
-      value: "dep-coastlines/tide_corrected_mosaics.py"
+      value: "dep_coastlines/tide_corrected_mosaics.py"
     - name: version
       value: "0.6.0"
     - name: image-tag
-      value: "v0.4.13-38-g14e167d"
+      value: "v0.4.13-44-g7af4ec0"
+    - name: dataset-id
+      value: "coastlines/mosaics-corrected"
   templates:
   - name: workflow-entrypoint
     dag:
@@ -42,7 +44,7 @@ spec:
               - name: limit
                 value: "None"
               - name: datetime
-                value: "1999" 
+                value: "1999/2023" 
               - name: years-per-composite
                 value: "1"
               - name: version
@@ -81,7 +83,8 @@ spec:
       command: [ python ]
       args:
         - dep_coastlines/task_utils.py
-        - print-ids
+        - --dataset-id
+        - "{{ workflow.parameters.dataset-id }}"
         - --datetime
         - "{{ inputs.parameters.datetime }}"
         - --version
@@ -120,10 +123,10 @@ spec:
           cpu: 4
         limits:
           cpu: 16
-          memory: 240Gi
+          memory: 256Gi
       command: [ python ]
       args:
-        - "{{ workflow.parameters.code_file }}"
+        - "{{ workflow.parameters.code-file }}"
         - process-id
         - --datetime
         - "{{ inputs.parameters.datetime }}"

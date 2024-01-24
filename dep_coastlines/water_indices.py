@@ -1,17 +1,17 @@
-from xarray import DataArray
+from xarray import DataArray, Dataset
 
 from dep_tools.utils import scale_and_offset
 
 
-def mndwi(xr: DataArray) -> DataArray:
+def mndwi(xr: Dataset) -> DataArray:
     # modified normalized differential water index is just a normalized index
     # like NDVI, with different bands
-    mndwi = normalized_ratio(xr.sel(band="green"), xr.sel(band="swir16"))
+    mndwi = normalized_ratio(xr.green, xr.swir16)
     return mndwi.rename("mndwi")
 
 
-def ndwi(xr: DataArray) -> DataArray:
-    ndwi = normalized_ratio(xr.sel(band="green"), xr.sel(band="nir08"))
+def ndwi(xr: Dataset) -> DataArray:
+    ndwi = normalized_ratio(xr.green, xr.nir08)
     return ndwi.rename("ndwi")
 
 
@@ -25,16 +25,15 @@ def awei(xr: DataArray) -> DataArray:
     return awei.rename("awei")
 
 
-def wofs(tm_da: DataArray) -> DataArray:
+def wofs(tm: Dataset) -> DataArray:
     # First, rescale to what the wofs model expects
     # (input values should be scaled, not raw int)
     l1_scale = 0.0001
     l1_rescale = 1.0 / l1_scale
-    tm_da = scale_and_offset(tm_da, scale=[l1_rescale])
+    tm = scale_and_offset(tm, scale=[l1_rescale])
     # lX indicates a left path from node X
     # rX indicates a right
     # dX is just the logic for _that_ node
-    tm = tm_da.to_dataset("band")
     tm["ndi52"] = normalized_ratio(tm.swir16, tm.green)
     tm["ndi43"] = normalized_ratio(tm.nir08, tm.red)
     tm["ndi72"] = normalized_ratio(tm.swir22, tm.green)
