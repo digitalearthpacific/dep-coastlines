@@ -56,6 +56,7 @@ if not blob_exists(grid_blob_path):
         write_args=dict(driver="GPKG", layer_name="coastline_grid"),
     )
 
+
 grid = gpd.read_file(grid_url).set_index(["column", "row"])
 test_tiles = [
     (61, 19),

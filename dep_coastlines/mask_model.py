@@ -2,7 +2,7 @@ import geopandas as gpd
 import pandas as pd
 import xarray as xr
 
-from dep_coastlines.MosaicLoader import MosaicLoader
+from dep_coastlines.MosaicLoader import DeluxeMosaicLoader
 from dep_tools.namers import DepItemPath
 from dep_tools.utils import get_container_client
 
@@ -43,6 +43,7 @@ def add_image_values(pts: gpd.GeoDataFrame, image) -> gpd.GeoDataFrame:
 
 
 def pull_data_for_datetime(df):
+    print(df)
     itempath = DepItemPath(
         sensor="ls",
         dataset_id="coastlines/mosaics-corrected",
@@ -50,13 +51,10 @@ def pull_data_for_datetime(df):
         time=df.time.iloc[0].replace("/", "_"),
         zero_pad_numbers=True,
     )
-    loader = MosaicLoader(
-        itempath=itempath,
-        container_client=get_container_client(),
-    )
+    loader = DeluxeMosaicLoader(itempath)
 
     def _pull_data_for_cell(group):
-        ds = loader.load(group.name)
+        ds = loader.load(group.set_index(["row", "column"]))
         return add_image_values(group, ds)
 
     output = df.groupby(["row", "column"]).apply(_pull_data_for_cell)
@@ -68,5 +66,9 @@ def prep_training_data():
         cast_all(split_multiyears(gpd.read_file("data/training_data.gpkg")))
         .groupby("time")
         .apply(pull_data_for_datetime)
-        .to_csv("data/training_data_with_features.csv")
+        .to_csv("data/training_data_with_features.csv", index=False)
     )
+
+
+if __name__ == "__main__":
+    prep_training_data()

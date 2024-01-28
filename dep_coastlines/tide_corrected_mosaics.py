@@ -103,7 +103,7 @@ class MosaicProcessor(LandsatProcessor):
             xr.nir08.count("time", keep_attrs=True).fillna(0).astype("int16")
         )
         output["nir08_stdev"] = xr.nir08.std("time", keep_attrs=True)
-        return set_stac_properties(xr, output).chunk(dict(x=1024, y=1024))
+        return set_stac_properties(xr, output).chunk(dict(x=2048, y=2048))
 
 
 def run(
@@ -147,6 +147,7 @@ def run(
     writer = DsWriter(
         itempath=namer,
         overwrite=False,
+        load_before_write=True,
         extra_attrs=dict(dep_version=version),
     )
     logger = CsvLogger(
