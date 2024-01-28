@@ -30,7 +30,7 @@ spec:
     - name: version
       value: "0.6.0"
     - name: image-tag
-      value: "v0.4.13-44-g7af4ec0"
+      value: "v0.4.13-46-ge02a3d1"
     - name: dataset-id
       value: "coastlines/mosaics-corrected"
   templates:

@@ -147,7 +147,7 @@ def run(
     writer = DsWriter(
         itempath=namer,
         overwrite=False,
-        load_before_write=True,
+        load_before_write=False,
         extra_attrs=dict(dep_version=version),
     )
     logger = CsvLogger(
