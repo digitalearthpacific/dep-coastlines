@@ -17,7 +17,7 @@ from dep_tools.processors import Processor
 from dep_tools.task import MultiAreaTask, ErrorCategoryAreaTask
 from dep_tools.utils import get_container_client, write_to_local_storage
 
-from MosaicLoader import MultiyearMosaicLoader
+from MosaicLoader import DeluxeMosaicLoader
 from grid import test_grid
 from task_utils import get_ids
 from writer import CompositeWriter
@@ -28,46 +28,36 @@ DATASET_ID = "coastlines/mask"
 
 training_columns = [
     "blue",
-    "blue_mad",
-    "count",
     "green",
-    "green_mad",
     "nir08",
-    "nir08_mad",
-    "nir08_stdev",
     "red",
-    "red_mad",
     "swir16",
-    "swir16_mad",
-    "swir22",
-    "swir22_mad",
+    "nir08_dev",
+    "swir16_dev",
+    "swir22_dev",
     "blue_all",
     "green_all",
     "nir08_all",
     "red_all",
-    "swir16_all",
-    "swir22_all",
+    "mndwi",
+    "ndwi",
 ]
 
 
 class MaskMaker(Processor):
-    def __init__(self, model=load("data/cleaning_model.joblib")):
+    def __init__(self, model=load("data/dirty_water_shrunk_1Feb.joblib")):
         super().__init__()
         self._model = model
 
     def process(self, input):
-        all_time = input.median(dim="year").compute()
-        all_time = all_time.rename({k: k + "_all" for k in all_time.keys()})
         masks = []
         for year in input.year:
-            input_ds = input.sel(year=year).merge(
-                all_time.chunk(dict(x=input.chunks["x"], y=input.chunks["y"]))
-            )[training_columns]
+            input_ds = input.sel(year=year)[training_columns]
             year_mask = predict_xr(
                 self._model,
                 input_ds,
                 clean=True,
-            ).Predictions.astype("int8")
+            ).Predictions.where(~input_ds.red.isnull())
             year_mask.coords["year"] = year
             masks.append(year_mask)
         output = concat(masks, dim="year").to_dataset("year")
@@ -75,8 +65,9 @@ class MaskMaker(Processor):
         return output
 
 
-def run(task_id: Tuple | list[Tuple] | None, dataset_id=DATASET_ID) -> None:
-    version = "0.6.0"
+def run(
+    task_id: Tuple | list[Tuple] | None, version="0.6.0", dataset_id=DATASET_ID
+) -> None:
     start_year = 1999
     end_year = 2023
     namer = DepItemPath(
@@ -87,7 +78,9 @@ def run(task_id: Tuple | list[Tuple] | None, dataset_id=DATASET_ID) -> None:
         zero_pad_numbers=True,
     )
 
-    loader = MultiyearMosaicLoader(start_year, end_year, years_per_composite=1)
+    loader = DeluxeMosaicLoader(
+        start_year=start_year, end_year=end_year, years_per_composite=1
+    )
     processor = MaskMaker()
     writer = CompositeWriter(
         namer,
@@ -140,7 +133,7 @@ def process_all_ids(
     )
 
     with Client():
-        run(task_ids)
+        run(task_ids, version=version, dataset_id=dataset_id)
 
 
 if __name__ == "__main__":

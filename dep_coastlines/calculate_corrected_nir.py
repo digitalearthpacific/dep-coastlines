@@ -82,7 +82,11 @@ class NirProcessor(LandsatProcessor):
         # TODO:
         # ✔ check cloud mask merging,
         # ✓ calc geomad,
-        # make all_times mosaic and
+        # ✔ make all_times mosaic and
+        #   to get ^^^ to run for all places I had to turn off the load_before_write
+        #   option in the writer. Hopefully for final version of things we won't
+        #   have to have all bands / variables so we can get by with turning
+        #   it back on
         # tier 1 only mosaic, etc
         # ✔ set stac properties
         # ✔ check CRS

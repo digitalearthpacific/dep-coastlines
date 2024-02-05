@@ -11,6 +11,8 @@ from dep_tools.loaders import Loader
 from dep_tools.namers import DepItemPath
 from dep_tools.utils import get_container_client
 
+from water_indices import mndwi, ndwi
+
 
 # see the old utils.py for improvements in here
 def _set_year_to_middle_year(xr: xr.Dataset) -> xr.Dataset:
@@ -32,22 +34,6 @@ def get_datetimes(start_year, end_year, years_per_composite):
             for y in sliding_window_view(list(years), years_per_composite)
         ]
     return [str(y) for y in years]
-
-
-class DeluxeMosaicLoader(Loader):
-    def __init__(self, itempath):
-        super().__init__()
-        self._mosaicLoader = MosaicLoader(itempath, get_container_client())
-        self._multiyearMosaicLoader = MultiyearMosaicLoader(1999, 2023, 1)
-
-    def load(self, area):
-        all_time = self._multiyearMosaicLoader.load(area).median(dim="year")
-        this_time = self._mosaicLoader.load(area)
-        # if you wanted this...
-        deviation = this_time - all_time
-        deviation = deviation.rename({k: k + "_dev" for k in list(deviation.keys())})
-        all_time = all_time.rename({k: k + "_all" for k in list(all_time.keys())})
-        return this_time.merge(deviation).merge(all_time)
 
 
 class MultiyearMosaicLoader(Loader):
@@ -94,9 +80,6 @@ class MultiyearMosaicLoader(Loader):
         if years_per_composite > 1:
             output = _set_year_to_middle_year(output)
 
-        # output["mndwi"] = mndwi(output)
-        # output["ndwi"] = ndwi(output)
-        # output["wofs"] = wofs(output)
         return output
 
     def load(self, area) -> xr.Dataset | list[xr.Dataset]:
@@ -110,9 +93,13 @@ class MultiyearMosaicLoader(Loader):
 
 
 class MosaicLoader(Loader):
-    def __init__(self, itempath: DepItemPath, container_client: ContainerClient):
+    def __init__(
+        self, itempath: DepItemPath, container_client: ContainerClient | None = None
+    ):
         self._itempath = itempath
-        self._container_client = container_client
+        self._container_client = (
+            container_client if container_client is not None else get_container_client()
+        )
 
     def load(self, area):
         item_id = area.index.to_numpy()[0]
@@ -127,10 +114,42 @@ class MosaicLoader(Loader):
 
         if len(blobs) > 0:
             output = xr.merge([_load_single_path(path) for path in blobs])
+            output["mndwi"] = mndwi(output)
+            output["ndwi"] = ndwi(output)
+            #            output["meanwi"] = (output.ndwi + output.mndwi) / 2
             return output
         else:
             warnings.warn(f"No items in folder {self._itempath._folder(item_id)}")
             return None
+
+
+class DeluxeMosaicLoader(MultiyearMosaicLoader):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        all_time_namer = DepItemPath(
+            sensor="ls",
+            dataset_id="coastlines/mosaics-corrected",
+            version="0.6.0",
+            time="1999_2023",
+            zero_pad_numbers=True,
+        )
+        self._allTimeLoader = MosaicLoader(all_time_namer)
+
+    def _add_deviations(self, xr, all_time):
+        deviation = xr - all_time
+        deviation = deviation.rename({k: k + "_dev" for k in list(deviation.keys())})
+        all_time = all_time.rename({k: k + "_all" for k in list(all_time.keys())})
+        return xr.merge(deviation).merge(all_time)
+
+    def load(self, area):
+        all_time = self._allTimeLoader.load(area)
+        these_times = super().load(area)
+        if not isinstance(these_times, list):
+            return self._add_deviations(these_times, all_time)
+        else:
+            return [
+                self._add_deviations(this_time, all_time) for this_time in these_times
+            ]
 
 
 def _load_single_path(path) -> xr.Dataset:
