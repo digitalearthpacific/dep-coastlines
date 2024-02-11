@@ -66,7 +66,7 @@ def prep_training_data():
         cast_all(split_multiyears(gpd.read_file("data/training_data.gpkg")))
         .groupby("time")
         .apply(pull_data_for_datetime)
-        .to_csv("data/training_data_with_features_1Feb2024.csv", index=False)
+        .to_csv("data/training_data_with_features_9Feb2024.csv", index=False)
     )
 
 

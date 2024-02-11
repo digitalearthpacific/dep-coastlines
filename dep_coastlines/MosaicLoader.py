@@ -1,3 +1,4 @@
+from ast import Mult
 import warnings
 
 from azure.storage.blob import ContainerClient
@@ -11,7 +12,7 @@ from dep_tools.loaders import Loader
 from dep_tools.namers import DepItemPath
 from dep_tools.utils import get_container_client
 
-from water_indices import mndwi, ndwi
+from dep_coastlines.water_indices import mndwi, ndwi
 
 
 # see the old utils.py for improvements in here
@@ -123,7 +124,7 @@ class MosaicLoader(Loader):
             return None
 
 
-class DeluxeMosaicLoader(MultiyearMosaicLoader):
+class DeluxeMosaicLoader(MosaicLoader):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         all_time_namer = DepItemPath(

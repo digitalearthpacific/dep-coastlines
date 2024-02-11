@@ -47,48 +47,44 @@ def contours_preprocess(
     # are extremely vulnerable to noise
     yearly_ds = yearly_ds.where(yearly_ds["count"] > 1)
 
-    # Apply water index threshold and re-apply nodata values
-    # Here we use both the thresholded nir08 and mndwi to define land. They must
-    # both agree. This helps to remove both water noise from mndwi and surf
-    # (and other) artifacts from nir08. (I'll also add, in general, nir08 is more
-    # dependable at identifying land than mndwi.)
-    land_mask = yearly_ds[masking_index] < masking_threshold
+    land = yearly_ds[masking_index] < masking_threshold
 
     gadm_land = load_gadm_land(yearly_ds)
     gadm_core_land = odc.algo.mask_cleanup(gadm_land, mask_filters=[("erosion", 15)])
-    full_land_mask = land_mask | gadm_core_land
+    land = land | gadm_core_land
 
     if mask_nir:
         nir08_threshold = -1280.0
         nir08_land = yearly_ds["nir08"] < nir08_threshold
-        land_mask = land_mask & nir08_land
+        land = land & nir08_land
 
     nodata = yearly_ds[water_index].isnull()
-    analysis_mask = land_mask.where(~nodata, False)
-    analysis_mask = odc.algo.mask_cleanup(analysis_mask, mask_filters=[("dilation", 3)])
+    analysis_area = land.where(~nodata, False)
+    # within 3 pixels of land mask
+    analysis_area = odc.algo.mask_cleanup(analysis_area, mask_filters=[("dilation", 3)])
 
     if mask_esa_water_land:
         esa_water_land = load_esa_water_land(yearly_ds)
         esa_ocean = esa_water_land == 0
         close_to_coast = ~odc.algo.mask_cleanup(esa_ocean, [("erosion", 5)])
-        analysis_mask = analysis_mask & close_to_coast
+        analysis_area = analysis_area & close_to_coast
 
     if mask_ephemeral_land:
-        ephemeral_land = ephemeral_areas(full_land_mask)
-        analysis_mask = analysis_mask & ~ephemeral_land
+        ephemeral_land = ephemeral_areas(land)
+        analysis_area = analysis_area & ~ephemeral_land
 
     if mask_ephemeral_water:
-        ephemeral_water = ephemeral_areas(~full_land_mask)
-        analysis_mask = analysis_mask & ~ephemeral_water
+        ephemeral_water = ephemeral_areas(~land)
+        analysis_area = analysis_area & ~ephemeral_water
 
     gadm_land = load_gadm_land(yearly_ds)
     if remove_inland_water:
         gadm_ocean = ~gadm_land
-        inland_water = find_inland_areas(~land_mask, gadm_ocean)
-        analysis_mask = analysis_mask & ~inland_water
+        inland_water = find_inland_areas(~land, gadm_ocean)
+        analysis_area = analysis_area & ~inland_water
 
     if remove_tiny_areas:
-        analysis_mask = analysis_mask & ~small_areas(analysis_mask)
+        analysis_area = analysis_area & ~small_areas(analysis_area)
 
     if remove_water_noise:
         # Identify and remove water noise. Basically areas which mndwi says are land
@@ -103,17 +99,17 @@ def contours_preprocess(
         # we are certain we are only getting noise. Otherwise we remove some usable areas.
         # thats_water = 100
         # yearly_ds = yearly_ds.where(~water_noise, thats_water)
-        analysis_mask = analysis_mask & ~water_noise
+        analysis_area = analysis_area & ~water_noise
 
-    all_time_land = analysis_mask.mean(dim="year") >= 0.15
+    all_time_land = analysis_area.mean(dim="year") >= 0.15
     all_time_land = all_time_land | gadm_core_land
 
     inland = odc.algo.mask_cleanup(all_time_land, mask_filters=[("erosion", 15)])
     deep_ocean = odc.algo.mask_cleanup(~all_time_land, mask_filters=[("erosion", 15)])
 
-    analysis_mask = analysis_mask & ~inland & ~deep_ocean
+    analysis_area = analysis_area & ~inland & ~deep_ocean
 
-    return yearly_ds[water_index].where(analysis_mask)
+    return yearly_ds[water_index].where(analysis_area)
 
 
 def find_inland_areas(water_bool_da, ocean_bool_da) -> DataArray:
@@ -196,8 +192,6 @@ def load_esa_water_land(ds: Dataset) -> DataArray:
 
     # Also, if you're wondering why I reprojected to CRS 8859 it's because I couldn't
     # reproject from 4326 for tiles that crossed the antimeridian.
-    # If you're wondering why I set the CRS manually it's because it's not being
-    # read from teh asset for some reason.
     water_land = rx.open_rasterio(input_path, chunks=True).rio.write_crs(8859)
     bounds = list(transform_bounds(ds.rio.crs, water_land.rio.crs, *ds.rio.bounds()))
     return water_land.rio.clip_box(*bounds).squeeze().rio.reproject_match(ds)

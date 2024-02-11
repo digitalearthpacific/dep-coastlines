@@ -54,10 +54,14 @@ def mask_noisy_water(xr, mask, water_index):
     return xr.where(mask != NOISY_WATER_CODE, mean_water_value[water_index])
 
 
-def mask_surf(xr, mask):
+def mask_surf(xr, mask, filler):
     SURF_CODE = 4
-    clean_water_nir08 = 56.536145
-    return xr.where(mask != SURF_CODE, clean_water_nir08)
+    return xr.where(mask != SURF_CODE, filler)
+
+
+def mask_bare_terrain(xr, mask):
+    BARE_TERRAIN_CODE = 8
+    return xr.where(mask != BARE_TERRAIN_CODE)
 
 
 class Cleaner(Processor):
@@ -69,7 +73,7 @@ class Cleaner(Processor):
         super().__init__()
         self.index_threshold = index_threshold
         self.water_index = water_index
-        self.mask_model = load("data/dirty_water_shrunk_1Feb.joblib")
+        self.mask_model = load("data/shrunk_model_6Feb.joblib")
 
     def _calculate_mask(self, input):
         training_columns = [
@@ -77,16 +81,15 @@ class Cleaner(Processor):
             "green",
             "nir08",
             "red",
-            "swir16",
             "nir08_dev",
             "swir16_dev",
-            "swir22_dev",
             "blue_all",
             "green_all",
             "nir08_all",
             "red_all",
             "mndwi",
             "ndwi",
+            "mndwi_all",
         ]
         masks = []
         for year in input.year:
@@ -124,18 +127,21 @@ class Cleaner(Processor):
         if self.water_index in ["mndwi", "ndwi"]:
             output = mask_noisy_water(output, ultimate_mask, self.water_index)
 
+        surf_filler = -40.51090 + output.swir16 * 0.78772
         output = output.where(output["count"] > 1)[self.water_index]
         output = fill_with_nearest_later_date(output)
 
-        if self.water_index == "nir08":
-            output = mask_surf(output, ultimate_mask)
+        if self.water_index in ["nir08", "swir16"]:
+            output = mask_surf(output, ultimate_mask, surf_filler)
             output *= -1
+
+        output = mask_bare_terrain(output, ultimate_mask)
 
         combined_gdf = subpixel_contours(
             output,
             dim="year",
             z_values=[self.index_threshold],
-            min_vertices=10,
+            min_vertices=5,
         )
         combined_gdf.year = combined_gdf.year.astype(int)
 
