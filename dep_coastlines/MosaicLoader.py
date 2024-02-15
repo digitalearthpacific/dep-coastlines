@@ -1,4 +1,3 @@
-from ast import Mult
 import warnings
 
 from azure.storage.blob import ContainerClient
@@ -124,7 +123,7 @@ class MosaicLoader(Loader):
             return None
 
 
-class DeluxeMosaicLoader(MosaicLoader):
+class DeluxeMosaicLoader(MultiyearMosaicLoader):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         all_time_namer = DepItemPath(

@@ -59,8 +59,8 @@ if not blob_exists(grid_blob_path):
 
 grid = gpd.read_file(grid_url).set_index(["column", "row"])
 test_tiles = [
-    (61, 19),
     (53, 47),
+    (61, 19),
     (48, 14),
     (68, 15),
     (68, 16),
