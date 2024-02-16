@@ -116,7 +116,8 @@ class MosaicLoader(Loader):
             output = xr.merge([_load_single_path(path) for path in blobs])
             output["mndwi"] = mndwi(output)
             output["ndwi"] = ndwi(output)
-            #            output["meanwi"] = (output.ndwi + output.mndwi) / 2
+            output["nirwi"] = (1280 - output.nir08) / (1280 + output.nir08)
+            output["meanwi"] = (output.ndwi + output.nirwi) / 2
             return output
         else:
             warnings.warn(f"No items in folder {self._itempath._folder(item_id)}")

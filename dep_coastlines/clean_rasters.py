@@ -133,50 +133,65 @@ class Cleaner(Processor):
             output = input.where(mask != CLOUD_CODE)
         #            ultimate_mask = mask
 
-        output = output[["nir08", "mndwi", "ndwi"]]
-        consensus = (output.nir08 > 1280.0) & (output.mndwi < 0) & (output.ndwi < 0)
+        output = output[["nir08", "mndwi", "ndwi", "meanwi", "nirwi"]]
+        all_time = output.median(dim="year")
+        # consensus = (output.nir08 > 1280.0) & (output.mndwi < 0) & (output.ndwi < 0)
+        consensus = (
+            (all_time.nir08 > 1280.0) & (all_time.mndwi < 0) & (all_time.ndwi < 0)
+        )
+
         # Connected areas are contiguous zones that are connected in some way to
         # the consensus areas. This ensures that all edges of these (on the basis of nir)
         # are included
-        consensus_ds = consensus.to_dataset(name="consensus")
-        output["nir08"] = fill_with_nearest_later_date(output.nir08)
-        consensus_ds["candidate"] = output.nir08 > 1280.0
-        connected_areas = consensus_ds.groupby("year").map(
-            lambda ds: remove_disconnected_land(ds.consensus, ds.candidate)
+        import operator
+
+        band = "meanwi"
+        cutoff = 0
+        obvious_water = 0.5
+        comparison = operator.lt
+
+        def land(output):
+            return comparison(output[band], cutoff)
+
+        def water(output):
+            return ~land(output)
+
+        output[band] = fill_with_nearest_later_date(output[band])
+        candidate = land(output)
+        connected_areas = candidate.groupby("year").map(
+            lambda candidate_year: remove_disconnected_land(consensus, candidate_year)
         )
         # erosion of 2 here borks e.g. funafuti but is needed for e.g. shoreline of tongatapu
         # maybe only erode areas not in consensus land?
         # This works for tongatapu but not funafuti
         # analysis_zone = mask_cleanup(connected_areas, mask_filters=[("erosion", 2), ("dilation",2)])
+
         # Basically, NIR says it's land but none of the others say there is even neighboring land
         # This _could_ eliminate some areas, we will have to see. If that happens we can consider
         # making a larger kernel. OR, we could use the surf detector from the mask model,
         # if that's the only class that causes issue.
         # I did this because of bands of surf off the south side of Tongatapu that were connected
         # in a single place to the mainland.
-        no_connected_neighbors = consensus.groupby("year").apply(
-            lambda ds: xs.focal.mean(ds) == 0
-        )
-        suspicious_connected_areas = (output.nir08 > 1280.0) & no_connected_neighbors
-        analysis_zone = connected_areas & ~suspicious_connected_areas
+        no_connected_neighbors = xs.focal.mean(consensus) == 0
+        # suspicious_connected_areas = candidate & no_connected_neighbors
+        analysis_zone = connected_areas & ~no_connected_neighbors
         # Only expand where there's an edge that's land. Do it multiple times to fill between larger areas
         # say in Funafuti or Majiro. Later we will fill one last time with water to ensure lines are closed.
         number_of_expansions = 8
         for _ in range(number_of_expansions):
             analysis_zone = analysis_zone | mask_cleanup(
-                output.nir08.where(analysis_zone) > 1280.0,
+                land(output.where(analysis_zone)),
                 mask_filters=[("dilation", 1)],
             )
 
         gadm_land = load_gadm_land(output)
         gadm_ocean = mask_cleanup(~gadm_land, mask_filters=[("erosion", 2)])
-        water_bool = output.nir08 < 1280.0
-        inland_areas = find_inland_areas(water_bool, gadm_ocean)
-        output = output.nir08.where(analysis_zone, 0).where(~inland_areas)
+        inland_areas = find_inland_areas(water(output), gadm_ocean)
+        output = output[band].where(analysis_zone, obvious_water).where(~inland_areas)
         combined_gdf = subpixel_contours(
             output,
             dim="year",
-            z_values=[1280.0],
+            z_values=[cutoff],
             min_vertices=5,
         )
         combined_gdf.year = combined_gdf.year.astype(int)
@@ -199,7 +214,7 @@ def run(
     )
 
     loader = DeluxeMosaicLoader(
-        start_year=start_year, end_year=end_year, years_per_composite=[1, 3]
+        start_year=start_year, end_year=end_year, years_per_composite=[3]
     )
     processor = Cleaner(water_index="nir08", index_threshold=-1280.0)
     writer = CoastlineWriter(
