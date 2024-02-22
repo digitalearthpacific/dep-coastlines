@@ -28,7 +28,7 @@ from dep_tools.processors import Processor
 from dep_tools.task import MultiAreaTask, ErrorCategoryAreaTask
 from dep_tools.utils import get_container_client, write_to_local_storage
 
-from MosaicLoader import DeluxeMosaicLoader
+from MosaicLoader import MultiyearMosaicLoader
 from raster_cleaning import contours_preprocess, load_gadm_land, find_inland_areas
 from grid import test_grid
 from task_utils import get_ids
@@ -88,7 +88,7 @@ class Cleaner(Processor):
         super().__init__()
         self.index_threshold = index_threshold
         self.water_index = water_index
-        model_obj = load("data/model_13Feb.joblib")
+        model_obj = load("data/model_20Feb.joblib")
         self.mask_model = model_obj["model"]
         self.training_columns = model_obj["predictor_columns"]
         self.response_column = model_obj["response_column"]
@@ -133,12 +133,11 @@ class Cleaner(Processor):
             output = input.where(mask != CLOUD_CODE)
         #            ultimate_mask = mask
 
-        output = output[["nir08", "mndwi", "ndwi", "meanwi", "nirwi"]]
         all_time = output.median(dim="year")
-        # consensus = (output.nir08 > 1280.0) & (output.mndwi < 0) & (output.ndwi < 0)
         consensus = (
-            (all_time.nir08 > 1280.0) & (all_time.mndwi < 0) & (all_time.ndwi < 0)
+            (output.nir08_all > 1280.0) & (output.mndwi_all < 0) & (output.ndwi_all < 0)
         )
+        output = output[["nir08", "mndwi", "ndwi", "meanwi", "nirwi"]]
 
         # Connected areas are contiguous zones that are connected in some way to
         # the consensus areas. This ensures that all edges of these (on the basis of nir)
@@ -187,7 +186,7 @@ class Cleaner(Processor):
         gadm_land = load_gadm_land(output)
         gadm_ocean = mask_cleanup(~gadm_land, mask_filters=[("erosion", 2)])
         inland_areas = find_inland_areas(water(output), gadm_ocean)
-        output = output[band].where(analysis_zone, obvious_water).where(~inland_areas)
+        output = output[band].where(analysis_zone).where(~inland_areas)
         combined_gdf = subpixel_contours(
             output,
             dim="year",
@@ -213,8 +212,8 @@ def run(
         zero_pad_numbers=True,
     )
 
-    loader = DeluxeMosaicLoader(
-        start_year=start_year, end_year=end_year, years_per_composite=[3]
+    loader = MultiyearMosaicLoader(
+        start_year=start_year, end_year=end_year, years_per_composite=[1, 3]
     )
     processor = Cleaner(water_index="nir08", index_threshold=-1280.0)
     writer = CoastlineWriter(
