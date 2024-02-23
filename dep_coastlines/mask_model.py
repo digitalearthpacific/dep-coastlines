@@ -2,7 +2,7 @@ import geopandas as gpd
 import pandas as pd
 import xarray as xr
 
-from dep_coastlines.MosaicLoader import DeluxeMosaicLoader
+from dep_coastlines.MosaicLoader import MosaicLoader
 from dep_tools.namers import DepItemPath
 from dep_tools.utils import get_container_client
 
@@ -51,7 +51,7 @@ def pull_data_for_datetime(df):
         time=df.time.iloc[0].replace("/", "_"),
         zero_pad_numbers=True,
     )
-    loader = DeluxeMosaicLoader(itempath=itempath)
+    loader = MosaicLoader(itempath=itempath, add_deviations=True)
 
     def _pull_data_for_cell(group):
         ds = loader.load(group.set_index(["row", "column"]))
@@ -66,7 +66,7 @@ def prep_training_data():
         cast_all(split_multiyears(gpd.read_file("data/training_data.gpkg")))
         .groupby("time")
         .apply(pull_data_for_datetime)
-        .to_csv("data/training_data_with_features_9Feb2024.csv", index=False)
+        .to_csv("data/training_data_with_features_20Feb2024.csv", index=False)
     )
 
 

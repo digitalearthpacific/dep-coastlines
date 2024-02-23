@@ -1,3 +1,4 @@
+from functools import wraps
 import warnings
 
 from azure.storage.blob import ContainerClient
@@ -84,22 +85,28 @@ class MultiyearMosaicLoader(Loader):
 
     def load(self, area) -> xr.Dataset | list[xr.Dataset]:
         if not isinstance(self._years_per_composite, list):
-            return self.load_composite_set(area, self._years_per_composite)
+            return add_deviations(
+                area, self.load_composite_set(area, self._years_per_composite)
+            )
         else:
             return [
-                self.load_composite_set(area, years_per_composite)
+                add_deviations(area, self.load_composite_set(area, years_per_composite))
                 for years_per_composite in self._years_per_composite
             ]
 
 
 class MosaicLoader(Loader):
     def __init__(
-        self, itempath: DepItemPath, container_client: ContainerClient | None = None
+        self,
+        itempath: DepItemPath,
+        container_client: ContainerClient | None = None,
+        add_deviations: bool = False,
     ):
         self._itempath = itempath
         self._container_client = (
             container_client if container_client is not None else get_container_client()
         )
+        self._add_deviations = add_deviations
 
     def load(self, area):
         item_id = area.index.to_numpy()[0]
@@ -118,39 +125,25 @@ class MosaicLoader(Loader):
             output["ndwi"] = ndwi(output)
             output["nirwi"] = (1280 - output.nir08) / (1280 + output.nir08)
             output["meanwi"] = (output.ndwi + output.nirwi) / 2
-            return output
+            return add_deviations(area, output) if self._add_deviations else output
         else:
-            warnings.warn(f"No items in folder {self._itempath._folder(item_id)}")
+            warnings.warn("No items in folder " + self._itempath._folder(item_id))
             return None
 
 
-class DeluxeMosaicLoader(MultiyearMosaicLoader):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        all_time_namer = DepItemPath(
-            sensor="ls",
-            dataset_id="coastlines/mosaics-corrected",
-            version="0.6.0",
-            time="1999_2023",
-            zero_pad_numbers=True,
-        )
-        self._allTimeLoader = MosaicLoader(all_time_namer)
-
-    def _add_deviations(self, xr, all_time):
-        deviation = xr - all_time
-        deviation = deviation.rename({k: k + "_dev" for k in list(deviation.keys())})
-        all_time = all_time.rename({k: k + "_all" for k in list(all_time.keys())})
-        return xr.merge(deviation).merge(all_time)
-
-    def load(self, area):
-        all_time = self._allTimeLoader.load(area)
-        these_times = super().load(area)
-        if not isinstance(these_times, list):
-            return self._add_deviations(these_times, all_time)
-        else:
-            return [
-                self._add_deviations(this_time, all_time) for this_time in these_times
-            ]
+def add_deviations(area, xr):
+    all_time_namer = DepItemPath(
+        sensor="ls",
+        dataset_id="coastlines/mosaics-corrected",
+        version="0.6.0",
+        time="1999_2023",
+        zero_pad_numbers=True,
+    )
+    all_time = MosaicLoader(all_time_namer, add_deviations=False).load(area)
+    deviation = xr - all_time
+    deviation = deviation.rename({k: k + "_dev" for k in list(deviation.keys())})
+    all_time = all_time.rename({k: k + "_all" for k in list(all_time.keys())})
+    return xr.merge(deviation).merge(all_time)
 
 
 def _load_single_path(path) -> xr.Dataset:

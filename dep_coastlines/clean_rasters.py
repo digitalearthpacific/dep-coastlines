@@ -118,7 +118,7 @@ class Cleaner(Processor):
         if isinstance(input, list):
             this_mask = self._calculate_mask(input[0])
             # masks.append(this_mask)
-            #            ultimate_mask = this_mask
+            # ultimate_mask = this_mask
             output = input[0].where(this_mask != CLOUD_CODE)
             for ds in input[1:]:
                 ds = ds.sel(year=ds.year[ds.year.isin(output.year)])
@@ -133,15 +133,17 @@ class Cleaner(Processor):
             output = input.where(mask != CLOUD_CODE)
         #            ultimate_mask = mask
 
-        all_time = output.median(dim="year")
+        # all_time = output.median(dim="year")
         consensus = (
-            (output.nir08_all > 1280.0) & (output.mndwi_all < 0) & (output.ndwi_all < 0)
+            (
+                (output.nir08_all > 1280.0)
+                & (output.mndwi_all < 0)
+                & (output.ndwi_all < 0)
+            )
+            .isel(year=0)
+            .compute()
         )
-        output = output[["nir08", "mndwi", "ndwi", "meanwi", "nirwi"]]
 
-        # Connected areas are contiguous zones that are connected in some way to
-        # the consensus areas. This ensures that all edges of these (on the basis of nir)
-        # are included
         import operator
 
         band = "meanwi"
@@ -155,12 +157,17 @@ class Cleaner(Processor):
         def water(output):
             return ~land(output)
 
+        output = output[[band]].compute()
         output[band] = fill_with_nearest_later_date(output[band])
         candidate = land(output)
+        # Connected areas are contiguous zones that are connected in some way to
+        # the consensus areas. This ensures that all edges of these (on the basis of nir)
+        # are included
         connected_areas = candidate.groupby("year").map(
             lambda candidate_year: remove_disconnected_land(consensus, candidate_year)
         )
-        # erosion of 2 here borks e.g. funafuti but is needed for e.g. shoreline of tongatapu
+        # erosion of 2 here borks e.g. funafuti but is needed for e.g.
+        # shoreline of tongatapu
         # maybe only erode areas not in consensus land?
         # This works for tongatapu but not funafuti
         # analysis_zone = mask_cleanup(connected_areas, mask_filters=[("erosion", 2), ("dilation",2)])
@@ -186,7 +193,8 @@ class Cleaner(Processor):
         gadm_land = load_gadm_land(output)
         gadm_ocean = mask_cleanup(~gadm_land, mask_filters=[("erosion", 2)])
         inland_areas = find_inland_areas(water(output), gadm_ocean)
-        output = output[band].where(analysis_zone).where(~inland_areas)
+        output = output[band].where(analysis_zone, obvious_water).where(~inland_areas)
+        # output = output.groupby("year").map(xs.focal.mean)
         combined_gdf = subpixel_contours(
             output,
             dim="year",
@@ -213,7 +221,7 @@ def run(
     )
 
     loader = MultiyearMosaicLoader(
-        start_year=start_year, end_year=end_year, years_per_composite=[1, 3]
+        start_year=start_year, end_year=end_year, years_per_composite=[3]
     )
     processor = Cleaner(water_index="nir08", index_threshold=-1280.0)
     writer = CoastlineWriter(
