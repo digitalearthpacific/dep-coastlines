@@ -194,7 +194,7 @@ class Cleaner(Processor):
         gadm_ocean = mask_cleanup(~gadm_land, mask_filters=[("erosion", 2)])
         inland_areas = find_inland_areas(water(output), gadm_ocean)
         output = output[band].where(analysis_zone, obvious_water).where(~inland_areas)
-        # output = output.groupby("year").map(xs.focal.mean)
+        output = output.groupby("year").map(xs.focal.mean)
         combined_gdf = subpixel_contours(
             output,
             dim="year",
@@ -221,7 +221,7 @@ def run(
     )
 
     loader = MultiyearMosaicLoader(
-        start_year=start_year, end_year=end_year, years_per_composite=[3]
+        start_year=start_year, end_year=end_year, years_per_composite=[3, 5]
     )
     processor = Cleaner(water_index="nir08", index_threshold=-1280.0)
     writer = CoastlineWriter(
