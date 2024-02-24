@@ -79,6 +79,10 @@ def mask_bare_terrain(xr, mask):
     return xr.where(mask != BARE_TERRAIN_CODE)
 
 
+def calculate_consensus_land(ds):
+    return (ds.nir08_all > 1280.0) & (ds.mndwi_all < 0) & (ds.ndwi_all < 0)
+
+
 class Cleaner(Processor):
     def __init__(
         self,
@@ -112,7 +116,7 @@ class Cleaner(Processor):
             masks.append(year_mask)
         return concat(masks, dim="year")
 
-    def process(self, input: Dataset | list[Dataset]) -> Tuple[Dataset, GeoDataFrame]:
+    def apply_ml_mask(self, input):
         # masks = []
         CLOUD_CODE = self.code_for_name("cloud")
         if isinstance(input, list):
@@ -132,21 +136,15 @@ class Cleaner(Processor):
             # masks.append(mask)
             output = input.where(mask != CLOUD_CODE)
         #            ultimate_mask = mask
+        return output
 
-        # all_time = output.median(dim="year")
-        consensus_land = (
-            (
-                (output.nir08_all > 1280.0)
-                & (output.mndwi_all < 0)
-                & (output.ndwi_all < 0)
-            )
-            .isel(year=0)
-            .compute()
-        )
+    def process(self, input: Dataset | list[Dataset]) -> Tuple[Dataset, GeoDataFrame]:
+        output = self.apply_ml_mask(input)
+        consensus_land = calculate_consensus_land(input[0].isel(year=0)).compute()
 
         import operator
 
-        band = "meanwi"
+        band = "ndwi"
         cutoff = 0
         obvious_water = 0.5
         comparison = operator.lt
@@ -231,7 +229,7 @@ def run(
     )
 
     loader = MultiyearMosaicLoader(
-        start_year=start_year, end_year=end_year, years_per_composite=[1, 3, 5]
+        start_year=start_year, end_year=end_year, years_per_composite=[3, 5]
     )
     processor = Cleaner(water_index="nir08", index_threshold=-1280.0)
     writer = CoastlineWriter(
