@@ -134,7 +134,7 @@ class Cleaner(Processor):
         #            ultimate_mask = mask
 
         # all_time = output.median(dim="year")
-        consensus = (
+        consensus_land = (
             (
                 (output.nir08_all > 1280.0)
                 & (output.mndwi_all < 0)
@@ -164,25 +164,34 @@ class Cleaner(Processor):
         # the consensus areas. This ensures that all edges of these (on the basis of nir)
         # are included
         connected_areas = candidate.groupby("year").map(
-            lambda candidate_year: remove_disconnected_land(consensus, candidate_year)
+            lambda candidate_year: remove_disconnected_land(
+                consensus_land, candidate_year
+            )
         )
         # erosion of 2 here borks e.g. funafuti but is needed for e.g.
         # shoreline of tongatapu
         # maybe only erode areas not in consensus land?
         # This works for tongatapu but not funafuti
-        # analysis_zone = mask_cleanup(connected_areas, mask_filters=[("erosion", 2), ("dilation",2)])
+        # analysis_zone = mask_cleanup(connected_areas,
+        #                           mask_filters=[("erosion", 2), ("dilation",2)])
 
-        # Basically, NIR says it's land but none of the others say there is even neighboring land
-        # This _could_ eliminate some areas, we will have to see. If that happens we can consider
-        # making a larger kernel. OR, we could use the surf detector from the mask model,
+        # Basically, NIR says it's land but none of the others say there is
+        # even neighboring land
+        # This _could_ eliminate some areas, we will have to see. If that
+        # happens we can consider
+        # making a larger kernel. OR, we could use the surf detector from the
+        # mask model,
         # if that's the only class that causes issue.
-        # I did this because of bands of surf off the south side of Tongatapu that were connected
+        # I did this because of bands of surf off the south side of Tongatapu
+        # that were connected
         # in a single place to the mainland.
-        no_connected_neighbors = xs.focal.mean(consensus) == 0
+        no_connected_neighbors = xs.focal.mean(consensus_land) == 0
         # suspicious_connected_areas = candidate & no_connected_neighbors
         analysis_zone = connected_areas & ~no_connected_neighbors
-        # Only expand where there's an edge that's land. Do it multiple times to fill between larger areas
-        # say in Funafuti or Majiro. Later we will fill one last time with water to ensure lines are closed.
+        # Only expand where there's an edge that's land. Do it multiple times
+        # to fill between larger areas
+        # say in Funafuti or Majiro. Later we will fill one last time with
+        # water to ensure lines are closed.
         number_of_expansions = 8
         for _ in range(number_of_expansions):
             analysis_zone = analysis_zone | mask_cleanup(
@@ -192,7 +201,8 @@ class Cleaner(Processor):
 
         gadm_land = load_gadm_land(output)
         gadm_ocean = mask_cleanup(~gadm_land, mask_filters=[("erosion", 2)])
-        inland_areas = find_inland_areas(water(output), gadm_ocean)
+        consensus_ocean = mask_cleanup(~consensus_land, mask_filters=[("erosion", 2)])
+        inland_areas = find_inland_areas(water(output), gadm_ocean | consensus_ocean)
         output = output[band].where(analysis_zone, obvious_water).where(~inland_areas)
         output = output.groupby("year").map(xs.focal.mean)
         combined_gdf = subpixel_contours(
@@ -221,7 +231,7 @@ def run(
     )
 
     loader = MultiyearMosaicLoader(
-        start_year=start_year, end_year=end_year, years_per_composite=[3, 5]
+        start_year=start_year, end_year=end_year, years_per_composite=[1, 3, 5]
     )
     processor = Cleaner(water_index="nir08", index_threshold=-1280.0)
     writer = CoastlineWriter(
