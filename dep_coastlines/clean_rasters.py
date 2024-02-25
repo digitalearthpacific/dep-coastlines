@@ -144,7 +144,7 @@ class Cleaner(Processor):
 
         import operator
 
-        band = "ndwi"
+        band = "meanwi"
         cutoff = 0
         obvious_water = 0.5
         comparison = operator.lt
