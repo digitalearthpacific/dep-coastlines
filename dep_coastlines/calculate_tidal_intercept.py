@@ -16,12 +16,12 @@ import pystac_client
 from xarray import DataArray, Dataset
 
 from azure_logger import CsvLogger
-from dep_tools.loaders2 import (
+from dep_tools.loaders import (
     Loader,
-    LandsatPystacSearcher,
-    DeluxeOdcLoader,
+    OdcLoader,
     SearchLoader,
 )
+from dep_tools.searchers import LandsatPystacSearcher
 from dep_tools.namers import DepItemPath
 from dep_tools.processors import LandsatProcessor
 from dep_tools.stac_utils import set_stac_properties
@@ -88,7 +88,7 @@ def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) 
         modifier=planetary_computer.sign_inplace,
     )
     searcher = LandsatPystacSearcher(client=client, datetime=datetime)
-    stacloader = DeluxeOdcLoader(
+    stacloader = OdcLoader(
         clip_to_area=True,
         chunks=dict(band=1, time=1, x=4096, y=4096),
         resampling={"qa_pixel": "nearest", "*": "cubic"},

@@ -125,6 +125,9 @@ class MosaicLoader(Loader):
             output["ndwi"] = ndwi(output)
             output["nirwi"] = (1280 - output.nir08) / (1280 + output.nir08)
             output["meanwi"] = (output.ndwi + output.nirwi) / 2
+            from numpy import maximum
+
+            output["maxwi"] = maximum(output.ndwi, output.nirwi)
             return add_deviations(area, output) if self._add_deviations else output
         else:
             warnings.warn("No items in folder " + self._itempath._folder(item_id))

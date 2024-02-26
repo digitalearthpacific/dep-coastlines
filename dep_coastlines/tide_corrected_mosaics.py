@@ -74,6 +74,7 @@ class MosaicProcessor(LandsatProcessor):
         )
         tide_loader = TideLoader(tide_namer)
         xr = filter_by_tides(xr, area.index[0], tide_loader)
+        breakpoint()
 
         # In case we filtered out all the data
         if not "time" in xr.coords or len(xr.time) == 0:

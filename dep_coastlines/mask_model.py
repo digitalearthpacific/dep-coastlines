@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import geopandas as gpd
 import pandas as pd
 import xarray as xr
@@ -43,7 +45,6 @@ def add_image_values(pts: gpd.GeoDataFrame, image) -> gpd.GeoDataFrame:
 
 
 def pull_data_for_datetime(df):
-    print(df)
     itempath = DepItemPath(
         sensor="ls",
         dataset_id="coastlines/mosaics-corrected",
@@ -61,13 +62,29 @@ def pull_data_for_datetime(df):
     return output
 
 
-def prep_training_data():
-    (
-        cast_all(split_multiyears(gpd.read_file("data/training_data.gpkg")))
-        .groupby("time")
-        .apply(pull_data_for_datetime)
-        .to_csv("data/training_data_with_features_20Feb2024.csv", index=False)
+def load_point_values(points):
+    return cast_all(
+        split_multiyears(points).groupby("time").apply(pull_data_for_datetime)
     )
+
+
+def prep_training_data():
+    load_point_values(gpd.read_file("data/training_data.gpkg")).to_csv(
+        "data/training_data_with_features_20Feb2024.csv", index=False
+    )
+
+
+from sklearn.base import BaseEstimator
+from pandas import DataFrame
+
+
+@dataclass
+class SavedModel:
+    model: BaseEstimator
+    training_data: DataFrame
+    predictor_columns: list[str]
+    response_column: str
+    codes: DataFrame
 
 
 if __name__ == "__main__":

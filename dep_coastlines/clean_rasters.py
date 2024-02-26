@@ -63,20 +63,16 @@ def fill_with_nearest_later_date(xr):
     return output.to_array(dim="year")
 
 
-def mask_noisy_water(xr, mask, water_index):
-    mean_water_value = dict(mndwi=0.415616, ndwi=0.788478)
-    NOISY_WATER_CODE = 7
-    return xr.where(mask != NOISY_WATER_CODE, mean_water_value[water_index])
+class Predictor(Processor):
+    def __init__(self, model: SavedModel):
+        self.model = model
 
-
-def mask_surf(xr, mask, filler):
-    SURF_CODE = 4
-    return xr.where(mask != SURF_CODE, filler)
-
-
-def mask_bare_terrain(xr, mask):
-    BARE_TERRAIN_CODE = 8
-    return xr.where(mask != BARE_TERRAIN_CODE)
+    def code_for_name(self, name):
+        return (
+            self.model.codes.reset_index()
+            .set_index("code")
+            .loc[name, self.model.response_column]
+        )
 
 
 def calculate_consensus_land(ds):
@@ -99,52 +95,13 @@ class Cleaner(Processor):
         codes = model_obj["codes"]
         self.model_codes = codes.groupby(self.response_column).first()
 
-    def code_for_name(self, name):
-        return (
-            self.model_codes.reset_index()
-            .set_index("code")
-            .loc[name, self.response_column]
-        )
-
-    def _calculate_mask(self, input):
-        masks = []
-        for year in input.year:
-            year_mask = predict_xr(
-                self.mask_model, input.sel(year=year)[self.training_columns], clean=True
-            ).Predictions
-            year_mask.coords["year"] = year
-            masks.append(year_mask)
-        return concat(masks, dim="year")
-
-    def apply_ml_mask(self, input):
-        # masks = []
-        CLOUD_CODE = self.code_for_name("cloud")
-        if isinstance(input, list):
-            this_mask = self._calculate_mask(input[0])
-            # masks.append(this_mask)
-            # ultimate_mask = this_mask
-            output = input[0].where(this_mask != CLOUD_CODE)
-            for ds in input[1:]:
-                ds = ds.sel(year=ds.year[ds.year.isin(output.year)])
-                this_mask = self._calculate_mask(ds)
-                # masks.append(this_mask)
-                missings = output.isnull()
-                output = output.where(~missings, ds.where(this_mask != CLOUD_CODE))
-        #                ultimate_mask = ultimate_mask.where(~missings.nir08, this_mask)
-        else:
-            mask = self._calculate_mask(input)
-            # masks.append(mask)
-            output = input.where(mask != CLOUD_CODE)
-        #            ultimate_mask = mask
-        return output
-
     def process(self, input: Dataset | list[Dataset]) -> Tuple[Dataset, GeoDataFrame]:
         output = self.apply_ml_mask(input)
         consensus_land = calculate_consensus_land(input[0].isel(year=0)).compute()
 
         import operator
 
-        band = "ndwi"
+        band = "nirwi"
         cutoff = 0
         obvious_water = 0.5
         comparison = operator.lt
