@@ -144,7 +144,7 @@ class Cleaner(Processor):
 
         import operator
 
-        band = "meanwi"
+        band = "ndwi"
         cutoff = 0
         obvious_water = 0.5
         comparison = operator.lt
@@ -229,7 +229,7 @@ def run(
     )
 
     loader = MultiyearMosaicLoader(
-        start_year=start_year, end_year=end_year, years_per_composite=[1, 3, 5]
+        start_year=start_year, end_year=end_year, years_per_composite=[1, 3]
     )
     processor = Cleaner(water_index="nir08", index_threshold=-1280.0)
     writer = CoastlineWriter(
