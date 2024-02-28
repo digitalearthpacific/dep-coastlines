@@ -8,9 +8,10 @@ so things may move around / get renamed some in the coming weeks.
 Please refer to raster_cleaning.py for specific functions.
 """
 
-from distributed import connect
 from joblib import load
-from typing import Tuple, Annotated
+import operator
+from pathlib import Path
+from typing import Tuple, Annotated, Callable
 
 from dask.distributed import Client
 from dea_tools.classification import predict_xr
@@ -28,11 +29,15 @@ from dep_tools.processors import Processor
 from dep_tools.task import MultiAreaTask, ErrorCategoryAreaTask
 from dep_tools.utils import get_container_client, write_to_local_storage
 
-from MosaicLoader import MultiyearMosaicLoader
-from raster_cleaning import contours_preprocess, load_gadm_land, find_inland_areas
-from grid import test_grid
-from task_utils import get_ids
-from writer import CoastlineWriter
+from dep_coastlines.MosaicLoader import MultiyearMosaicLoader
+from dep_coastlines.raster_cleaning import (
+    load_gadm_land,
+    find_inland_areas,
+)
+from dep_coastlines.grid import test_grid
+from dep_coastlines.mask_model import SavedModel
+from dep_coastlines.task_utils import get_ids
+from dep_coastlines.writer import CoastlineWriter
 
 
 app = Typer()
@@ -40,6 +45,13 @@ DATASET_ID = "coastlines/coastlines"
 
 
 def remove_disconnected_land(certain_land, candidate_land):
+    if candidate_land.year.size > 1:
+        return candidate_land.groupby("year").map(
+            lambda candidate_year: remove_disconnected_land(
+                certain_land, candidate_year
+            )
+        )
+
     zones = apply_ufunc(
         label, candidate_land, None, 0, dask="parallelized", kwargs=dict(connectivity=1)
     )
@@ -63,9 +75,10 @@ def fill_with_nearest_later_date(xr):
     return output.to_array(dim="year")
 
 
-class Predictor(Processor):
+class ModelPredictor:
     def __init__(self, model: SavedModel):
         self.model = model
+        self.codes = self.model.codes.groupby(self.model.response_column).first()
 
     def code_for_name(self, name):
         return (
@@ -73,6 +86,40 @@ class Predictor(Processor):
             .set_index("code")
             .loc[name, self.model.response_column]
         )
+
+    def calculate_mask(self, input):
+        masks = []
+        for year in input.year:
+            year_mask = predict_xr(
+                self.model.model,
+                input.sel(year=year)[self.model.predictor_columns],
+                clean=True,
+            ).Predictions
+            year_mask.coords["year"] = year
+            masks.append(year_mask)
+        return concat(masks, dim="year")
+
+    def apply_mask(self, input):
+        # masks = []
+        cloud_code = self.code_for_name("cloud")
+        if isinstance(input, list):
+            this_mask = self.calculate_mask(input[0])
+            # masks.append(this_mask)
+            # ultimate_mask = this_mask
+            output = input[0].where(this_mask != cloud_code)
+            for ds in input[1:]:
+                ds = ds.sel(year=ds.year[ds.year.isin(output.year)])
+                this_mask = self.calculate_mask(ds)
+                # masks.append(this_mask)
+                missings = output.isnull()
+                output = output.where(~missings, ds.where(this_mask != cloud_code))
+        #                ultimate_mask = ultimate_mask.where(~missings.nir08, this_mask)
+        else:
+            mask = self.calculate_mask(input)
+            # masks.append(mask)
+            output = input.where(mask != cloud_code)
+        #            ultimate_mask = mask
+        return output
 
 
 def calculate_consensus_land(ds):
@@ -82,47 +129,62 @@ def calculate_consensus_land(ds):
 class Cleaner(Processor):
     def __init__(
         self,
-        water_index: str = "nir08",
-        index_threshold: float = -1280.0,
+        water_index: str = "meanwi",
+        index_threshold: float = 0,
+        comparison: Callable = operator.lt,
+        number_of_expansions: int = 8,
+        model_file: Path = Path(__file__).parent / "../data/model_26Feb.joblib",
     ):
         super().__init__()
         self.index_threshold = index_threshold
         self.water_index = water_index
-        model_obj = load("data/model_20Feb.joblib")
-        self.mask_model = model_obj["model"]
-        self.training_columns = model_obj["predictor_columns"]
-        self.response_column = model_obj["response_column"]
-        codes = model_obj["codes"]
-        self.model_codes = codes.groupby(self.response_column).first()
+        #        model_dict = load(model_file)
+        #        model = SavedModel(
+        #            model=model_dict["model"],
+        #            training_data=model_dict["training_data"],
+        #            predictor_columns=model_dict["predictor_columns"],
+        #            response_column=model_dict["response_column"],
+        #            codes=model_dict["codes"],
+        #        )
+
+        self.model = ModelPredictor(load(model_file))
+        # self.model = ModelPredictor(model)
+        self.comparison = comparison
+        self.number_of_expansions = number_of_expansions
+
+    def land(self, output):
+        return self.comparison(output[self.water_index], self.index_threshold)
+
+    def water(self, output):
+        return output[self.water_index] >= self.index_threshold
+
+    def expand_analysis_zone(self, analysis_zone, output):
+        # Only expand where there's an edge that's land. Do it multiple times
+        # to fill between larger areas
+        # say in Funafuti or Majiro. Later we will fill one last time with
+        # water to ensure lines are closed.
+        for _ in range(self.number_of_expansions):
+            analysis_zone = analysis_zone | mask_cleanup(
+                self.land(output.where(analysis_zone)),
+                mask_filters=[("dilation", 1)],
+            )
+        return analysis_zone
 
     def process(self, input: Dataset | list[Dataset]) -> Tuple[Dataset, GeoDataFrame]:
-        output = self.apply_ml_mask(input)
-        consensus_land = calculate_consensus_land(input[0].isel(year=0)).compute()
+        output = self.model.apply_mask(input)
 
-        import operator
-
-        band = "nirwi"
-        cutoff = 0
         obvious_water = 0.5
-        comparison = operator.lt
+        output = output[[self.water_index]].compute()
+        output[self.water_index] = fill_with_nearest_later_date(
+            output[self.water_index]
+        )
 
-        def land(output):
-            return comparison(output[band], cutoff)
-
-        def water(output):
-            return ~land(output)
-
-        output = output[[band]].compute()
-        output[band] = fill_with_nearest_later_date(output[band])
-        candidate = land(output)
+        candidate_land = self.land(output)
+        consensus_land = calculate_consensus_land(input[0].isel(year=0)).compute()
         # Connected areas are contiguous zones that are connected in some way to
         # the consensus areas. This ensures that all edges of these (on the basis of nir)
         # are included
-        connected_areas = candidate.groupby("year").map(
-            lambda candidate_year: remove_disconnected_land(
-                consensus_land, candidate_year
-            )
-        )
+        connected_areas = remove_disconnected_land(consensus_land, candidate_land)
         # erosion of 2 here borks e.g. funafuti but is needed for e.g.
         # shoreline of tongatapu
         # maybe only erode areas not in consensus land?
@@ -141,29 +203,29 @@ class Cleaner(Processor):
         # that were connected
         # in a single place to the mainland.
         no_connected_neighbors = xs.focal.mean(consensus_land) == 0
-        # suspicious_connected_areas = candidate & no_connected_neighbors
-        analysis_zone = connected_areas & ~no_connected_neighbors
-        # Only expand where there's an edge that's land. Do it multiple times
-        # to fill between larger areas
-        # say in Funafuti or Majiro. Later we will fill one last time with
-        # water to ensure lines are closed.
-        number_of_expansions = 8
-        for _ in range(number_of_expansions):
-            analysis_zone = analysis_zone | mask_cleanup(
-                land(output.where(analysis_zone)),
-                mask_filters=[("dilation", 1)],
-            )
+        suspicious_connected_areas = candidate_land & no_connected_neighbors
+        analysis_zone = connected_areas & ~suspicious_connected_areas
+        analysis_zone = self.expand_analysis_zone(analysis_zone, output)
 
         gadm_land = load_gadm_land(output)
-        gadm_ocean = mask_cleanup(~gadm_land, mask_filters=[("erosion", 2)])
-        consensus_ocean = mask_cleanup(~consensus_land, mask_filters=[("erosion", 2)])
-        inland_areas = find_inland_areas(water(output), gadm_ocean | consensus_ocean)
-        output = output[band].where(analysis_zone, obvious_water).where(~inland_areas)
+        # consensus land may have inland water, but gadm doesn't.
+        # Also, consensus land will have masked areas as False rather
+        # than nan. Neither of these should matter because gadm doesn't have
+        # these issues. I bring in conensus land basically to fix the areas
+        # near shoreline that gadm may miss.
+        land = gadm_land | consensus_land
+        ocean = mask_cleanup(~land, mask_filters=[("erosion", 2)])
+        inland_areas = find_inland_areas(self.water(output), ocean)
+        output = (
+            output[self.water_index]
+            .where(analysis_zone, obvious_water)
+            .where(~inland_areas)
+        )
         output = output.groupby("year").map(xs.focal.mean)
         combined_gdf = subpixel_contours(
             output,
             dim="year",
-            z_values=[cutoff],
+            z_values=[self.index_threshold],
             min_vertices=5,
         )
         combined_gdf.year = combined_gdf.year.astype(int)
@@ -186,9 +248,9 @@ def run(
     )
 
     loader = MultiyearMosaicLoader(
-        start_year=start_year, end_year=end_year, years_per_composite=[1, 3]
+        start_year=start_year, end_year=end_year, years_per_composite=[3, 5]
     )
-    processor = Cleaner(water_index="nir08", index_threshold=-1280.0)
+    processor = Cleaner()
     writer = CoastlineWriter(
         namer,
         extra_attrs=dict(dep_version=version),

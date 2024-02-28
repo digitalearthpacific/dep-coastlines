@@ -8,12 +8,12 @@ from dep_tools.azure import blob_exists
 from dep_tools.utils import write_to_blob_storage
 
 grid_blob_path = "aoi/coastline_grid.gpkg"
-grid_blob_path = "data/coastline_grid.gpkg"
+local_grid_blob_path = Path(__file__).parent / "../data/coastline_grid.gpkg"
 url_prefix = "https://deppcpublicstorage.blob.core.windows.net/output/"
 grid_url = url_prefix + grid_blob_path
 
-# if not blob_exists(grid_blob_path):
-if not Path(grid_blob_path):
+if not blob_exists(grid_blob_path):
+    # if not Path(grid_blob_path).exists:
     aoi = gpd.read_file(url_prefix + "aoi/aoi.gpkg")
 
     # A buffer of the exterior line created weird interior gaps,
@@ -59,8 +59,8 @@ if not Path(grid_blob_path):
     )
 
 
-# grid = gpd.read_file(grid_url).set_index(["column", "row"])
-grid = gpd.read_file(grid_blob_path).set_index(["column", "row"])
+grid = gpd.read_file(grid_url).set_index(["column", "row"])
+# grid = gpd.read_file(grid_blob_path).set_index(["column", "row"])
 test_tiles = [
     (53, 47),
     (61, 19),
@@ -70,8 +70,8 @@ test_tiles = [
     (49, 49),
     (48, 14),
     (60, 20),
-    #    (118, 11),  # Pitcairn
-    #    (23, 31),  # PNG
+    (118, 11),  # Pitcairn
+    (23, 31),  # PNG
 ]
 
 test_grid = grid.loc[test_tiles]

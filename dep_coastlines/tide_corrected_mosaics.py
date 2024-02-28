@@ -32,7 +32,7 @@ from dep_tools.utils import get_container_client
 from dep_tools.writers import DsWriter
 from tide_utils import filter_by_tides, TideLoader
 
-from task_utils import get_ids
+from task_utils import get_ids, bool_parser
 from grid import test_grid
 
 DATASET_ID = "coastlines/mosaics-corrected"
@@ -74,7 +74,6 @@ class MosaicProcessor(LandsatProcessor):
         )
         tide_loader = TideLoader(tide_namer)
         xr = filter_by_tides(xr, area.index[0], tide_loader)
-        breakpoint()
 
         # In case we filtered out all the data
         if not "time" in xr.coords or len(xr.time) == 0:
@@ -112,6 +111,7 @@ def run(
     datetime: str,
     version: str,
     dataset_id: str = DATASET_ID,
+    load_before_write: bool = False,
 ) -> None:
     client = pystac_client.Client.open(
         "https://planetarycomputer.microsoft.com/api/stac/v1",
@@ -148,7 +148,7 @@ def run(
     writer = DsWriter(
         itempath=namer,
         overwrite=False,
-        load_before_write=True,
+        load_before_write=load_before_write,
         extra_attrs=dict(dep_version=version),
     )
     logger = CsvLogger(
@@ -181,9 +181,15 @@ def process_id(
     version: Annotated[str, Option()],
     row: Annotated[str, Option()],
     column: Annotated[str, Option()],
+    load_before_write: Annotated[str, Option(parser=bool_parser)] = "False",
 ):
     with Client(memory_limit="16GiB"):
-        run((int(row), int(column)), datetime, version)
+        run(
+            (int(row), int(column)),
+            datetime,
+            version,
+            load_before_write=load_before_write,
+        )
 
 
 @app.command()
@@ -193,13 +199,20 @@ def process_all_ids(
     dataset_id=DATASET_ID,
     # If run in argo this needs to be changed but I should not ever do that
     overwrite_log: Annotated[bool, Option()] = False,
+    load_before_write: Annotated[str, Option(parser=bool_parser)] = "False",
 ):
     task_ids = get_ids(
         datetime, version, dataset_id, grid=test_grid, delete_existing_log=overwrite_log
     )
 
     with Client(memory_limit="16GiB"):
-        run(task_ids, datetime, version, dataset_id)
+        run(
+            task_ids,
+            datetime,
+            version,
+            dataset_id,
+            load_before_write=load_before_write,
+        )
 
 
 if __name__ == "__main__":

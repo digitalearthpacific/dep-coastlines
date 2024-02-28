@@ -10,7 +10,7 @@ from dep_tools.namers import DepItemPath
 from dep_tools.utils import get_container_client
 
 from dep_coastlines.grid import test_grid as GRID
-from time_utils import parse_datetime, composite_from_years
+from dep_coastlines.time_utils import parse_datetime, composite_from_years
 
 app = Typer()
 
