@@ -248,7 +248,7 @@ def run(
     )
 
     loader = MultiyearMosaicLoader(
-        start_year=start_year, end_year=end_year, years_per_composite=[3, 5]
+        start_year=start_year, end_year=end_year, years_per_composite=[1, 3]
     )
     processor = Cleaner()
     writer = CoastlineWriter(
