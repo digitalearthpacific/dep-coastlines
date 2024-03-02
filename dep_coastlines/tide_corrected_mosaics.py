@@ -123,6 +123,7 @@ def run(
         datetime=datetime,
     )
     stacloader = OdcLoader(
+        crs="utm",
         datetime=datetime,
         chunks=dict(band=1, time=1, x=8192, y=8192),
         resampling={"qa_pixel": "nearest", "*": "cubic"},

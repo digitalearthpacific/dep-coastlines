@@ -135,18 +135,19 @@ class MosaicLoader(Loader):
 
 
 def add_deviations(area, xr):
-    all_time_namer = DepItemPath(
-        sensor="ls",
-        dataset_id="coastlines/mosaics-corrected",
-        version="0.6.0",
-        time="1999_2023",
-        zero_pad_numbers=True,
-    )
-    all_time = MosaicLoader(all_time_namer, add_deviations=False).load(area)
+    #    all_time_namer = DepItemPath(
+    #        sensor="ls",
+    #        dataset_id="coastlines/mosaics-corrected",
+    #        version="0.6.0",
+    #        time="1999_2023",
+    #        zero_pad_numbers=True,
+    #    )
+    #    all_time = MosaicLoader(all_time_namer, add_deviations=False).load(area)
+    all_time = xr.median(dim="year")
     deviation = xr - all_time
     deviation = deviation.rename({k: k + "_dev" for k in list(deviation.keys())})
     all_time = all_time.rename({k: k + "_all" for k in list(all_time.keys())})
-    return xr.merge(deviation).merge(all_time)
+    return xr.merge(deviation).merge(all_time).chunk(xr.chunks)
 
 
 def _load_single_path(path) -> xr.Dataset:

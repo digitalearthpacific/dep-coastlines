@@ -112,6 +112,7 @@ class ModelPredictor:
                 this_mask = self.calculate_mask(ds)
                 # masks.append(this_mask)
                 missings = output.isnull()
+                breakpoint()
                 output = output.where(~missings, ds.where(this_mask != cloud_code))
         #                ultimate_mask = ultimate_mask.where(~missings.nir08, this_mask)
         else:
