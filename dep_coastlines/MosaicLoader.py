@@ -1,9 +1,11 @@
 from functools import wraps
+from statistics import mode
 import warnings
 
 from azure.storage.blob import ContainerClient
 from numpy import mean
 from numpy.lib.stride_tricks import sliding_window_view
+import odc.geo.xr
 import rioxarray as rx
 import xarray as xr
 
@@ -37,16 +39,29 @@ def get_datetimes(start_year, end_year, years_per_composite):
     return [str(y) for y in years]
 
 
+def unify_crses(dss):
+    crses = [ds.odc.crs.to_epsg() for ds in dss]
+    if len(set(crses)) > 1:
+        most_common_crs = mode(crses)
+        most_common_geobox = dss[crses.index(most_common_crs)].odc.geobox
+        for i, ds in enumerate(dss):
+            if ds.odc.crs.to_epsg() != most_common_crs:
+                dss[i] = ds.odc.reproject(most_common_geobox)
+    return dss
+
+
 class MultiyearMosaicLoader(Loader):
     def __init__(
         self,
         start_year,
         end_year,
         years_per_composite: list[int] | int = 1,
+        version: str = "0.6.0",
     ):
         super().__init__()
         self._start_year = start_year
         self._end_year = end_year
+        self._version = version
         if isinstance(years_per_composite, list):
             if len(years_per_composite) == 1:
                 self._years_per_composite = years_per_composite[0]
@@ -66,7 +81,7 @@ class MultiyearMosaicLoader(Loader):
             itempath = DepItemPath(
                 sensor="ls",
                 dataset_id="coastlines/mosaics-corrected",
-                version="0.6.0",
+                version=self._version,
                 time=datetime.replace("/", "_"),
                 zero_pad_numbers=True,
             )

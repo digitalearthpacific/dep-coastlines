@@ -73,6 +73,11 @@ class MosaicProcessor(LandsatProcessor):
             zero_pad_numbers=True,
         )
         tide_loader = TideLoader(tide_namer)
+
+        master_crs = tide_loader.load(area.index[0]).rio.crs
+        if xr.rio.crs != master_crs:
+            xr = xr.odc.reproject(master_crs).rio.write_crs(master_crs)
+
         xr = filter_by_tides(xr, area.index[0], tide_loader)
 
         # In case we filtered out all the data
@@ -123,7 +128,6 @@ def run(
         datetime=datetime,
     )
     stacloader = OdcLoader(
-        crs="utm",
         datetime=datetime,
         chunks=dict(band=1, time=1, x=8192, y=8192),
         resampling={"qa_pixel": "nearest", "*": "nearest"},

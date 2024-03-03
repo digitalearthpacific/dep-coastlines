@@ -106,14 +106,16 @@ class ModelPredictor:
             this_mask = self.calculate_mask(input[0])
             # masks.append(this_mask)
             # ultimate_mask = this_mask
-            output = input[0].where(this_mask != cloud_code)
+            output = input[0].where(this_mask != cloud_code, drop=False)
             for ds in input[1:]:
                 ds = ds.sel(year=ds.year[ds.year.isin(output.year)])
                 this_mask = self.calculate_mask(ds)
                 # masks.append(this_mask)
                 missings = output.isnull()
                 breakpoint()
-                output = output.where(~missings, ds.where(this_mask != cloud_code))
+                output = output.where(
+                    ~missings, ds.where(this_mask != cloud_code, drop=False)
+                )
         #                ultimate_mask = ultimate_mask.where(~missings.nir08, this_mask)
         else:
             mask = self.calculate_mask(input)
@@ -249,7 +251,10 @@ def run(
     )
 
     loader = MultiyearMosaicLoader(
-        start_year=start_year, end_year=end_year, years_per_composite=[1, 3]
+        start_year=start_year,
+        end_year=end_year,
+        years_per_composite=[1, 3],
+        version="0.6.0",
     )
     processor = Cleaner()
     writer = CoastlineWriter(
