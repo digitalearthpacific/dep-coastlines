@@ -173,7 +173,6 @@ class Cleaner(Processor):
         return analysis_zone
 
     def process(self, input: Dataset | list[Dataset]) -> Tuple[Dataset, GeoDataFrame]:
-        breakpoint()
         output = self.model.apply_mask(input)
 
         obvious_water = 0.5
@@ -254,7 +253,7 @@ def run(
         start_year=start_year,
         end_year=end_year,
         years_per_composite=[1, 3],
-        version="0.6.0.3",
+        version="0.6.0.4",
     )
     processor = Cleaner()
     writer = CoastlineWriter(
