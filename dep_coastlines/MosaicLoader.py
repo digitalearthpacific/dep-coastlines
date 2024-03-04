@@ -104,9 +104,15 @@ class MultiyearMosaicLoader(Loader):
                 area, self.load_composite_set(area, self._years_per_composite)
             )
         else:
-            return [
-                add_deviations(area, self.load_composite_set(area, years_per_composite))
+            composite_sets = [
+                self.load_composite_set(area, years_per_composite)
                 for years_per_composite in self._years_per_composite
+            ]
+            all_time = composite_sets[0].median(dim="year").compute()
+
+            return [
+                add_deviations(area, composite_set, all_time)
+                for composite_set in composite_sets
             ]
 
 
@@ -149,7 +155,7 @@ class MosaicLoader(Loader):
             return None
 
 
-def add_deviations(area, xr):
+def add_deviations(area, xr, all_time=None):
     #    all_time_namer = DepItemPath(
     #        sensor="ls",
     #        dataset_id="coastlines/mosaics-corrected",
@@ -158,7 +164,8 @@ def add_deviations(area, xr):
     #        zero_pad_numbers=True,
     #    )
     #    all_time = MosaicLoader(all_time_namer, add_deviations=False).load(area)
-    all_time = xr.median(dim="year")
+    if all_time is None:
+        all_time = xr.median(dim="year")
     deviation = xr - all_time
     deviation = deviation.rename({k: k + "_dev" for k in list(deviation.keys())})
     all_time = all_time.rename({k: k + "_all" for k in list(all_time.keys())})

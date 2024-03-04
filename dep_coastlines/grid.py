@@ -13,6 +13,9 @@ url_prefix = "https://deppcpublicstorage.blob.core.windows.net/output/"
 grid_url = url_prefix + grid_blob_path
 
 
+OVERWRITE = False
+
+
 def get_best_zone(gdf):
     # Using the "most common" zone among loaded landsat data works fine except
     # in some years in some areas the most common zone differs, due to data
@@ -24,7 +27,7 @@ def get_best_zone(gdf):
     # projection of that scene. I can't find such a crosswalk (a table of
     # which projection each landsat scene has).
     utm_zones = (
-        gpd.read_file("../data/World_UTM_Grid_-8777149898303524843.gpkg")[
+        gpd.read_file("data/World_UTM_Grid_-8777149898303524843.gpkg")[
             # bad stuff here I think from reprojection
             lambda x: x["ZONE"]
             != 25
@@ -33,23 +36,22 @@ def get_best_zone(gdf):
         .dissolve(by="ZONE")
         .reset_index()
         # makes e.g. 55 32655
-        .assign(ZONE=lambda d: "326" + d.ZONE.astype("Int64").astype(str))
-        .set_index(["row", "column"])
+        .assign(epsg=lambda d: "326" + d.ZONE.astype("Int64").astype(str).str.zfill(2))
     )
 
     zone_lookup = (
-        grid.overlay(utm_zones, how="intersection")
+        gdf.overlay(utm_zones, how="intersection")
         .assign(area=lambda r: r.geometry.area)
         .sort_values("area", ascending=False)
         # drops the second by default, e.g. the lower value(s)
         .drop_duplicates(["row", "column"])
         .set_index(["row", "column"])
-    ).ZONE
+    ).epsg
 
-    return gdf.join(zone_lookup)
+    return gdf.set_index(["row", "column"]).join(zone_lookup).reset_index()
 
 
-if not blob_exists(grid_blob_path):
+if not blob_exists(grid_blob_path) or OVERWRITE:
     # if not Path(grid_blob_path).exists:
     aoi = gpd.read_file(url_prefix + "aoi/aoi.gpkg")
 
@@ -90,12 +92,13 @@ if not blob_exists(grid_blob_path):
         lambda r: f"{str(r.column).zfill(3)}{str(r.row).zfill(3)}", axis=1
     )
 
-    # coastline_grid = get_best_zone(coastline_grid)
+    coastline_grid = get_best_zone(coastline_grid)
 
     write_to_blob_storage(
         coastline_grid,
         grid_blob_path,
-        write_args=dict(driver="GPKG", layer_name="coastline_grid"),
+        driver="GPKG",
+        layer_name="coastline_grid",
     )
 
 

@@ -76,6 +76,7 @@ class MosaicProcessor(LandsatProcessor):
 
         master_crs = tide_loader.load(area.index[0]).rio.crs
         if xr.rio.crs != master_crs:
+            breakpoint()
             xr = xr.odc.reproject(master_crs).rio.write_crs(master_crs)
 
         xr = filter_by_tides(xr, area.index[0], tide_loader)
@@ -111,6 +112,12 @@ class MosaicProcessor(LandsatProcessor):
         return set_stac_properties(xr, output).chunk(dict(x=2048, y=2048))
 
 
+class ProjOdcLoader(OdcLoader):
+    def load(self, items, areas):
+        self._kwargs["crs"] = int(areas.iloc[0].epsg)
+        return super().load(items, areas)
+
+
 def run(
     task_id: Tuple | list[Tuple] | None,
     datetime: str,
@@ -127,7 +134,7 @@ def run(
         client=client,
         datetime=datetime,
     )
-    stacloader = OdcLoader(
+    stacloader = ProjOdcLoader(
         datetime=datetime,
         chunks=dict(band=1, time=1, x=8192, y=8192),
         resampling={"qa_pixel": "nearest", "*": "nearest"},

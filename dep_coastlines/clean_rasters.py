@@ -112,7 +112,6 @@ class ModelPredictor:
                 this_mask = self.calculate_mask(ds)
                 # masks.append(this_mask)
                 missings = output.isnull()
-                breakpoint()
                 output = output.where(
                     ~missings, ds.where(this_mask != cloud_code, drop=False)
                 )
@@ -174,6 +173,7 @@ class Cleaner(Processor):
         return analysis_zone
 
     def process(self, input: Dataset | list[Dataset]) -> Tuple[Dataset, GeoDataFrame]:
+        breakpoint()
         output = self.model.apply_mask(input)
 
         obvious_water = 0.5
@@ -254,7 +254,7 @@ def run(
         start_year=start_year,
         end_year=end_year,
         years_per_composite=[1, 3],
-        version="0.6.0",
+        version="0.6.0.3",
     )
     processor = Cleaner()
     writer = CoastlineWriter(
