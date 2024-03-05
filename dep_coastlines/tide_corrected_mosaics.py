@@ -137,7 +137,7 @@ def run(
     stacloader = ProjOdcLoader(
         datetime=datetime,
         chunks=dict(band=1, time=1, x=8192, y=8192),
-        resampling={"qa_pixel": "nearest", "*": "nearest"},
+        resampling={"qa_pixel": "nearest", "*": "cubic"},
         fail_on_error=False,
         bands=["qa_pixel", "nir08", "swir16", "swir22", "red", "blue", "green"],
         clip_to_area=True,
