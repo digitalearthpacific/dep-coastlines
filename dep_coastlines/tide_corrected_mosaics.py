@@ -74,11 +74,6 @@ class MosaicProcessor(LandsatProcessor):
         )
         tide_loader = TideLoader(tide_namer)
 
-        master_crs = tide_loader.load(area.index[0]).rio.crs
-        if xr.rio.crs != master_crs:
-            breakpoint()
-            xr = xr.odc.reproject(master_crs).rio.write_crs(master_crs)
-
         xr = filter_by_tides(xr, area.index[0], tide_loader)
 
         # In case we filtered out all the data
@@ -115,6 +110,7 @@ class MosaicProcessor(LandsatProcessor):
 class ProjOdcLoader(OdcLoader):
     def load(self, items, areas):
         self._kwargs["crs"] = int(areas.iloc[0].epsg)
+        breakpoint()
         return super().load(items, areas)
 
 

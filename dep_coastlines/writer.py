@@ -31,7 +31,9 @@ class CoastlineWriter(Writer):
         self._rasterWriter = CompositeWriter(itempath, driver="COG", **kwargs)
         self._vectorWriter = CompositeWriter(itempath, driver="GPKG", **kwargs)
 
-    def write(self, daAndgdf: Tuple[Dataset, GeoDataFrame], item_id: str | list):
-        self._rasterWriter.write(daAndgdf[0], item_id)
+    def write(self, output: Tuple[Dataset, GeoDataFrame, GeoDataFrame], item_id: str):
+        self._rasterWriter.write(output[0], item_id)
         self._vectorWriter.kwargs["layer"] = f"lines_{item_id}"
-        self._vectorWriter.write(daAndgdf[1], item_id, ".gpkg")
+        self._vectorWriter.write(output[1], item_id, ".gpkg")
+        self._vectorWriter.kwargs["layer"] = f"roc_{item_id}"
+        self._vectorWriter.write(output[2], item_id, "_roc.gpkg")

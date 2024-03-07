@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Tuple, Annotated, Callable
 
 from dask.distributed import Client
+from coastlines.vector import points_on_line, annual_movements, calculate_regressions
 from dea_tools.classification import predict_xr
 from dea_tools.spatial import subpixel_contours
 from geopandas import GeoDataFrame
@@ -135,11 +136,13 @@ class Cleaner(Processor):
         index_threshold: float = 0,
         comparison: Callable = operator.lt,
         number_of_expansions: int = 8,
+        baseline_year: str = "1999",
         model_file: Path = Path(__file__).parent / "../data/model_26Feb.joblib",
     ):
         super().__init__()
         self.index_threshold = index_threshold
         self.water_index = water_index
+        self.baseline_year = baseline_year
         #        model_dict = load(model_file)
         #        model = SavedModel(
         #            model=model_dict["model"],
@@ -224,20 +227,37 @@ class Cleaner(Processor):
             .where(~inland_areas)
         )
         output = output.groupby("year").map(xs.focal.mean)
+        output["year"] = output.year.astype(int)
         combined_gdf = subpixel_contours(
             output,
             dim="year",
             z_values=[self.index_threshold],
             min_vertices=5,
         )
-        combined_gdf.year = combined_gdf.year.astype(int)
+        combined_gdf.year = combined_gdf.year.astype(str)
+        combined_gdf = combined_gdf.set_index("year")
+        points_gdf = points_on_line(combined_gdf, self.baseline_year, distance=30)
+        points_gdf = annual_movements(
+            points_gdf,
+            combined_gdf,
+            output.to_dataset(name=self.water_index),
+            self.baseline_year,
+            self.water_index,
+            max_valid_dist=5000,
+        )
+        points_gdf = calculate_regressions(points_gdf, combined_gdf)
 
         output["year"] = output.year.astype(str)
-        return output.to_dataset("year"), combined_gdf
+        combined_gdf = combined_gdf.reset_index()
+        combined_gdf.year = combined_gdf.year.astype(int)
+        return output.to_dataset("year"), combined_gdf, points_gdf
 
 
 def run(
-    task_id: Tuple | list[Tuple] | None, dataset_id=DATASET_ID, version: str = "0.6.0"
+    task_id: Tuple | list[Tuple] | None,
+    dataset_id=DATASET_ID,
+    version: str = "0.6.0",
+    water_index="meanwi",
 ) -> None:
     start_year = 1999
     end_year = 2023
@@ -255,7 +275,7 @@ def run(
         years_per_composite=[1, 3],
         version="0.6.0.4",
     )
-    processor = Cleaner()
+    processor = Cleaner(water_index=water_index)
     writer = CoastlineWriter(
         namer,
         extra_attrs=dict(dep_version=version),
@@ -290,15 +310,17 @@ def process_id(
     row: Annotated[str, Option()],
     column: Annotated[str, Option()],
     version: Annotated[str, Option()],
+    water_index: str = "meanwi",
 ):
     with Client():
-        run((int(row), int(column)), version=version)
+        run((int(row), int(column)), version=version, water_index=water_index)
 
 
 @app.command()
 def process_all_ids(
     version: Annotated[str, Option()],
     overwrite_log: Annotated[bool, Option()] = False,
+    water_index: str = "mndwi",
     dataset_id=DATASET_ID,
     datetime="1999/2023",
 ):
@@ -307,7 +329,7 @@ def process_all_ids(
     )
 
     with Client():
-        run(task_ids, dataset_id=dataset_id, version=version)
+        run(task_ids, dataset_id=dataset_id, version=version, water_index=water_index)
 
 
 if __name__ == "__main__":

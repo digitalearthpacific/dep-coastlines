@@ -146,6 +146,7 @@ class MosaicLoader(Loader):
             output["ndwi"] = ndwi(output)
             output["nirwi"] = (1280 - output.nir08) / (1280 + output.nir08)
             output["meanwi"] = (output.ndwi + output.nirwi) / 2
+            output["wix"] = xr.where(output.ndwi < 0, output.ndwi, output.nirwi)
             from numpy import maximum
 
             output["maxwi"] = maximum(output.ndwi, output.nirwi)
