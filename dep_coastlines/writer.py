@@ -35,5 +35,6 @@ class CoastlineWriter(Writer):
         self._rasterWriter.write(output[0], item_id)
         self._vectorWriter.kwargs["layer"] = f"lines_{item_id}"
         self._vectorWriter.write(output[1], item_id, ".gpkg")
-        self._vectorWriter.kwargs["layer"] = f"roc_{item_id}"
-        self._vectorWriter.write(output[2], item_id, "_roc.gpkg")
+        if output[2] is not None:
+            self._vectorWriter.kwargs["layer"] = f"roc_{item_id}"
+            self._vectorWriter.write(output[2], item_id, "_roc.gpkg")

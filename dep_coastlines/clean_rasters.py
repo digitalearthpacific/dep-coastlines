@@ -227,29 +227,32 @@ class Cleaner(Processor):
             .where(~inland_areas)
         )
         output = output.groupby("year").map(xs.focal.mean)
-        output["year"] = output.year.astype(int)
         combined_gdf = subpixel_contours(
             output,
             dim="year",
             z_values=[self.index_threshold],
             min_vertices=5,
         )
-        combined_gdf.year = combined_gdf.year.astype(str)
-        combined_gdf = combined_gdf.set_index("year")
-        points_gdf = points_on_line(combined_gdf, self.baseline_year, distance=30)
-        points_gdf = annual_movements(
-            points_gdf,
-            combined_gdf,
-            output.to_dataset(name=self.water_index),
-            self.baseline_year,
-            self.water_index,
-            max_valid_dist=5000,
-        )
-        points_gdf = calculate_regressions(points_gdf, combined_gdf)
+        try:
+            output["year"] = output.year.astype(int)
+            combined_gdf.year = combined_gdf.year.astype(str)
+            combined_gdf = combined_gdf.set_index("year")
+            points_gdf = points_on_line(combined_gdf, self.baseline_year, distance=30)
+            points_gdf = annual_movements(
+                points_gdf,
+                combined_gdf,
+                output.to_dataset(name=self.water_index),
+                self.baseline_year,
+                self.water_index,
+                max_valid_dist=5000,
+            )
+            points_gdf = calculate_regressions(points_gdf, combined_gdf)
 
+            combined_gdf = combined_gdf.reset_index()
+            combined_gdf.year = combined_gdf.year.astype(int)
+        except:
+            points_gdf = None
         output["year"] = output.year.astype(str)
-        combined_gdf = combined_gdf.reset_index()
-        combined_gdf.year = combined_gdf.year.astype(int)
         return output.to_dataset("year"), combined_gdf, points_gdf
 
 
@@ -320,7 +323,7 @@ def process_id(
 def process_all_ids(
     version: Annotated[str, Option()],
     overwrite_log: Annotated[bool, Option()] = False,
-    water_index: str = "mndwi",
+    water_index: str = "meanwi",
     dataset_id=DATASET_ID,
     datetime="1999/2023",
 ):

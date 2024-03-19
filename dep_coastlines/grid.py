@@ -105,16 +105,16 @@ if not blob_exists(grid_blob_path) or OVERWRITE:
 grid = gpd.read_file(grid_url).set_index(["column", "row"])
 # grid = gpd.read_file(grid_blob_path).set_index(["column", "row"])
 test_tiles = [
+    (23, 31),  # PNG
+    (62, 30),  # Tuvalu
     (53, 47),
     (61, 19),
     (68, 15),  # Tongatapu
     (68, 16),  # Tongatapu
-    (62, 30),  # Tuvalu
     (49, 49),
     (48, 14),
     (60, 20),
     (118, 11),  # Pitcairn
-    (23, 31),  # PNG
 ]
 
 test_grid = grid.loc[test_tiles]

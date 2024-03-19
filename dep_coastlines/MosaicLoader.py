@@ -108,11 +108,10 @@ class MultiyearMosaicLoader(Loader):
                 self.load_composite_set(area, years_per_composite)
                 for years_per_composite in self._years_per_composite
             ]
-            all_time = composite_sets[0].median(dim="year").compute()
+            # self._all_time = composite_sets[0].median(dim="year").compute()
 
             return [
-                add_deviations(area, composite_set, all_time)
-                for composite_set in composite_sets
+                add_deviations(area, composite_set) for composite_set in composite_sets
             ]
 
 
@@ -130,6 +129,15 @@ class MosaicLoader(Loader):
         self._add_deviations = add_deviations
 
     def load(self, area):
+        if self._add_deviations:
+            all_time = (
+                MultiyearMosaicLoader(
+                    start_year=1999, end_year=2023, version=self._itempath.version
+                )
+                .load(area)
+                .median(dim="year")
+            )
+
         item_id = area.index.to_numpy()[0]
         blobs = list(
             list_blob_container(
@@ -146,25 +154,23 @@ class MosaicLoader(Loader):
             output["ndwi"] = ndwi(output)
             output["nirwi"] = (1280 - output.nir08) / (1280 + output.nir08)
             output["meanwi"] = (output.ndwi + output.nirwi) / 2
+            output["meanwii"] = (output.ndwi + output.nirwi + output.mndwi) / 3
             output["wix"] = xr.where(output.ndwi < 0, output.ndwi, output.nirwi)
             from numpy import maximum
 
             output["maxwi"] = maximum(output.ndwi, output.nirwi)
-            return add_deviations(area, output) if self._add_deviations else output
+            return (
+                add_deviations(area, output, all_time)
+                if self._add_deviations
+                else output
+            )
         else:
-            warnings.warn("No items in folder " + self._itempath._folder(item_id))
+            message = "No items in folder " + self._itempath._folder(item_id)
+            warnings.warn(message)
             return None
 
 
 def add_deviations(area, xr, all_time=None):
-    #    all_time_namer = DepItemPath(
-    #        sensor="ls",
-    #        dataset_id="coastlines/mosaics-corrected",
-    #        version="0.6.0",
-    #        time="1999_2023",
-    #        zero_pad_numbers=True,
-    #    )
-    #    all_time = MosaicLoader(all_time_namer, add_deviations=False).load(area)
     if all_time is None:
         all_time = xr.median(dim="year")
     deviation = xr - all_time

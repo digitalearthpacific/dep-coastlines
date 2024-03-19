@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-
 import geopandas as gpd
 import pandas as pd
 import xarray as xr
@@ -19,8 +18,8 @@ def split_multiyears(df, time_column="time", splitter=","):
 
 def cast_all(df, time_column="time"):
     # Some time values were entered as "all", could be _all_ possible years,
-    # for now just make it the big mosaic
-    df.loc[df[time_column] == "all", time_column] = "1999/2023"
+    # for now just make it the biggest mosaic
+    df.loc[df[time_column] == "all", time_column] = "2019/2023"
     return df
 
 
@@ -48,7 +47,7 @@ def pull_data_for_datetime(df):
     itempath = DepItemPath(
         sensor="ls",
         dataset_id="coastlines/mosaics-corrected",
-        version="0.6.0",
+        version="0.6.0.4",
         time=df.time.iloc[0].replace("/", "_"),
         zero_pad_numbers=True,
     )
@@ -63,14 +62,14 @@ def pull_data_for_datetime(df):
 
 
 def load_point_values(points):
-    return cast_all(
-        split_multiyears(points).groupby("time").apply(pull_data_for_datetime)
+    return (
+        split_multiyears(cast_all(points)).groupby("time").apply(pull_data_for_datetime)
     )
 
 
 def prep_training_data():
     load_point_values(gpd.read_file("data/training_data.gpkg")).to_csv(
-        "data/training_data_with_features_20Feb2024.csv", index=False
+        "data/training_data_with_features_18Mar2024.csv", index=False
     )
 
 
