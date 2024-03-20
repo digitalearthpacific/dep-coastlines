@@ -137,7 +137,7 @@ class Cleaner(Processor):
         comparison: Callable = operator.lt,
         number_of_expansions: int = 8,
         baseline_year: str = "1999",
-        model_file: Path = Path(__file__).parent / "../data/model_26Feb.joblib",
+        model_file: Path = Path(__file__).parent / "../data/full_model_19Mar.joblib",
     ):
         super().__init__()
         self.index_threshold = index_threshold
@@ -275,7 +275,7 @@ def run(
     loader = MultiyearMosaicLoader(
         start_year=start_year,
         end_year=end_year,
-        years_per_composite=[1, 3],
+        years_per_composite=[1, 3, 5],
         version="0.6.0.4",
     )
     processor = Cleaner(water_index=water_index)
