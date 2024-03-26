@@ -30,10 +30,11 @@ from dep_tools.processors import LandsatProcessor
 from dep_tools.task import ErrorCategoryAreaTask, MultiAreaTask
 from dep_tools.utils import get_container_client
 from dep_tools.writers import DsWriter
-from tide_utils import filter_by_tides, TideLoader
 
-from task_utils import get_ids, bool_parser
-from grid import test_grid
+from dep_coastlines.water_indices import mndwi, ndwi, nirwi
+from dep_coastlines.tide_utils import filter_by_tides, TideLoader
+from dep_coastlines.task_utils import get_ids, bool_parser
+from dep_coastlines.grid import test_grid
 
 DATASET_ID = "coastlines/mosaics-corrected"
 app = Typer()
@@ -94,7 +95,11 @@ class MosaicProcessor(LandsatProcessor):
 
         # or mean or median or whatever
         xr = xr.groupby("time").first().drop_vars(["qa_pixel"])
-        output = xr.median("time", keep_attrs=True)  # .to_dataset()
+        xr["mndwi"] = mndwi(xr)
+        xr["ndwi"] = ndwi(xr)
+        xr["nirwi"] = nirwi(xr)
+        xr["meanwi"] = (xr.ndwi + xr.nirwi) / 2
+        output = xr.median("time", keep_attrs=True)
         output_mad = mad(xr, output)
         output_mad = output_mad.rename(
             dict((variable, variable + "_mad") for variable in output_mad)
@@ -104,13 +109,16 @@ class MosaicProcessor(LandsatProcessor):
             xr.nir08.count("time", keep_attrs=True).fillna(0).astype("int16")
         )
         output["nir08_stdev"] = xr.nir08.std("time", keep_attrs=True)
+        output["meanwi_stdev"] = xr.meanwi.std("time", keep_attrs=True)
+        output["nirwi_stdev"] = xr.nirwi.std("time", keep_attrs=True)
+        output["mndwi_stdev"] = xr.meanwi.std("time", keep_attrs=True)
+        output["ndwi_stdev"] = xr.meanwi.std("time", keep_attrs=True)
         return set_stac_properties(xr, output).chunk(dict(x=2048, y=2048))
 
 
 class ProjOdcLoader(OdcLoader):
     def load(self, items, areas):
         self._kwargs["crs"] = int(areas.iloc[0].epsg)
-        breakpoint()
         return super().load(items, areas)
 
 

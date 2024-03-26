@@ -1,5 +1,6 @@
 from typing import Tuple
 
+from coastlines.vector import vector_schema
 from geopandas import GeoDataFrame
 from xarray import Dataset
 
@@ -32,9 +33,26 @@ class CoastlineWriter(Writer):
         self._vectorWriter = CompositeWriter(itempath, driver="GPKG", **kwargs)
 
     def write(self, output: Tuple[Dataset, GeoDataFrame, GeoDataFrame], item_id: str):
-        self._rasterWriter.write(output[0], item_id)
+        water_index, contours, rates_of_change = output
+        self._rasterWriter.write(water_index, item_id)
         self._vectorWriter.kwargs["layer"] = f"lines_{item_id}"
-        self._vectorWriter.write(output[1], item_id, ".gpkg")
-        if output[2] is not None:
+        contour_schema = vector_schema(contours)
+        # Not sure why they reset the index in vector_schema, but we don't need this
+        contour_schema.pop("index")
+        self._vectorWriter.kwargs["schema"] = dict(
+            properties=contour_schema,
+            geometry=["MultiLineString", "LineString"],
+        )
+        self._vectorWriter.write(
+            contours,
+            item_id,
+            ".gpkg",
+        )
+        if rates_of_change is not None:
             self._vectorWriter.kwargs["layer"] = f"roc_{item_id}"
-            self._vectorWriter.write(output[2], item_id, "_roc.gpkg")
+            roc_schema = vector_schema(rates_of_change)
+            roc_schema.pop("index")
+            self._vectorWriter.kwargs["schema"] = dict(
+                properties=roc_schema, geometry="Point"
+            )
+            self._vectorWriter.write(rates_of_change, item_id, "_roc.gpkg")

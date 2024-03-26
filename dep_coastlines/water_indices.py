@@ -1,4 +1,4 @@
-from xarray import DataArray, Dataset, where
+from xarray import DataArray, Dataset
 
 from dep_tools.utils import scale_and_offset
 
@@ -13,6 +13,14 @@ def mndwi(xr: Dataset) -> DataArray:
 def ndwi(xr: Dataset) -> DataArray:
     ndwi = normalized_ratio(xr.green, xr.nir08)
     return ndwi.rename("ndwi")
+
+
+def nirwi(xr: Dataset) -> DataArray:
+    # Magic cutoff is from https://doi.org/10.1186/s42834-019-0016-5
+    # I make it an "index" so
+    # 1. Directionality is the same as other indices and
+    # 2. The scales are similarly comprable
+    return normalized_ratio(1280.0, xr.nir08).rename("nirwi")
 
 
 def awei(xr: DataArray) -> DataArray:
@@ -81,5 +89,5 @@ def wofs(tm: Dataset) -> DataArray:
     return water.where(tm.red.notnull(), float("nan"))
 
 
-def normalized_ratio(band1: DataArray, band2: DataArray) -> DataArray:
+def normalized_ratio(band1: DataArray | float, band2: DataArray | float) -> DataArray:
     return (band1 - band2) / (band1 + band2)

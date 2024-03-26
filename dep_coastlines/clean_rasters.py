@@ -14,11 +14,17 @@ from pathlib import Path
 from typing import Tuple, Annotated, Callable
 
 from dask.distributed import Client
-from coastlines.vector import points_on_line, annual_movements, calculate_regressions
+from coastlines.vector import (
+    all_time_stats,
+    points_on_line,
+    annual_movements,
+    calculate_regressions,
+)
 from dea_tools.classification import predict_xr
 from dea_tools.spatial import subpixel_contours
 from geopandas import GeoDataFrame
 from odc.algo import mask_cleanup
+from pandas.io.common import is_potential_multi_index
 from typer import Option, Typer
 from xarray import Dataset, concat, apply_ufunc
 import xrspatial as xs
@@ -112,7 +118,7 @@ class ModelPredictor:
                 ds = ds.sel(year=ds.year[ds.year.isin(output.year)])
                 this_mask = self.calculate_mask(ds)
                 # masks.append(this_mask)
-                missings = output.isnull()
+                missings = (output.isnull()) | (output["count"] <= 4)
                 output = output.where(
                     ~missings, ds.where(this_mask != cloud_code, drop=False)
                 )
@@ -127,6 +133,13 @@ class ModelPredictor:
 
 def calculate_consensus_land(ds):
     return (ds.nir08_all > 1280.0) & (ds.mndwi_all < 0) & (ds.ndwi_all < 0)
+    # return (ds.nir08 > 1280.0) & (ds.mndwi < 0) & (ds.ndwi < 0)
+
+
+def certainty_masking(d):
+    # max cap
+    # count
+    return None
 
 
 class Cleaner(Processor):
@@ -135,25 +148,16 @@ class Cleaner(Processor):
         water_index: str = "meanwi",
         index_threshold: float = 0,
         comparison: Callable = operator.lt,
-        number_of_expansions: int = 8,
-        baseline_year: str = "1999",
+        number_of_expansions: int = 4,
+        baseline_year: str = "2023",
         model_file: Path = Path(__file__).parent / "../data/full_model_19Mar.joblib",
     ):
         super().__init__()
         self.index_threshold = index_threshold
         self.water_index = water_index
         self.baseline_year = baseline_year
-        #        model_dict = load(model_file)
-        #        model = SavedModel(
-        #            model=model_dict["model"],
-        #            training_data=model_dict["training_data"],
-        #            predictor_columns=model_dict["predictor_columns"],
-        #            response_column=model_dict["response_column"],
-        #            codes=model_dict["codes"],
-        #        )
 
         self.model = ModelPredictor(load(model_file))
-        # self.model = ModelPredictor(model)
         self.comparison = comparison
         self.number_of_expansions = number_of_expansions
 
@@ -163,30 +167,64 @@ class Cleaner(Processor):
     def water(self, output):
         return output[self.water_index] >= self.index_threshold
 
-    def expand_analysis_zone(self, analysis_zone, output):
+    def expand_analysis_zone(self, analysis_zone, output, return_max_cap: bool = False):
         # Only expand where there's an edge that's land. Do it multiple times
         # to fill between larger areas
         # say in Funafuti or Majiro. Later we will fill one last time with
         # water to ensure lines are closed.
-        for _ in range(self.number_of_expansions):
-            analysis_zone = analysis_zone | mask_cleanup(
+        def expand_once(analysis_zone):
+            return analysis_zone | mask_cleanup(
                 self.land(output.where(analysis_zone)),
                 mask_filters=[("dilation", 1)],
             )
+
+        for _ in range(self.number_of_expansions):
+            analysis_zone = expand_once(analysis_zone)
+
+        if return_max_cap:
+            last_expansion = expand_once(analysis_zone)
+            max_cap = last_expansion & ~analysis_zone
+            return analysis_zone, max_cap
+
         return analysis_zone
 
-    def process(self, input: Dataset | list[Dataset]) -> Tuple[Dataset, GeoDataFrame]:
+    def points(self, contours, water_index):
+        water_index["year"] = water_index.year.astype(int)
+        contours.year = contours.year.astype(str)
+        contours = contours.set_index("year")
+
+        points_gdf = points_on_line(contours, self.baseline_year, distance=30)
+        if points_gdf is not None and len(points_gdf) > 0:
+            points_gdf = annual_movements(
+                points_gdf,
+                contours,
+                water_index.to_dataset(name=self.water_index),
+                self.baseline_year,
+                self.water_index,
+                max_valid_dist=5000,
+            )
+        points_gdf = calculate_regressions(points_gdf, contours)
+
+        stats_list = ["valid_obs", "valid_span", "sce", "nsm", "max_year", "min_year"]
+        points_gdf[stats_list] = points_gdf.apply(
+            lambda x: all_time_stats(x, initial_year=1999), axis=1
+        )
+        contours = contours.reset_index()
+        contours.year = contours.year.astype(int)
+        return points_gdf
+
+    def process(
+        self, input: Dataset | list[Dataset]
+    ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
         output = self.model.apply_mask(input)
 
-        obvious_water = 0.5
         output = output[[self.water_index]].compute()
-        output[self.water_index] = fill_with_nearest_later_date(
-            output[self.water_index]
-        )
+        # output[self.water_index] = fill_with_nearest_later_date( output[self.water_index])
 
         candidate_land = self.land(output)
-        consensus_land = calculate_consensus_land(input[0].isel(year=0)).compute()
-        # Connected areas are contiguous zones that are connected in some way to
+        an_input = input[0] if isinstance(input, list) else input
+        consensus_land = calculate_consensus_land(an_input.isel(year=0)).compute()
+        # Connected are contiguous zones that are connected in some way to
         # the consensus areas. This ensures that all edges of these (on the basis of nir)
         # are included
         connected_areas = remove_disconnected_land(consensus_land, candidate_land)
@@ -210,7 +248,8 @@ class Cleaner(Processor):
         no_connected_neighbors = xs.focal.mean(consensus_land) == 0
         suspicious_connected_areas = candidate_land & no_connected_neighbors
         analysis_zone = connected_areas & ~suspicious_connected_areas
-        analysis_zone = self.expand_analysis_zone(analysis_zone, output)
+        analysis_zone, max_cap = self.expand_analysis_zone(analysis_zone, output, True)
+        # analysis_zone, max_cap = self.expand_analysis_zone(consensus_land, output, True)
 
         gadm_land = load_gadm_land(output)
         # consensus land may have inland water, but gadm doesn't.
@@ -221,39 +260,25 @@ class Cleaner(Processor):
         land = gadm_land | consensus_land
         ocean = mask_cleanup(~land, mask_filters=[("erosion", 2)])
         inland_areas = find_inland_areas(self.water(output), ocean)
-        output = (
+        obvious_water = 0.5
+        water_index = (
             output[self.water_index]
             .where(analysis_zone, obvious_water)
             .where(~inland_areas)
+            #            .where(~max_cap)
+            .groupby("year")
+            .map(xs.focal.mean)
         )
-        output = output.groupby("year").map(xs.focal.mean)
-        combined_gdf = subpixel_contours(
-            output,
+        coastlines = subpixel_contours(
+            water_index,
             dim="year",
             z_values=[self.index_threshold],
             min_vertices=5,
         )
-        try:
-            output["year"] = output.year.astype(int)
-            combined_gdf.year = combined_gdf.year.astype(str)
-            combined_gdf = combined_gdf.set_index("year")
-            points_gdf = points_on_line(combined_gdf, self.baseline_year, distance=30)
-            points_gdf = annual_movements(
-                points_gdf,
-                combined_gdf,
-                output.to_dataset(name=self.water_index),
-                self.baseline_year,
-                self.water_index,
-                max_valid_dist=5000,
-            )
-            points_gdf = calculate_regressions(points_gdf, combined_gdf)
+        roc_points = self.points(coastlines, water_index)
 
-            combined_gdf = combined_gdf.reset_index()
-            combined_gdf.year = combined_gdf.year.astype(int)
-        except:
-            points_gdf = None
-        output["year"] = output.year.astype(str)
-        return output.to_dataset("year"), combined_gdf, points_gdf
+        water_index["year"] = water_index.year.astype(str)
+        return water_index.to_dataset("year"), coastlines, roc_points
 
 
 def run(
@@ -275,7 +300,7 @@ def run(
     loader = MultiyearMosaicLoader(
         start_year=start_year,
         end_year=end_year,
-        years_per_composite=[1, 3, 5],
+        years_per_composite=[1, 3],
         version="0.6.0.4",
     )
     processor = Cleaner(water_index=water_index)

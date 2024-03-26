@@ -108,7 +108,7 @@ class MultiyearMosaicLoader(Loader):
                 self.load_composite_set(area, years_per_composite)
                 for years_per_composite in self._years_per_composite
             ]
-            # self._all_time = composite_sets[0].median(dim="year").compute()
+            self._all_time = composite_sets[0].median(dim="year").compute()
 
             return [
                 add_deviations(area, composite_set) for composite_set in composite_sets
@@ -154,11 +154,6 @@ class MosaicLoader(Loader):
             output["ndwi"] = ndwi(output)
             output["nirwi"] = (1280 - output.nir08) / (1280 + output.nir08)
             output["meanwi"] = (output.ndwi + output.nirwi) / 2
-            output["meanwii"] = (output.ndwi + output.nirwi + output.mndwi) / 3
-            output["wix"] = xr.where(output.ndwi < 0, output.ndwi, output.nirwi)
-            from numpy import maximum
-
-            output["maxwi"] = maximum(output.ndwi, output.nirwi)
             return (
                 add_deviations(area, output, all_time)
                 if self._add_deviations
