@@ -31,13 +31,14 @@ from xarray import Dataset
 from dea_tools.coastal import pixel_tides
 
 from azure_logger import CsvLogger
-from dep_tools.loaders import OdcLoader, SearchLoader
+from dep_tools.loaders import SearchLoader
 from dep_tools.searchers import LandsatPystacSearcher
 from dep_tools.namers import DepItemPath
 from dep_tools.processors import Processor
 from dep_tools.task import ErrorCategoryAreaTask, MultiAreaTask
 from dep_tools.utils import get_container_client
 
+from dep_coastlines.ProjOdcLoader import ProjOdcLoader
 from grid import grid
 from task_utils import get_ids
 from writer import DaWriter
@@ -70,7 +71,7 @@ def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) 
     searcher = LandsatPystacSearcher(
         search_intersecting_pathrows=True, client=client, datetime=datetime
     )
-    stacloader = OdcLoader(
+    stacloader = ProjOdcLoader(
         fail_on_error=False,
         chunks=dict(band=1, time=1, x=1024, y=1024),
         bands=["red"],
@@ -114,7 +115,7 @@ def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) 
 
 if __name__ == "__main__":
     datetime = "1984/2023"
-    version = "0.6.2"
+    version = "0.6.3"
     dataset_id = "coastlines/tpxo9"
     task_ids = get_ids(datetime, version, dataset_id)
     run(task_ids, datetime, version, dataset_id)

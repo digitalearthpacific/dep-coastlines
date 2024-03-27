@@ -22,7 +22,7 @@ from xarray import Dataset, DataArray
 
 from azure_logger import CsvLogger
 from dep_tools.landsat_utils import cloud_mask
-from dep_tools.loaders import OdcLoader, SearchLoader
+from dep_tools.loaders import SearchLoader
 from dep_tools.namers import DepItemPath
 from dep_tools.searchers import LandsatPystacSearcher
 from dep_tools.stac_utils import set_stac_properties
@@ -32,6 +32,7 @@ from dep_tools.utils import get_container_client
 from dep_tools.writers import DsWriter
 
 from dep_coastlines.water_indices import mndwi, ndwi, nirwi
+from dep_coastlines.ProjOdcLoader import ProjOdcLoader
 from dep_coastlines.tide_utils import filter_by_tides, TideLoader
 from dep_coastlines.task_utils import get_ids, bool_parser
 from dep_coastlines.grid import test_grid
@@ -69,7 +70,7 @@ class MosaicProcessor(LandsatProcessor):
         tide_namer = DepItemPath(
             sensor="ls",
             dataset_id="coastlines/tpxo9",
-            version="0.6.2",
+            version="0.6.3",
             time="1984_2023",
             zero_pad_numbers=True,
         )
@@ -114,12 +115,6 @@ class MosaicProcessor(LandsatProcessor):
         output["mndwi_stdev"] = xr.meanwi.std("time", keep_attrs=True)
         output["ndwi_stdev"] = xr.meanwi.std("time", keep_attrs=True)
         return set_stac_properties(xr, output).chunk(dict(x=2048, y=2048))
-
-
-class ProjOdcLoader(OdcLoader):
-    def load(self, items, areas):
-        self._kwargs["crs"] = int(areas.iloc[0].epsg)
-        return super().load(items, areas)
 
 
 def run(
@@ -171,7 +166,7 @@ def run(
         name=DATASET_ID,
         container_client=get_container_client(),
         path=namer.log_path(),
-        overwrite=False,
+        overwrite=True,
         header="time|index|status|paths|comment\n",
     )
 

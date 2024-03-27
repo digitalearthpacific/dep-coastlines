@@ -219,7 +219,9 @@ class Cleaner(Processor):
         output = self.model.apply_mask(input)
 
         output = output[[self.water_index]].compute()
-        # output[self.water_index] = fill_with_nearest_later_date( output[self.water_index])
+        output[self.water_index] = fill_with_nearest_later_date(
+            output[self.water_index]
+        )
 
         candidate_land = self.land(output)
         an_input = input[0] if isinstance(input, list) else input
@@ -301,7 +303,7 @@ def run(
         start_year=start_year,
         end_year=end_year,
         years_per_composite=[1, 3],
-        version="0.6.0.4",
+        version="0.6.1",
     )
     processor = Cleaner(water_index=water_index)
     writer = CoastlineWriter(

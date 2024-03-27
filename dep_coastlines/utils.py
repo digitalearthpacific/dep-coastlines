@@ -49,7 +49,6 @@ def load_blobs(
 
         da["year"] = year
         dss.append(da.to_dataset("band"))
-        #    if len(dss) > 0: breakpoint()
     return xr.concat(dss, dim="year") if len(dss) > 0 else None
 
 
