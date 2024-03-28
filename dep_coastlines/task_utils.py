@@ -89,7 +89,9 @@ def print_ids(
 
 
 def _remove_existing_stac(grid_subset, version, dataset_id, datetime):
-    itempath = DepItemPath("ls", dataset_id, version, datetime, zero_pad_numbers=True)
+    itempath = DepItemPath(
+        "ls", dataset_id, version, datetime.replace("/", "_"), zero_pad_numbers=True
+    )
     container_client = get_container_client()
     blobs_exist = grid_subset.apply(
         lambda row: blob_exists(
