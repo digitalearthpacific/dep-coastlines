@@ -25,6 +25,7 @@ def get_ids(
     grid=GRID,
     delete_existing_log: bool = False,
     filter_existing_stac_items: bool = False,
+    filter_using_log: bool = True,
 ) -> list:
     namer = DepItemPath(
         sensor="ls",
@@ -43,7 +44,10 @@ def get_ids(
     if filter_existing_stac_items:
         grid = _remove_existing_stac(grid, version, dataset_id, datetime)
 
-    return filter_by_log(grid, logger.parse_log(), retry_errors).index.to_list()
+    if filter_using_log:
+        grid = filter_by_log(grid, logger.parse_log(), retry_errors)
+
+    return grid.index.to_list()
 
 
 def int_or_none(raw: str) -> Optional[int]:
@@ -68,6 +72,8 @@ def print_ids(
     # Would be better to make this an Optional[bool] but argo can't do that
     retry_errors: Annotated[str, Option(parser=bool_parser)] = "True",
     overwrite_logs: Annotated[str, Option(parser=bool_parser)] = "False",
+    filter_using_log: Annotated[str, Option(parser=bool_parser)] = "True",
+    filter_existing_stac_items: Annotated[str, Option(parser=bool_parser)] = "False",
 ):
     params = []
     for year in composite_from_years(parse_datetime(datetime), years_per_composite):
@@ -77,7 +83,8 @@ def print_ids(
             dataset_id=dataset_id,
             retry_errors=retry_errors,
             delete_existing_log=overwrite_logs,
-            filter_existing_stac_items=True,
+            filter_using_log=filter_using_log,
+            filter_existing_stac_items=filter_existing_stac_items,
         )
 
         params += [{"row": id[0], "column": id[1], "datetime": year} for id in ids]
