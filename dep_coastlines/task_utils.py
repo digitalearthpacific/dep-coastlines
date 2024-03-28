@@ -3,9 +3,11 @@ import sys
 
 from typing import Annotated, Optional
 
+from pandas import DataFrame, Series, concat
 from typer import Typer, Option
 
 from azure_logger import CsvLogger, filter_by_log
+from dep_tools.azure import blob_exists
 from dep_tools.namers import DepItemPath
 from dep_tools.utils import get_container_client
 
@@ -22,6 +24,7 @@ def get_ids(
     retry_errors=True,
     grid=GRID,
     delete_existing_log: bool = False,
+    filter_existing_stac_items: bool = False,
 ) -> list:
     namer = DepItemPath(
         sensor="ls",
@@ -37,6 +40,9 @@ def get_ids(
         overwrite=delete_existing_log,
         header="time|index|status|paths|comment\n",
     )
+    if filter_existing_stac_items:
+        grid = _remove_existing_stac(grid, version, dataset_id, datetime)
+
     return filter_by_log(grid, logger.parse_log(), retry_errors).index.to_list()
 
 
@@ -71,6 +77,7 @@ def print_ids(
             dataset_id=dataset_id,
             retry_errors=retry_errors,
             delete_existing_log=overwrite_logs,
+            filter_existing_stac_items=True,
         )
 
         params += [{"row": id[0], "column": id[1], "datetime": year} for id in ids]
@@ -81,28 +88,17 @@ def print_ids(
     json.dump(params, sys.stdout)
 
 
-def _remove_existing_stac(grid_subset, version, dataset_id, years):
-    def _remove_existing_stac_year(
-        grid_subset: DataFrame | Series, itempath: DepItemPath
-    ) -> DataFrame | Series | None:
-        container_client = get_container_client()
-        blobs_exist = grid_subset.apply(
-            lambda row: blob_exists(
-                itempath.stac_path(row.name),
-                container_client=container_client,
-            ),
-            axis=1,
-        )
-        return grid_subset[~blobs_exist]
-
-    return concat(
-        [
-            _remove_existing_stac_year(
-                grid_subset, DepItemPath("ls", dataset_id, version, year)
-            )
-            for year in years
-        ]
+def _remove_existing_stac(grid_subset, version, dataset_id, datetime):
+    itempath = DepItemPath("ls", dataset_id, version, datetime, zero_pad_numbers=True)
+    container_client = get_container_client()
+    blobs_exist = grid_subset.apply(
+        lambda row: blob_exists(
+            itempath.stac_path(row.name),
+            container_client=container_client,
+        ),
+        axis=1,
     )
+    return grid_subset[~blobs_exist]
 
 
 if __name__ == "__main__":

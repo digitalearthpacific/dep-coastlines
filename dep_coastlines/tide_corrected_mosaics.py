@@ -166,7 +166,7 @@ def run(
         name=DATASET_ID,
         container_client=get_container_client(),
         path=namer.log_path(),
-        overwrite=True,
+        overwrite=False,
         header="time|index|status|paths|comment\n",
     )
 
