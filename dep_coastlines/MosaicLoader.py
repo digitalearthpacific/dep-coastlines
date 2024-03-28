@@ -99,7 +99,6 @@ class MultiyearMosaicLoader(Loader):
         return output
 
     def load(self, area) -> xr.Dataset | list[xr.Dataset]:
-        breakpoint()
         if not isinstance(self._years_per_composite, list):
             return add_deviations(
                 area, self.load_composite_set(area, self._years_per_composite)
