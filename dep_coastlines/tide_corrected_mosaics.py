@@ -35,7 +35,7 @@ from dep_coastlines.water_indices import mndwi, ndwi, nirwi
 from dep_coastlines.ProjOdcLoader import ProjOdcLoader
 from dep_coastlines.tide_utils import filter_by_tides, TideLoader
 from dep_coastlines.task_utils import get_ids, bool_parser
-from dep_coastlines.grid import test_grid
+from dep_coastlines.grid import test_buffered_grid as test_grid
 
 DATASET_ID = "coastlines/mosaics-corrected"
 app = Typer()

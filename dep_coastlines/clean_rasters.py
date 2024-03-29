@@ -107,27 +107,20 @@ class ModelPredictor:
         return concat(masks, dim="year")
 
     def apply_mask(self, input):
-        # masks = []
         cloud_code = self.code_for_name("cloud")
         if isinstance(input, list):
             this_mask = self.calculate_mask(input[0])
-            # masks.append(this_mask)
-            # ultimate_mask = this_mask
             output = input[0].where(this_mask != cloud_code, drop=False)
             for ds in input[1:]:
                 ds = ds.sel(year=ds.year[ds.year.isin(output.year)])
                 this_mask = self.calculate_mask(ds)
-                # masks.append(this_mask)
                 missings = (output.isnull()) | (output["count"] <= 4)
                 output = output.where(
                     ~missings, ds.where(this_mask != cloud_code, drop=False)
                 )
-        #                ultimate_mask = ultimate_mask.where(~missings.nir08, this_mask)
         else:
             mask = self.calculate_mask(input)
-            # masks.append(mask)
             output = input.where(mask != cloud_code)
-        #            ultimate_mask = mask
         return output
 
 

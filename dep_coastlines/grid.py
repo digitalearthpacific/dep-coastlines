@@ -7,19 +7,25 @@ from dep_grid.grid import grid, PACIFIC_EPSG
 from dep_tools.azure import blob_exists
 from dep_tools.utils import write_to_blob_storage
 
+url_prefix = "https://deppcpublicstorage.blob.core.windows.net/output/"
+
 grid_blob_path = "aoi/coastline_grid.gpkg"
 local_grid_blob_path = Path(__file__).parent / "../data/coastline_grid.gpkg"
-url_prefix = "https://deppcpublicstorage.blob.core.windows.net/output/"
 grid_url = url_prefix + grid_blob_path
 
+buffered_grid_blob_path = "aoi/buffered_coastline_grid.gpkg"
+local_buffered_grid_blob_path = (
+    Path(__file__).parent / "../data/buffered_coastline_grid.gpkg"
+)
+buffered_grid_url = url_prefix + buffered_grid_blob_path
 
 OVERWRITE = False
 
 
-def get_best_zone(gdf):
+def get_best_zone(gdf) -> gpd.GeoDataFrame:
     # Using the "most common" zone among loaded landsat data works fine except
     # in some years in some areas the most common zone differs, due to data
-    # availability. Here we determine which zone, has the greatest amoung area
+    # availability. Here we determine which zone, has the greatest area
     # of the buffered gadm for each cell.
     #
     # Alternatively, we would need to determine which landsat _scene_ has the
@@ -51,8 +57,7 @@ def get_best_zone(gdf):
     return gdf.set_index(["row", "column"]).join(zone_lookup).reset_index()
 
 
-if not blob_exists(grid_blob_path) or OVERWRITE:
-    # if not Path(grid_blob_path).exists:
+def make_grid(buffer=None) -> gpd.GeoDataFrame:
     aoi = gpd.read_file(url_prefix + "aoi/aoi.gpkg")
 
     # A buffer of the exterior line created weird interior gaps,
@@ -83,6 +88,9 @@ if not blob_exists(grid_blob_path) or OVERWRITE:
     )
 
     full_grid = grid(return_type="GeoSeries")
+    if buffer is not None:
+        # join style 2 should make corners stay corners
+        full_grid = full_grid.buffer(buffer, join_style=2)
 
     coastline_grid = full_grid.intersection(coast_buffer)
     coastline_grid = gpd.GeoDataFrame(
@@ -92,18 +100,32 @@ if not blob_exists(grid_blob_path) or OVERWRITE:
         lambda r: f"{str(r.column).zfill(3)}{str(r.row).zfill(3)}", axis=1
     )
 
-    coastline_grid = get_best_zone(coastline_grid)
+    return get_best_zone(coastline_grid)
 
+
+if not blob_exists(grid_blob_path) or OVERWRITE:
+    coastline_grid = make_grid()
     write_to_blob_storage(
         coastline_grid,
         grid_blob_path,
         driver="GPKG",
         layer_name="coastline_grid",
     )
+    coastline_grid.to_file(grid_blob_path)
+
+if not blob_exists(buffered_grid_blob_path) or OVERWRITE:
+    coastline_grid = make_grid(250)
+    write_to_blob_storage(
+        coastline_grid,
+        buffered_grid_blob_path,
+        driver="GPKG",
+        layer_name="coastline_grid",
+    )
+    coastline_grid.to_file(buffered_grid_blob_path)
 
 
 grid = gpd.read_file(grid_url).set_index(["column", "row"])
-# grid = gpd.read_file(grid_blob_path).set_index(["column", "row"])
+buffered_grid = gpd.read_file(buffered_grid_url).set_index(["column", "row"])
 test_tiles = [
     (23, 31),  # PNG
     (62, 30),  # Tuvalu
@@ -146,4 +168,7 @@ test_tiles = [
     (65, 23),  # ^^
 ]
 
+test_tiles = [(64,18), (65,18)]
+
 test_grid = grid.loc[test_tiles]
+test_buffered_grid = buffered_grid.loc[test_tiles]
