@@ -168,7 +168,5 @@ test_tiles = [
     (65, 23),  # ^^
 ]
 
-test_tiles = [(64, 18), (65, 18)]
-
 test_grid = grid.loc[test_tiles]
 test_buffered_grid = buffered_grid.loc[test_tiles]

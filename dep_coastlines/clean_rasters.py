@@ -144,8 +144,9 @@ class Cleaner(Processor):
         number_of_expansions: int = 4,
         baseline_year: str = "2023",
         model_file: Path = Path(__file__).parent / "../data/full_model_19Mar.joblib",
+        **kwargs,
     ):
-        super().__init__()
+        super().__init__(**kwargs)
         self.index_threshold = index_threshold
         self.water_index = water_index
         self.baseline_year = baseline_year
@@ -207,7 +208,7 @@ class Cleaner(Processor):
         return points_gdf
 
     def process(
-        self, input: Dataset | list[Dataset]
+        self, input: Dataset | list[Dataset], area
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
         output = self.model.apply_mask(input)
 
@@ -273,7 +274,12 @@ class Cleaner(Processor):
         roc_points = self.points(coastlines, water_index)
 
         water_index["year"] = water_index.year.astype(str)
-        return water_index.to_dataset("year"), coastlines, roc_points
+        area_proj = area.to_crs(water_index.rio.crs)
+        return (
+            water_index.to_dataset("year").rio.clip(area_proj.geometry),
+            coastlines.clip(area_proj),
+            roc_points.clip(area_proj),
+        )
 
 
 def run(
@@ -296,9 +302,9 @@ def run(
         start_year=start_year,
         end_year=end_year,
         years_per_composite=[1, 3],
-        version="0.6.1",
+        version="0.6.1.1",
     )
-    processor = Cleaner(water_index=water_index)
+    processor = Cleaner(water_index=water_index, send_area_to_processor=True)
     writer = CoastlineWriter(
         namer,
         extra_attrs=dict(dep_version=version),
