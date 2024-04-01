@@ -38,7 +38,7 @@ class CoastlineWriter(Writer):
         self._vectorWriter.kwargs["layer"] = f"lines_{item_id}"
         contour_schema = vector_schema(contours)
         # Not sure why they reset the index in vector_schema, but we don't need this
-        contour_schema.pop("index")
+        contour_schema.pop("index", None)
         self._vectorWriter.kwargs["schema"] = dict(
             properties=contour_schema,
             geometry=["MultiLineString", "LineString"],
@@ -51,7 +51,7 @@ class CoastlineWriter(Writer):
         if rates_of_change is not None:
             self._vectorWriter.kwargs["layer"] = f"roc_{item_id}"
             roc_schema = vector_schema(rates_of_change)
-            roc_schema.pop("index")
+            roc_schema.pop("index", None)
             self._vectorWriter.kwargs["schema"] = dict(
                 properties=roc_schema, geometry="Point"
             )

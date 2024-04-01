@@ -118,7 +118,9 @@ def find_inland_areas(water_bool_da, ocean_bool_da) -> DataArray:
     def _find_inland_2d(bool_da_2d: DataArray) -> DataArray:
         water_zones = xr.full_like(bool_da_2d, 0, dtype="int16")
         water_zones.values = label(bool_da_2d.astype("int8"), background=0)
-        location_by_zone = xs.zonal_stats(water_zones, ocean_10, stats_funcs=["max"])
+        location_by_zone = xs.zonal_stats(
+            water_zones.where(water_zones > 0), ocean_10, stats_funcs=["max"]
+        )
         inland_zones = location_by_zone["zone"][location_by_zone["max"] == 0]
         return water_zones.isin(inland_zones)
 

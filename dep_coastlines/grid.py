@@ -127,8 +127,8 @@ if not blob_exists(buffered_grid_blob_path) or OVERWRITE:
 grid = gpd.read_file(grid_url).set_index(["column", "row"])
 buffered_grid = gpd.read_file(buffered_grid_url).set_index(["column", "row"])
 test_tiles = [
-    (23, 31),  # PNG
     (62, 30),  # Tuvalu
+    (23, 31),  # PNG
     (53, 47),
     (68, 15),  # Tongatapu
     (68, 16),  # Tongatapu

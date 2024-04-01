@@ -19,14 +19,15 @@ from coastlines.vector import (
     points_on_line,
     annual_movements,
     calculate_regressions,
+    region_atttributes,
 )
 from dea_tools.classification import predict_xr
 from dea_tools.spatial import subpixel_contours
-from geopandas import GeoDataFrame
+from geopandas import GeoDataFrame, read_file
+import numpy as np
 from odc.algo import mask_cleanup
-from pandas.io.common import is_potential_multi_index
 from typer import Option, Typer
-from xarray import Dataset, concat, apply_ufunc
+from xarray import DataArray, Dataset, concat, apply_ufunc
 import xrspatial as xs
 from skimage.measure import label
 
@@ -246,6 +247,10 @@ class Cleaner(Processor):
         analysis_zone = connected_areas & ~suspicious_connected_areas
         analysis_zone, max_cap = self.expand_analysis_zone(analysis_zone, output, True)
         # analysis_zone, max_cap = self.expand_analysis_zone(consensus_land, output, True)
+        obvious_water = 0.5
+        output[self.water_index] = output[self.water_index].where(
+            analysis_zone, obvious_water
+        )
 
         gadm_land = load_gadm_land(output)
         # consensus land may have inland water, but gadm doesn't.
@@ -256,14 +261,42 @@ class Cleaner(Processor):
         land = gadm_land | consensus_land
         ocean = mask_cleanup(~land, mask_filters=[("erosion", 2)])
         inland_areas = find_inland_areas(self.water(output), ocean)
-        obvious_water = 0.5
+
+        def convolve(da):
+            # This is a convolution with a gaussian kernel that ignores NAs.
+            weights = DataArray([[1, 2, 1], [2, 4, 2], [1, 2, 1]], dims=("xw", "yw"))
+            total = (
+                da.fillna(0)
+                .rolling(x=3, y=3, center=True)
+                .construct(x="xw", y="yw")
+                .dot(weights)
+            )
+            divisor = (
+                (~da.isnull())
+                .astype(int)
+                .rolling(x=3, y=3, center=True)
+                .construct(x="xw", y="yw")
+                .dot(weights)
+            )
+            return (total / divisor).where(~da.isnull())
+
+        from xrspatial.convolution import convolution_2d, custom_kernel
+
+        gaussian_kernel = custom_kernel(
+            np.array(
+                [[0.0625, 0.125, 0.0625], [0.125, 0.25, 0.125], [0.0625, 0.125, 0.0625]]
+            )
+        )
         water_index = (
             output[self.water_index]
-            .where(analysis_zone, obvious_water)
+            # .where(analysis_zone, obvious_water)
             .where(~inland_areas)
             #            .where(~max_cap)
             .groupby("year")
-            .map(xs.focal.mean)
+            .map(convolve)
+            .rio.write_crs(output.rio.crs)
+            # .map(convolution_2d, kernel=gaussian_kernel)
+            #            .map(xs.focal.mean)
         )
         coastlines = subpixel_contours(
             water_index,
@@ -271,13 +304,33 @@ class Cleaner(Processor):
             z_values=[self.index_threshold],
             min_vertices=5,
         )
+
+        aoi = read_file("data/aoi.gpkg")
+        eez = read_file("data/src/global_ffa_spc_sla_pol_-180-180_mar2023.zip")
+        these_areas = eez.clip(coastlines.to_crs(4326).total_bounds).to_crs(
+            water_index.rio.crs
+        )
+        these_areas.geometry = these_areas.geometry.buffer(250)
         roc_points = self.points(coastlines, water_index)
+        coastlines = region_atttributes(
+            coastlines.set_index("year"),
+            these_areas,
+            attribute_col="TERRITORY1",
+            rename_col="eez_territory",
+        )
+        roc_points = region_atttributes(
+            roc_points,
+            these_areas,
+            attribute_col="TERRITORY1",
+            rename_col="eez_territory",
+        )
 
         water_index["year"] = water_index.year.astype(str)
         area_proj = area.to_crs(water_index.rio.crs)
         return (
             water_index.to_dataset("year").rio.clip(area_proj.geometry),
-            coastlines.clip(area_proj),
+            # clipping reorders index sometimes
+            coastlines.clip(area_proj).reindex(water_index.year.values),
             roc_points.clip(area_proj),
         )
 
