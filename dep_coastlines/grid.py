@@ -97,7 +97,10 @@ def make_grid(buffer=None) -> gpd.GeoDataFrame:
         geometry=coastline_grid[~coastline_grid.geometry.is_empty]
     ).reset_index(names=["column", "row"])
     coastline_grid["id"] = coastline_grid.apply(
-        lambda r: f"{str(r.column).zfill(3)}{str(r.row).zfill(3)}", axis=1
+        lambda r: f"{str(r.row).zfill(3)}{str(r.column).zfill(3)}", axis=1
+    )
+    coastline_grid["tile_id"] = coastline_grid.apply(
+        lambda r: f"{str(r.row)},{str(r.column)}", axis=1
     )
 
     return get_best_zone(coastline_grid)
@@ -111,7 +114,7 @@ if not blob_exists(grid_blob_path) or OVERWRITE:
         driver="GPKG",
         layer_name="coastline_grid",
     )
-    coastline_grid.to_file(grid_blob_path)
+    coastline_grid.to_file(local_grid_blob_path)
 
 if not blob_exists(buffered_grid_blob_path) or OVERWRITE:
     coastline_grid = make_grid(250)
@@ -121,52 +124,61 @@ if not blob_exists(buffered_grid_blob_path) or OVERWRITE:
         driver="GPKG",
         layer_name="coastline_grid",
     )
-    coastline_grid.to_file(buffered_grid_blob_path)
+    coastline_grid.to_file(local_buffered_grid_blob_path)
 
 
-grid = gpd.read_file(grid_url).set_index(["column", "row"])
-buffered_grid = gpd.read_file(buffered_grid_url).set_index(["column", "row"])
+grid = gpd.read_file(grid_url).set_index(["row", "column"])
+buffered_grid = gpd.read_file(buffered_grid_url).set_index(["row", "column"])
+
 test_tiles = [
-    (62, 30),  # Tuvalu
-    (23, 31),  # PNG
-    (53, 47),
-    (68, 15),  # Tongatapu
-    (68, 16),  # Tongatapu
-    (49, 49),
-    (48, 14),
-    (118, 11),  # Pitcairn
-    (60, 20),  # Fiji
-    (61, 19),
-    (60, 26),
-    (64, 16),
-    (65, 17),
-    (61, 18),
-    (63, 18),
-    (64, 18),
-    (65, 18),
-    (60, 19),
-    (62, 19),
-    (63, 19),
-    (64, 19),
-    (65, 19),
-    (59, 20),
-    (61, 20),
-    (62, 20),
-    (63, 20),
-    (64, 20),
-    (60, 21),
-    (61, 21),
-    (62, 21),
-    (63, 21),
-    (64, 21),
-    (63, 22),
-    (64, 22),
-    (59, 26),
-    (62, 27),  # Fiji ^^^
-    (67, 25),  # WF
-    (65, 24),
-    (65, 23),  # ^^
+    (11, 123),
+    (14, 50),
+    (15, 50),
+    (15, 51),
+    (16, 67),
+    (16, 71),
+    (17, 67),
+    (17, 71),
+    (18, 68),
+    (19, 63),
+    (19, 64),
+    (19, 65),
+    (19, 66),
+    (19, 67),
+    (20, 62),
+    (20, 63),
+    (20, 64),
+    (20, 65),
+    (20, 66),
+    (20, 67),
+    (21, 62),
+    (21, 63),
+    (21, 64),
+    (21, 65),
+    (21, 66),
+    (21, 67),
+    (22, 63),
+    (22, 64),
+    (22, 65),
+    (22, 66),
+    (22, 67),
+    (23, 66),
+    (24, 68),
+    (25, 68),
+    (26, 70),
+    (27, 62),
+    (29, 65),
+    (31, 64),
+    (31, 65),
+    (32, 23),
+    (32, 24),
+    (33, 24),
+    (49, 55),
+    (49, 56),
+    (51, 51),
+    (52, 51),
 ]
+
 
 test_grid = grid.loc[test_tiles]
 test_buffered_grid = buffered_grid.loc[test_tiles]

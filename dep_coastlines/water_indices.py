@@ -15,12 +15,12 @@ def ndwi(xr: Dataset) -> DataArray:
     return ndwi.rename("ndwi")
 
 
-def nirwi(xr: Dataset) -> DataArray:
+def nirwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
     # Magic cutoff is from https://doi.org/10.1186/s42834-019-0016-5
     # I make it an "index" so
     # 1. Directionality is the same as other indices and
     # 2. The scales are similarly comprable
-    return normalized_ratio(1280.0, xr.nir08).rename("nirwi")
+    return normalized_ratio(cutoff, xr.nir08).rename("nirwi")
 
 
 def awei(xr: DataArray) -> DataArray:

@@ -115,7 +115,7 @@ def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) 
 
 if __name__ == "__main__":
     datetime = "1984/2023"
-    version = "0.6.3"
+    version = "0.7.0"
     dataset_id = "coastlines/tpxo9"
     task_ids = get_ids(datetime, version, dataset_id)
     run(task_ids, datetime, version, dataset_id)

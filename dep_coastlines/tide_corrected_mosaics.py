@@ -70,7 +70,7 @@ class MosaicProcessor(LandsatProcessor):
         tide_namer = DepItemPath(
             sensor="ls",
             dataset_id="coastlines/tpxo9",
-            version="0.6.3",
+            version="0.7.0",
             time="1984_2023",
             zero_pad_numbers=True,
         )
@@ -98,22 +98,35 @@ class MosaicProcessor(LandsatProcessor):
         xr = xr.groupby("time").first().drop_vars(["qa_pixel"])
         xr["mndwi"] = mndwi(xr)
         xr["ndwi"] = ndwi(xr)
-        xr["nirwi"] = nirwi(xr)
+        cutoff = 0.128 if self.scale_and_offset else 1280.0
+        xr["nirwi"] = nirwi(xr, cutoff)
         xr["meanwi"] = (xr.ndwi + xr.nirwi) / 2
         output = xr.median("time", keep_attrs=True)
-        output_mad = mad(xr, output)
+        output_mad = mad(xr, output).astype("float32")
+
         output_mad = output_mad.rename(
             dict((variable, variable + "_mad") for variable in output_mad)
         )
         output = output.merge(output_mad)
-        output["count"] = (
-            xr.nir08.count("time", keep_attrs=True).fillna(0).astype("int16")
+        output["count"] = xr.nir08.count("time").fillna(0).astype("int16")
+        output["nir08_stdev"] = xr.nir08.std("time", keep_attrs=True).astype("float32")
+        output["meanwi_stdev"] = xr.meanwi.std("time", keep_attrs=True).astype(
+            "float32"
         )
-        output["nir08_stdev"] = xr.nir08.std("time", keep_attrs=True)
-        output["meanwi_stdev"] = xr.meanwi.std("time", keep_attrs=True)
-        output["nirwi_stdev"] = xr.nirwi.std("time", keep_attrs=True)
-        output["mndwi_stdev"] = xr.meanwi.std("time", keep_attrs=True)
-        output["ndwi_stdev"] = xr.meanwi.std("time", keep_attrs=True)
+
+        output["nirwi_stdev"] = xr.nirwi.std("time", keep_attrs=True).astype("float32")
+
+        output["mndwi_stdev"] = xr.mndwi.std("time", keep_attrs=True).astype("float32")
+
+        output["ndwi_stdev"] = xr.ndwi.std("time", keep_attrs=True).astype("float32")
+
+        scalers = [
+            key
+            for key in output.keys()
+            if not (key.endswith("stdev") or key.endswith("mad") or key == "count")
+        ]
+        output[scalers] = (output[scalers] * 10_000).astype("int16")
+
         return set_stac_properties(xr, output).chunk(dict(x=2048, y=2048))
 
 
@@ -158,9 +171,11 @@ def run(
     )
     writer = DsWriter(
         itempath=namer,
+        convert_to_int16=False,
         overwrite=False,
         load_before_write=load_before_write,
         extra_attrs=dict(dep_version=version),
+        #        write_multithreaded=False,
     )
     logger = CsvLogger(
         name=DATASET_ID,
