@@ -14,7 +14,7 @@ from dep_tools.loaders import Loader
 from dep_tools.namers import DepItemPath
 from dep_tools.utils import get_container_client
 
-from dep_coastlines.water_indices import mndwi, ndwi, ndvi
+from dep_coastlines.water_indices import mndwi, ndwi
 
 
 # see the old utils.py for improvements in here
@@ -154,7 +154,6 @@ class MosaicLoader(Loader):
             output["ndwi"] = ndwi(output)
             output["nirwi"] = (1280 - output.nir08) / (1280 + output.nir08)
             output["meanwi"] = (output.ndwi + output.nirwi) / 2
-            output["ndvi"] = ndvi(output)
             # TO maintain compatibility with prior models.
             # (I stopped rescaling these because of overflows)
             output[

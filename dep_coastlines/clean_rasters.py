@@ -317,14 +317,16 @@ class Cleaner(Processor):
         #        )
 
         water_index["year"] = water_index.year.astype(str)
-        area_proj = area.to_crs(water_index.rio.crs)
+        # area_proj = area.to_crs(water_index.rio.crs)
         return (
-            water_index.to_dataset("year").rio.clip(area_proj.geometry),
+            water_index.to_dataset("year"),  # .rio.clip(area_proj.geometry),
+            coastlines,
+            roc_points,
             # clipping reorders index sometimes
             # coastlines.clip(area_proj).reset_index().sort_values("year"),
-            coastlines.clip(area_proj).sort_values("year"),
+            # coastlines.clip(area_proj).sort_values("year"),
             # coastlines.clip(area_proj).reindex(water_index.year.values),
-            roc_points.clip(area_proj),
+            # roc_points.clip(area_proj),
         )
 
 
