@@ -5,3 +5,4 @@ deafrica_coastlines @ git+https://github.com/digitalearthafrica/deafrica-coastli
 joblib
 odc-geo>=0.4.2
 typer
+xarray-spatial
