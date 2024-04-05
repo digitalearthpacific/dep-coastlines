@@ -1,8 +1,7 @@
 azure-logger @ git+https://github.com/jessjaco/azure-logger.git
 dep-tools @ git+https://github.com/digitalearthpacific/dep-tools.git@anti-original-fixes
 dep-grid @ git+https://github.com/digitalearthpacific/dep-grid.git@cleanup
-
-dea-tools
+deafrica_coastlines @ git+https://github.com/digitalearthafrica/deafrica-coastlines.git@169e166befc76a2d4fd63cbb43ced01d7416a080
 joblib
 odc-geo>=0.4.2
 typer
