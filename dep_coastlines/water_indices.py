@@ -15,6 +15,11 @@ def ndwi(xr: Dataset) -> DataArray:
     return ndwi.rename("ndwi")
 
 
+def ndvi(xr: Dataset) -> DataArray:
+    ndvi = normalized_ratio(xr.nir08, xr.red)
+    return ndvi.rename("ndvi")
+
+
 def nirwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
     # Magic cutoff is from https://doi.org/10.1186/s42834-019-0016-5
     # I make it an "index" so
