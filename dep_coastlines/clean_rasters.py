@@ -130,6 +130,25 @@ def calculate_consensus_land(ds):
     # return (ds.nir08 > 1280.0) & (ds.mndwi < 0) & (ds.ndwi < 0)
 
 
+def convolve(da):
+    # This is a convolution with a gaussian kernel that ignores NAs.
+    weights = DataArray([[1, 2, 1], [2, 4, 2], [1, 2, 1]], dims=("xw", "yw"))
+    total = (
+        da.fillna(0)
+        .rolling(x=3, y=3, center=True)
+        .construct(x="xw", y="yw")
+        .dot(weights)
+    )
+    divisor = (
+        (~da.isnull())
+        .astype(int)
+        .rolling(x=3, y=3, center=True)
+        .construct(x="xw", y="yw")
+        .dot(weights)
+    )
+    return (total / divisor).where(~da.isnull())
+
+
 def certainty_masking(d):
     # max cap
     # count
@@ -262,31 +281,6 @@ class Cleaner(Processor):
         ocean = mask_cleanup(~land, mask_filters=[("erosion", 2)])
         inland_areas = find_inland_areas(self.water(output), ocean)
 
-        def convolve(da):
-            # This is a convolution with a gaussian kernel that ignores NAs.
-            weights = DataArray([[1, 2, 1], [2, 4, 2], [1, 2, 1]], dims=("xw", "yw"))
-            total = (
-                da.fillna(0)
-                .rolling(x=3, y=3, center=True)
-                .construct(x="xw", y="yw")
-                .dot(weights)
-            )
-            divisor = (
-                (~da.isnull())
-                .astype(int)
-                .rolling(x=3, y=3, center=True)
-                .construct(x="xw", y="yw")
-                .dot(weights)
-            )
-            return (total / divisor).where(~da.isnull())
-
-        from xrspatial.convolution import convolution_2d, custom_kernel
-
-        gaussian_kernel = custom_kernel(
-            np.array(
-                [[0.0625, 0.125, 0.0625], [0.125, 0.25, 0.125], [0.0625, 0.125, 0.0625]]
-            )
-        )
         water_index = (
             output[self.water_index]
             # .where(analysis_zone, obvious_water)
@@ -295,9 +289,8 @@ class Cleaner(Processor):
             .groupby("year")
             .map(convolve)
             .rio.write_crs(output.rio.crs)
-            # .map(convolution_2d, kernel=gaussian_kernel)
-            #            .map(xs.focal.mean)
         )
+
         coastlines = subpixel_contours(
             water_index,
             dim="year",
@@ -305,32 +298,32 @@ class Cleaner(Processor):
             min_vertices=5,
         )
 
-        aoi = read_file("data/aoi.gpkg")
-        eez = read_file("data/src/global_ffa_spc_sla_pol_-180-180_mar2023.zip")
-        these_areas = eez.clip(coastlines.to_crs(4326).total_bounds).to_crs(
-            water_index.rio.crs
-        )
-        these_areas.geometry = these_areas.geometry.buffer(250)
+        # Taking this out for now as these data are not open
+        # eez = read_file("data/src/global_ffa_spc_sla_pol_-180-180_mar2023.zip").to_crs( water_index.rio.crs)
+        # these_areas = eez  # .clip(coastlines.to_crs(4326).total_bounds).to_crs( water_index.rio.crs)
+        # these_areas.geometry = these_areas.geometry.buffer(250)
         roc_points = self.points(coastlines, water_index)
-        coastlines = region_atttributes(
-            coastlines.set_index("year"),
-            these_areas,
-            attribute_col="TERRITORY1",
-            rename_col="eez_territory",
-        )
-        roc_points = region_atttributes(
-            roc_points,
-            these_areas,
-            attribute_col="TERRITORY1",
-            rename_col="eez_territory",
-        )
+        #        coastlines = region_atttributes(
+        #            coastlines.set_index("year"),
+        #            these_areas,
+        #            attribute_col="TERRITORY1",
+        #            rename_col="eez_territory",
+        #        )
+        #        roc_points = region_atttributes(
+        #            roc_points,
+        #            these_areas,
+        #            attribute_col="TERRITORY1",
+        #            rename_col="eez_territory",
+        #        )
 
         water_index["year"] = water_index.year.astype(str)
         area_proj = area.to_crs(water_index.rio.crs)
         return (
             water_index.to_dataset("year").rio.clip(area_proj.geometry),
             # clipping reorders index sometimes
-            coastlines.clip(area_proj).reindex(water_index.year.values),
+            # coastlines.clip(area_proj).reset_index().sort_values("year"),
+            coastlines.clip(area_proj).sort_values("year"),
+            # coastlines.clip(area_proj).reindex(water_index.year.values),
             roc_points.clip(area_proj),
         )
 
@@ -355,7 +348,7 @@ def run(
         start_year=start_year,
         end_year=end_year,
         years_per_composite=[1, 3],
-        version="0.6.1.1",
+        version="0.7.0",
     )
     processor = Cleaner(water_index=water_index, send_area_to_processor=True)
     writer = CoastlineWriter(

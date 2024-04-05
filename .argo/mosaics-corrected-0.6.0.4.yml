@@ -1,6 +1,6 @@
 kind: Workflow
 metadata:
-  name: mosaics-corrected-0604-all
+  name: mosaics-corrected-061
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
@@ -28,9 +28,9 @@ spec:
     - name: code-file
       value: "dep_coastlines/tide_corrected_mosaics.py"
     - name: version
-      value: "0.6.0.4"
+      value: "0.6.1"
     - name: image-tag
-      value: "v0.6.0.83-4-gb992773"
+      value: "v0.6.0.100-1-g0aa408a"
     - name: dataset-id
       value: "coastlines/mosaics-corrected"
   templates:
@@ -44,9 +44,9 @@ spec:
               - name: limit
                 value: "None"
               - name: datetime
-                value: "1999/2023" 
+                value: "1999_2023" 
               - name: years-per-composite
-                value: "1"
+                value: "1,3"
               - name: version
                 value: "{{ workflow.parameters.version }}"
               - name: overwrite-logs
@@ -65,7 +65,7 @@ spec:
             - name: version
               value: "{{ workflow.parameters.version }}"
             - name: load-before-write
-              value: "True"
+              value: "False"
           withParam: "{{ tasks.generate-ids.outputs.result }}"
   - name: generate
     inputs:
@@ -121,8 +121,8 @@ spec:
       imagePullPolicy: IfNotPresent
       resources:
         requests: 
-          memory: 64Gi
-          cpu: 4
+          memory: 128Gi
+          cpu: 8
         limits:
           cpu: 16
           memory: 256Gi

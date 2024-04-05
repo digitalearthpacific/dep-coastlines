@@ -1,3 +1,4 @@
+from pathlib import Path
 from statistics import mode
 import warnings
 
@@ -153,6 +154,11 @@ class MosaicLoader(Loader):
             output["ndwi"] = ndwi(output)
             output["nirwi"] = (1280 - output.nir08) / (1280 + output.nir08)
             output["meanwi"] = (output.ndwi + output.nirwi) / 2
+            # TO maintain compatibility with prior models.
+            # (I stopped rescaling these because of overflows)
+            output[
+                [k for k in output.keys() if k.endswith("mad") or k.endswith("stdev")]
+            ] *= 10_000
             return (
                 add_deviations(area, output, all_time)
                 if self._add_deviations
@@ -174,7 +180,9 @@ def add_deviations(area, xr, all_time=None):
 
 
 def _load_single_path(path) -> xr.Dataset:
-    prefix = "/home/jesse/Projects/D4D/dep-coastlines/data/"
+    prefix = "data/"
+    if not Path(prefix + path).exists():
+        prefix = "https://deppcpublicstorage.blob.core.windows.net/output/"
 
     ds = rx.open_rasterio(prefix + path, chunks=True, masked=True)
     return ds.squeeze().to_dataset(name=ds.attrs["long_name"])
