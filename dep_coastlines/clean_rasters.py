@@ -171,7 +171,6 @@ class Cleaner(Processor):
         self.water_index = water_index
         self.baseline_year = baseline_year
 
-        breakpoint()
         self.model = ModelPredictor(load(model_file))
         self.comparison = comparison
         self.number_of_expansions = number_of_expansions
