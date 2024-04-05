@@ -163,7 +163,7 @@ class Cleaner(Processor):
         comparison: Callable = operator.lt,
         number_of_expansions: int = 4,
         baseline_year: str = "2023",
-        model_file: Path = Path(__file__).parent / "../data/full_model_19Mar.joblib",
+        model_file: Path = Path("data/full_model_19Mar.joblib"),
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -171,6 +171,7 @@ class Cleaner(Processor):
         self.water_index = water_index
         self.baseline_year = baseline_year
 
+        breakpoint()
         self.model = ModelPredictor(load(model_file))
         self.comparison = comparison
         self.number_of_expansions = number_of_expansions

@@ -6,3 +6,4 @@ joblib
 odc-geo>=0.4.2
 typer
 xarray-spatial
+scikit-learn==1.3.2
