@@ -19,7 +19,7 @@ class CompositeWriter(Writer):
         self, ds: Dataset | GeoDataFrame, item_id: str | list, ext: str = ".tif"
     ) -> str | list:
         path = self._itempath.path(item_id, ext=ext)
-        self._writer(ds, path=path, write_args=self.kwargs)
+        self._writer(ds, path=path, **self.kwargs)
         return path
 
 
