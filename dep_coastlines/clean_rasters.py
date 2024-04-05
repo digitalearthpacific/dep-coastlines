@@ -354,7 +354,7 @@ def run(
     writer = CoastlineWriter(
         namer,
         extra_attrs=dict(dep_version=version),
-        writer=write_to_local_storage,
+        #        writer=write_to_local_storage,
     )
     logger = CsvLogger(
         name=dataset_id,
