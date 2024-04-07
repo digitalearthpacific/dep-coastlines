@@ -11,6 +11,7 @@ Each year took an hour or two to run, so if you start multiple
 processes you can calculate for all years within a day or so.
 
 """
+
 from typing import Iterable, Tuple, Annotated
 
 from dask.distributed import Client
@@ -28,7 +29,7 @@ from dep_tools.searchers import LandsatPystacSearcher
 from dep_tools.stac_utils import set_stac_properties
 from dep_tools.processors import LandsatProcessor
 from dep_tools.task import ErrorCategoryAreaTask, MultiAreaTask
-from dep_tools.utils import get_container_client
+from dep_tools.utils import get_container_client, scale_to_int16
 from dep_tools.writers import DsWriter
 
 from dep_coastlines.water_indices import mndwi, ndwi, nirwi
@@ -125,7 +126,9 @@ class MosaicProcessor(LandsatProcessor):
             for key in output.keys()
             if not (key.endswith("stdev") or key.endswith("mad") or key == "count")
         ]
-        output[scalers] = (output[scalers] * 10_000).astype("int16")
+        output[scalers] = scale_to_int16(
+            output[scalers], output_multiplier=10_000, output_nodata=-32767
+        )
 
         return set_stac_properties(xr, output).chunk(dict(x=2048, y=2048))
 

@@ -19,7 +19,7 @@ def split_multiyears(df, time_column="time", splitter=","):
 def cast_all(df, time_column="time"):
     # Some time values were entered as "all", could be _all_ possible years,
     # for now just make it the biggest mosaic
-    df.loc[df[time_column] == "all", time_column] = "2019/2023"
+    df.loc[df[time_column] == "all", time_column] = "2020/2022"
     return df
 
 
@@ -47,17 +47,18 @@ def pull_data_for_datetime(df):
     itempath = DepItemPath(
         sensor="ls",
         dataset_id="coastlines/mosaics-corrected",
-        version="0.6.0.4",
+        version="0.7.0",
         time=df.time.iloc[0].replace("/", "_"),
         zero_pad_numbers=True,
     )
     loader = MosaicLoader(itempath=itempath, add_deviations=True)
 
     def _pull_data_for_cell(group):
-        ds = loader.load(group.set_index(["row", "column"]))
+        ds = loader.load(group.set_index(["row_2", "column_2"]))
+        print(f"{df.time.iloc[0]}|{group.row_2.iloc[0]}|{group.column.iloc[0]}")
         return add_image_values(group, ds)
 
-    output = df.groupby(["row", "column"]).apply(_pull_data_for_cell)
+    output = df.groupby(["row_2", "column_2"]).apply(_pull_data_for_cell)
     return output
 
 
@@ -68,8 +69,8 @@ def load_point_values(points):
 
 
 def prep_training_data():
-    load_point_values(gpd.read_file("data/training_data.gpkg")).to_csv(
-        "data/training_data_with_features_18Mar2024.csv", index=False
+    load_point_values(gpd.read_file("data/training_data_v7.gpkg")).to_csv(
+        "data/training_data_with_features_6Apr2024.csv", index=False
     )
 
 

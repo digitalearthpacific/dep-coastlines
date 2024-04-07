@@ -126,7 +126,8 @@ class ModelPredictor:
 
 
 def calculate_consensus_land(ds):
-    return (ds.nir08_all > 1280.0) & (ds.mndwi_all < 0) & (ds.ndwi_all < 0)
+    # return (ds.nir08_all > 1280.0) & (ds.mndwi_all < 0) & (ds.ndwi_all < 0)
+    return (ds.nirwi_all < 0) & (ds.mndwi_all < 0) & (ds.ndwi_all < 0)
     # return (ds.nir08 > 1280.0) & (ds.mndwi < 0) & (ds.ndwi < 0)
 
 
@@ -163,7 +164,7 @@ class Cleaner(Processor):
         comparison: Callable = operator.lt,
         number_of_expansions: int = 4,
         baseline_year: str = "2023",
-        model_file=Path(__file__).parent / "full_model_19Mar.joblib",
+        model_file=Path(__file__).parent / "full_model_6Apr2024.joblib",
         **kwargs,
     ):
         super().__init__(**kwargs)

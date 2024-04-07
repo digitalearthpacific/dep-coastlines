@@ -150,15 +150,22 @@ class MosaicLoader(Loader):
 
         if len(blobs) > 0:
             output = xr.merge([_load_single_path(path) for path in blobs])
-            output["mndwi"] = mndwi(output)
-            output["ndwi"] = ndwi(output)
-            output["nirwi"] = (1280 - output.nir08) / (1280 + output.nir08)
-            output["meanwi"] = (output.ndwi + output.nirwi) / 2
             # TO maintain compatibility with prior models.
             # (I stopped rescaling these because of overflows)
+            # output[
+            #    [k for k in output.keys() if k.endswith("mad") or k.endswith("stdev")]
+            # ] *= 10_000
             output[
-                [k for k in output.keys() if k.endswith("mad") or k.endswith("stdev")]
-            ] *= 10_000
+                [
+                    k
+                    for k in output.keys()
+                    if not (k.endswith("mad") or k.endswith("stdev"))
+                ]
+            ] /= 10_000
+            #            output["mndwi"] = mndwi(output)
+            #            output["ndwi"] = ndwi(output)
+            #            output["nirwi"] = (0.1280 - output.nir08) / (0.1280 + output.nir08)
+            #            output["meanwi"] = (output.ndwi + output.nirwi) / 2
             return (
                 add_deviations(area, output, all_time)
                 if self._add_deviations
