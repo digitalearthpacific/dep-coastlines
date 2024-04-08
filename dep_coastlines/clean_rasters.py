@@ -162,7 +162,7 @@ class Cleaner(Processor):
         water_index: str = "meanwi",
         index_threshold: float = 0,
         comparison: Callable = operator.lt,
-        number_of_expansions: int = 4,
+        number_of_expansions: int = 8,
         baseline_year: str = "2023",
         model_file=Path(__file__).parent / "full_model_6Apr2024.joblib",
         **kwargs,
@@ -268,9 +268,7 @@ class Cleaner(Processor):
         analysis_zone, max_cap = self.expand_analysis_zone(analysis_zone, output, True)
         # analysis_zone, max_cap = self.expand_analysis_zone(consensus_land, output, True)
         obvious_water = 0.5
-        output[self.water_index] = output[self.water_index].where(
-            analysis_zone, obvious_water
-        )
+        #        output[self.water_index] = output[self.water_index].where( analysis_zone, obvious_water)
 
         gadm_land = load_gadm_land(output)
         # consensus land may have inland water, but gadm doesn't.
@@ -284,7 +282,9 @@ class Cleaner(Processor):
 
         water_index = (
             output[self.water_index]
-            # .where(analysis_zone, obvious_water)
+            # inland areas must be calculated before this is applied and removed
+            # after this is applied.
+            .where(analysis_zone | land, obvious_water)
             .where(~inland_areas)
             #            .where(~max_cap)
             .groupby("year")
