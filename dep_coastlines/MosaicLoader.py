@@ -159,7 +159,7 @@ class MosaicLoader(Loader):
                 [
                     k
                     for k in output.keys()
-                    if not (k.endswith("mad") or k.endswith("stdev"))
+                    if not (k.endswith("mad") or k.endswith("stdev") or k == "count")
                 ]
             ] /= 10_000
             #            output["mndwi"] = mndwi(output)
