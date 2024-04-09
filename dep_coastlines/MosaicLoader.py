@@ -14,7 +14,7 @@ from dep_tools.loaders import Loader
 from dep_tools.namers import DepItemPath
 from dep_tools.utils import get_container_client
 
-from dep_coastlines.water_indices import mndwi, ndwi
+from dep_coastlines.water_indices import mndwi, ndwi, wndwi
 
 
 # see the old utils.py for improvements in here
@@ -150,11 +150,6 @@ class MosaicLoader(Loader):
 
         if len(blobs) > 0:
             output = xr.merge([_load_single_path(path) for path in blobs])
-            # TO maintain compatibility with prior models.
-            # (I stopped rescaling these because of overflows)
-            # output[
-            #    [k for k in output.keys() if k.endswith("mad") or k.endswith("stdev")]
-            # ] *= 10_000
             output[
                 [
                     k
@@ -162,6 +157,7 @@ class MosaicLoader(Loader):
                     if not (k.endswith("mad") or k.endswith("stdev") or k == "count")
                 ]
             ] /= 10_000
+            output["wndwi"] = wndwi(output)
             #            output["mndwi"] = mndwi(output)
             #            output["ndwi"] = ndwi(output)
             #            output["nirwi"] = (0.1280 - output.nir08) / (0.1280 + output.nir08)

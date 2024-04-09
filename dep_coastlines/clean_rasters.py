@@ -19,6 +19,7 @@ from coastlines.vector import (
     points_on_line,
     annual_movements,
     calculate_regressions,
+    contour_certainty,
     region_atttributes,
 )
 from dea_tools.classification import predict_xr
@@ -45,6 +46,7 @@ from dep_coastlines.raster_cleaning import (
 from dep_coastlines.grid import test_grid
 from dep_coastlines.mask_model import SavedModel
 from dep_coastlines.task_utils import get_ids
+from dep_coastlines.vector import certainty_masking
 from dep_coastlines.writer import CoastlineWriter
 
 
@@ -71,16 +73,19 @@ def remove_disconnected_land(certain_land, candidate_land):
 
 
 def fill_with_nearest_later_date(xr):
-    output = xr.to_dataset("year")
-    for year in xr.year.values:
-        output[year] = xr.sel(year=year)
-        for inner_year in xr.year.values:
-            if int(inner_year) <= int(year):
-                continue
-            output[year] = output[year].where(
-                ~output[year].isnull(), output[inner_year]
-            )
-    return output.to_array(dim="year")
+    def fill_da(da):
+        output = da.to_dataset("year")
+        for year in da.year.values:
+            output[year] = da.sel(year=year)
+            for inner_year in da.year.values:
+                if int(inner_year) <= int(year):
+                    continue
+                output[year] = output[year].where(
+                    ~output[year].isnull(), output[inner_year]
+                )
+        return output.to_array(dim="year")
+
+    return xr.apply(fill_da) if isinstance(xr, Dataset) else fill_da(xr)
 
 
 class ModelPredictor:
@@ -148,12 +153,6 @@ def convolve(da):
         .dot(weights)
     )
     return (total / divisor).where(~da.isnull())
-
-
-def certainty_masking(d):
-    # max cap
-    # count
-    return None
 
 
 class Cleaner(Processor):
@@ -232,11 +231,12 @@ class Cleaner(Processor):
         self, input: Dataset | list[Dataset], area
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
         output = self.model.apply_mask(input)
+        variables_to_keep = [
+            self.water_index
+        ]  # , self.water_index + "_stdev", "count"]
 
-        output = output[[self.water_index]].compute()
-        output[self.water_index] = fill_with_nearest_later_date(
-            output[self.water_index]
-        )
+        output = output[variables_to_keep].compute()
+        output = fill_with_nearest_later_date(output)
 
         candidate_land = self.land(output)
         an_input = input[0] if isinstance(input, list) else input
@@ -282,11 +282,8 @@ class Cleaner(Processor):
 
         water_index = (
             output[self.water_index]
-            # inland areas must be calculated before this is applied and removed
-            # after this is applied.
             .where(analysis_zone | land, obvious_water)
             .where(~inland_areas)
-            #            .where(~max_cap)
             .groupby("year")
             .map(convolve)
             .rio.write_crs(output.rio.crs)
@@ -298,6 +295,10 @@ class Cleaner(Processor):
             z_values=[self.index_threshold],
             min_vertices=5,
         )
+
+        # certainty_input = output.rename({self.water_index + "_stdev": "stdev"})
+        # certainty_masks = certainty_masking(certainty_input)
+        # coastlines = contour_certainty(coastlines.set_index("year"), certainty_masks)
 
         # Taking this out for now as these data are not open
         # eez = read_file("data/src/global_ffa_spc_sla_pol_-180-180_mar2023.zip").to_crs( water_index.rio.crs)
