@@ -157,11 +157,15 @@ class MosaicLoader(Loader):
                     if not (k.endswith("mad") or k.endswith("stdev") or k == "count")
                 ]
             ] /= 10_000
-            output["wndwi"] = wndwi(output)
-            #            output["mndwi"] = mndwi(output)
-            #            output["ndwi"] = ndwi(output)
-            #            output["nirwi"] = (0.1280 - output.nir08) / (0.1280 + output.nir08)
-            #            output["meanwi"] = (output.ndwi + output.nirwi) / 2
+            # output[
+            #     [k for k in output.keys() if k.endswith("mad") or k.endswith("stdev")]
+            # ] *= 10_000
+            # output["wndwi"] = wndwi(output)
+            # output["mndwi"] = mndwi(output)
+            # output["ndwi"] = ndwi(output)
+            # output["nirwi"] = (0.1280 - output.nir08) / (0.1280 + output.nir08)
+            # output["nirwi"] = (1280 - output.nir08) / (1280 + output.nir08)
+            # output["meanwi"] = (output.ndwi + output.nirwi) / 2
             return (
                 add_deviations(area, output, all_time)
                 if self._add_deviations

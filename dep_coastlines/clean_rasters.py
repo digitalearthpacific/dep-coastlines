@@ -72,6 +72,26 @@ def remove_disconnected_land(certain_land, candidate_land):
     return candidate_land.where(zones.isin(connected_zones)) == 1
 
 
+def fill_nearby(xr):
+    def fill(da):
+        output = da.to_dataset("year")
+        for year in da.year.values:
+            output[year] = da.sel(year=year)
+            intyear = int(year)
+            years = [
+                str(y)
+                for y in [intyear + 1, intyear - 1, intyear + 2, intyear - 2]
+                if str(y) in da.year.values
+            ]
+            for inner_year in years:
+                output[year] = output[year].where(
+                    ~output[year].isnull(), output[inner_year]
+                )
+        return output.to_array(dim="year")
+
+    return xr.apply(fill) if isinstance(xr, Dataset) else fill(xr)
+
+
 def fill_with_nearest_later_date(xr):
     def fill_da(da):
         output = da.to_dataset("year")
@@ -163,7 +183,7 @@ class Cleaner(Processor):
         comparison: Callable = operator.lt,
         number_of_expansions: int = 4,
         baseline_year: str = "2023",
-        model_file=Path(__file__).parent / "full_model_6Apr2024.joblib",
+        model_file=Path(__file__).parent / "full_model_9Apr2024.joblib",
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -231,12 +251,13 @@ class Cleaner(Processor):
         self, input: Dataset | list[Dataset], area
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
         output = self.model.apply_mask(input)
+        output = output.where(output["count"] > 4)
         variables_to_keep = [
             self.water_index
         ]  # , self.water_index + "_stdev", "count"]
 
         output = output[variables_to_keep].compute()
-        output = fill_with_nearest_later_date(output)
+        output = fill_nearby(output)
 
         candidate_land = self.land(output)
         an_input = input[0] if isinstance(input, list) else input

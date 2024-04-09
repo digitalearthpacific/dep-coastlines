@@ -51,7 +51,7 @@ def pull_data_for_datetime(df):
         time=df.time.iloc[0].replace("/", "_"),
         zero_pad_numbers=True,
     )
-    loader = MosaicLoader(itempath=itempath, add_deviations=True)
+    loader = MosaicLoader(itempath=itempath, add_deviations=False)
 
     def _pull_data_for_cell(group):
         ds = loader.load(group.set_index(["row_2", "column_2"]))
@@ -70,7 +70,7 @@ def load_point_values(points):
 
 def prep_training_data():
     load_point_values(gpd.read_file("data/training_data_v7.gpkg")).to_csv(
-        "data/training_data_with_features_6Apr2024.csv", index=False
+        "data/training_data_with_features_9Apr2024.csv", index=False
     )
 
 
