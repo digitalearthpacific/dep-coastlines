@@ -101,17 +101,18 @@ class MultiyearMosaicLoader(Loader):
     def load(self, area) -> xr.Dataset | list[xr.Dataset]:
         if not isinstance(self._years_per_composite, list):
             return add_deviations(
-                area, self.load_composite_set(area, self._years_per_composite)
+                self.load_composite_set(area, self._years_per_composite)
             )
         else:
             composite_sets = [
                 self.load_composite_set(area, years_per_composite)
                 for years_per_composite in self._years_per_composite
             ]
-            self._all_time = composite_sets[0].median(dim="year").compute()
+            # all_time = composite_sets[0].median(dim="year").compute()
 
             return [
-                add_deviations(area, composite_set) for composite_set in composite_sets
+                add_deviations(composite_set)  # , all_time)
+                for composite_set in composite_sets
             ]
 
 
@@ -157,27 +158,14 @@ class MosaicLoader(Loader):
                     if not (k.endswith("mad") or k.endswith("stdev") or k == "count")
                 ]
             ] /= 10_000
-            # output[
-            #     [k for k in output.keys() if k.endswith("mad") or k.endswith("stdev")]
-            # ] *= 10_000
-            # output["wndwi"] = wndwi(output)
-            # output["mndwi"] = mndwi(output)
-            # output["ndwi"] = ndwi(output)
-            # output["nirwi"] = (0.1280 - output.nir08) / (0.1280 + output.nir08)
-            # output["nirwi"] = (1280 - output.nir08) / (1280 + output.nir08)
-            # output["meanwi"] = (output.ndwi + output.nirwi) / 2
-            return (
-                add_deviations(area, output, all_time)
-                if self._add_deviations
-                else output
-            )
+            return add_deviations(output, all_time) if self._add_deviations else output
         else:
             message = "No items in folder " + self._itempath._folder(item_id)
             warnings.warn(message)
             return None
 
 
-def add_deviations(area, xr, all_time=None):
+def add_deviations(xr, all_time=None):
     if all_time is None:
         all_time = xr.median(dim="year")
     deviation = xr - all_time

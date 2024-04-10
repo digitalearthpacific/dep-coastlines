@@ -8,7 +8,9 @@ from dea_tools.spatial import xr_vectorize
 # should fork, issue, etc. when I have a chance
 
 
-def certainty_masking(yearly_ds, obs_threshold=5, stdev_threshold=0.25, sieve_size=128):
+def certainty_masking(
+    yearly_ds, variation_var, obs_threshold=5, variation_threshold=0.3, sieve_size=128
+):
     """
     Generate annual vector polygon masks containing information
     about the certainty of each extracted shoreline feature.
@@ -53,8 +55,7 @@ def certainty_masking(yearly_ds, obs_threshold=5, stdev_threshold=0.25, sieve_si
         analysis.
     """
 
-    # Identify problematic pixels
-    high_stdev = yearly_ds["stdev"] > stdev_threshold
+    high_variation = yearly_ds[variation_var] > variation_threshold
     low_obs = yearly_ds["count"] < obs_threshold
 
     # Create raster mask with values of 0 for good data, values of
@@ -62,7 +63,7 @@ def certainty_masking(yearly_ds, obs_threshold=5, stdev_threshold=0.25, sieve_si
     # Clean this by sieving to merge small areas of pixels into
     # their neighbours
     raster_mask = (
-        high_stdev.where(~low_obs, 2)
+        high_variation.where(~low_obs, 2)
         .groupby("year")
         .apply(lambda x: sieve(x.values.astype(np.int16), size=sieve_size))
     )

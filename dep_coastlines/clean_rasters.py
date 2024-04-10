@@ -252,50 +252,29 @@ class Cleaner(Processor):
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
         output = self.model.apply_mask(input)
         output = output.where(output["count"] > 4)
-        variables_to_keep = [
-            self.water_index
-        ]  # , self.water_index + "_stdev", "count"]
+        output = fill_nearby(output)
+        variation_var = self.water_index + "_mad"
+        variables_to_keep = [self.water_index, variation_var, "count"]
 
         output = output[variables_to_keep].compute()
-        output = fill_nearby(output)
 
         candidate_land = self.land(output)
         an_input = input[0] if isinstance(input, list) else input
         consensus_land = calculate_consensus_land(an_input.isel(year=0)).compute()
         # Connected are contiguous zones that are connected in some way to
-        # the consensus areas. This ensures that all edges of these (on the basis of nir)
-        # are included
+        # the consensus areas. This ensures that all edges of these are included
         connected_areas = remove_disconnected_land(consensus_land, candidate_land)
-        # erosion of 2 here borks e.g. funafuti but is needed for e.g.
-        # shoreline of tongatapu
-        # maybe only erode areas not in consensus land?
-        # This works for tongatapu but not funafuti
-        # analysis_zone = mask_cleanup(connected_areas,
-        #                           mask_filters=[("erosion", 2), ("dilation",2)])
-
-        # Basically, NIR says it's land but none of the others say there is
-        # even neighboring land
-        # This _could_ eliminate some areas, we will have to see. If that
-        # happens we can consider
-        # making a larger kernel. OR, we could use the surf detector from the
-        # mask model,
-        # if that's the only class that causes issue.
-        # I did this because of bands of surf off the south side of Tongatapu
-        # that were connected
-        # in a single place to the mainland.
         no_connected_neighbors = xs.focal.mean(consensus_land) == 0
         suspicious_connected_areas = candidate_land & no_connected_neighbors
         analysis_zone = connected_areas & ~suspicious_connected_areas
         analysis_zone, max_cap = self.expand_analysis_zone(analysis_zone, output, True)
-        # analysis_zone, max_cap = self.expand_analysis_zone(consensus_land, output, True)
         obvious_water = 0.5
-        #        output[self.water_index] = output[self.water_index].where( analysis_zone, obvious_water)
 
         gadm_land = load_gadm_land(output)
         # consensus land may have inland water, but gadm doesn't.
         # Also, consensus land will have masked areas as False rather
         # than nan. Neither of these should matter because gadm doesn't have
-        # these issues. I bring in conensus land basically to fix the areas
+        # these issues. I bring in consensus land basically to fix the areas
         # near shoreline that gadm may miss.
         land = gadm_land | consensus_land
         ocean = mask_cleanup(~land, mask_filters=[("erosion", 2)])
@@ -317,9 +296,10 @@ class Cleaner(Processor):
             min_vertices=5,
         )
 
-        # certainty_input = output.rename({self.water_index + "_stdev": "stdev"})
-        # certainty_masks = certainty_masking(certainty_input)
-        # coastlines = contour_certainty(coastlines.set_index("year"), certainty_masks)
+        certainty_masks = certainty_masking(output, variation_var)
+        coastlines = contour_certainty(
+            coastlines.set_index("year"), certainty_masks
+        ).reset_index()  # .set_index("year")
 
         # Taking this out for now as these data are not open
         # eez = read_file("data/src/global_ffa_spc_sla_pol_-180-180_mar2023.zip").to_crs( water_index.rio.crs)
@@ -340,16 +320,10 @@ class Cleaner(Processor):
         #        )
 
         water_index["year"] = water_index.year.astype(str)
-        # area_proj = area.to_crs(water_index.rio.crs)
         return (
             water_index.to_dataset("year"),  # .rio.clip(area_proj.geometry),
             coastlines,
             roc_points,
-            # clipping reorders index sometimes
-            # coastlines.clip(area_proj).reset_index().sort_values("year"),
-            # coastlines.clip(area_proj).sort_values("year"),
-            # coastlines.clip(area_proj).reindex(water_index.year.values),
-            # roc_points.clip(area_proj),
         )
 
 
