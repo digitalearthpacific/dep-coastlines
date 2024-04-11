@@ -1,6 +1,6 @@
 kind: Workflow
 metadata:
-  name: clean-rasters-070-test-fix
+  name: clean-rasters-0707-test
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
@@ -28,9 +28,9 @@ spec:
     - name: code-file
       value: "dep_coastlines/clean_rasters.py"
     - name: version
-      value: "0.7.0"
+      value: "0.7.0.7"
     - name: image-tag
-      value: "v0.6.0.146-14-gc8777c3"
+      value: "v0.6.0.146-20-g84fa5d3"
     - name: dataset-id
       value: "coastlines/coastlines"
   templates:
@@ -63,7 +63,7 @@ spec:
             - name: version
               value: "{{ workflow.parameters.version }}"
             - name: water-index
-              value: "meanwi"
+              value: "wndwi"
           withParam: "{{ tasks.generate-ids.outputs.result }}"
   - name: generate
     inputs:

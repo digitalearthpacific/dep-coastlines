@@ -17,7 +17,7 @@ INPUTS=`find $ODIR/$version/ -type f -name "*3.gpkg"`
 ogrmerge.py -o tmp.gpkg $INPUTS -field_strategy Union -single -nln coastlines -overwrite_ds -t_srs EPSG:$gpkg_epsg
 
 # Fixes feature misordering across files
-ogr2ogr $output -dialect sqlite tmp.gpkg -nln coastlines -sql "select year as year, st_union(geom) as geom from coastlines group by year"
+ogr2ogr $output -dialect sqlite tmp.gpkg -nln coastlines -sql "select year, certainty, st_union(geom) as geom from coastlines group by year, certainty"
 # rm tmp.gpkg
 
 python dep_coastlines/fix_lines_across_antimeridian.py $output $output_4326

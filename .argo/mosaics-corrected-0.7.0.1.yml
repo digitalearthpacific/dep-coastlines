@@ -1,6 +1,6 @@
 kind: Workflow
 metadata:
-  name: clean-rasters-070-test-fix
+  name: mosaics-corrected-0701-test
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
@@ -8,7 +8,7 @@ spec:
   podGC:
     strategy: OnWorkflowSuccess
     deleteDelayDuration: 600s
-  parallelism: 50
+  parallelism: 75
   nodeSelector:
     digitalearthpacific.org/node-size: argo-d64
   tolerations:
@@ -26,13 +26,13 @@ spec:
   arguments:
     parameters:
     - name: code-file
-      value: "dep_coastlines/clean_rasters.py"
+      value: "dep_coastlines/tide_corrected_mosaics.py"
     - name: version
-      value: "0.7.0"
+      value: "0.7.0.1"
     - name: image-tag
-      value: "v0.6.0.146-14-gc8777c3"
+      value: "v0.6.0.146-17-gc8f33e9"
     - name: dataset-id
-      value: "coastlines/coastlines"
+      value: "coastlines/mosaics-corrected"
   templates:
   - name: workflow-entrypoint
     dag:
@@ -41,16 +41,20 @@ spec:
           template: generate
           arguments:
             parameters:
+              - name: limit
+                value: "None"
               - name: datetime
-                value: "1999/2023" 
+                value: "1999_2023" 
+              - name: years-per-composite
+                value: "1,3"
               - name: version
                 value: "{{ workflow.parameters.version }}"
               - name: overwrite-logs
                 value: "False"
               - name: filter-using-log
-                value: "True"
-              - name: filter-existing-stac-items
                 value: "False"
+              - name: filter-existing-stac-items
+                value: "True"
         - name: process-id
           depends: generate-ids.Succeeded
           template: process
@@ -60,16 +64,20 @@ spec:
               value: "{{item.row}}"
             - name: column
               value: "{{item.column}}"
+            - name: datetime
+              value: "{{item.datetime}}"
             - name: version
               value: "{{ workflow.parameters.version }}"
-            - name: water-index
-              value: "meanwi"
+            - name: load-before-write
+              value: "True"
           withParam: "{{ tasks.generate-ids.outputs.result }}"
   - name: generate
     inputs:
       parameters:
       - name: datetime
       - name: version
+      - name: limit
+      - name: years-per-composite
       - name: overwrite-logs
       - name: filter-using-log
       - name: filter-existing-stac-items
@@ -89,6 +97,10 @@ spec:
         - "{{ inputs.parameters.datetime }}"
         - --version
         - "{{ inputs.parameters.version }}"
+        - --limit
+        - "{{ inputs.parameters.limit }}"
+        - --years-per-composite
+        - "{{ inputs.parameters.years-per-composite }}"
         - --overwrite-logs
         - "{{ inputs.parameters.overwrite-logs }}"
         - --filter-using-log
@@ -110,10 +122,10 @@ spec:
   - name: process
     inputs:
       parameters:
+      - name: datetime
       - name: version
       - name: row
       - name: column
-      - name: water-index
     container:
       image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
@@ -122,20 +134,22 @@ spec:
           memory: 64Gi
           cpu: 8
         limits:
-          cpu: 16
           memory: 128Gi
+          cpu: 16
       command: [ python ]
       args:
         - "{{ workflow.parameters.code-file }}"
         - process-id
+        - --datetime
+        - "{{ inputs.parameters.datetime }}"
         - --version
         - "{{ inputs.parameters.version }}"
         - --row
         - "{{ inputs.parameters.row }}"
         - --column
         - "{{ inputs.parameters.column }}"
-        - --water-index
-        - "{{ inputs.parameters.water-index }}"
+        - --load-before-write
+        - "{{ inputs.parameters.load-before-write }}"
       env:
         - name: AZURE_STORAGE_ACCOUNT
           valueFrom:
