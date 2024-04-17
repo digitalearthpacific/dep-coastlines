@@ -225,7 +225,8 @@ class Cleaner(Processor):
         contours.year = contours.year.astype(str)
         contours = contours.set_index("year")
 
-        points_gdf = points_on_line(contours, self.baseline_year, distance=30)
+        baseline_year = contours.index.astype(int).max().astype(str)
+        points_gdf = points_on_line(contours, baseline_year, distance=30)
         if points_gdf is not None and len(points_gdf) > 0:
             points_gdf = annual_movements(
                 points_gdf,
@@ -299,21 +300,21 @@ class Cleaner(Processor):
         #    coastlines.set_index("year"), certainty_masks
         # ).reset_index()  # .set_index("year")
 
-        # Taking this out for now as these data are not open
-        # eez = read_file("data/src/global_ffa_spc_sla_pol_-180-180_mar2023.zip").to_crs( water_index.rio.crs)
+        # Supposedly coarser than the (embargoed) global eez zones, the attributes here are more accurate in terms of country codes
+        # eez = read_file("https://pacificdata.org/data/dataset/964dbebf-2f42-414e-bf99-dd7125eedb16/resource/dad3f7b2-a8aa-4584-8bca-a77e16a391fe/download/country_boundary_eez.geojson")
         # these_areas = eez  # .clip(coastlines.to_crs(4326).total_bounds).to_crs( water_index.rio.crs)
         # these_areas.geometry = these_areas.geometry.buffer(250)
         roc_points = self.points(coastlines, water_index)
         #        coastlines = region_atttributes(
         #            coastlines.set_index("year"),
         #            these_areas,
-        #            attribute_col="TERRITORY1",
+        #            attribute_col="ISO_Ter1",
         #            rename_col="eez_territory",
         #        )
         #        roc_points = region_atttributes(
         #            roc_points,
         #            these_areas,
-        #            attribute_col="TERRITORY1",
+        #            attribute_col="ISO_Ter1",
         #            rename_col="eez_territory",
         #        )
 

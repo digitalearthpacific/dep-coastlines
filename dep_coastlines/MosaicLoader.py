@@ -159,6 +159,7 @@ class MosaicLoader(Loader):
                 ]
             ] /= 10_000
             output["tndwi"] = tndwi(output)
+            output["tmndwi"] = tmndwi(output)
 
             return add_deviations(output, all_time) if self._add_deviations else output
         else:
