@@ -14,7 +14,7 @@ from dep_tools.loaders import Loader
 from dep_tools.namers import DepItemPath
 from dep_tools.utils import get_container_client
 
-from dep_coastlines.water_indices import tndwi
+from dep_coastlines.water_indices import tndwi, tmndwi
 
 
 # see the old utils.py for improvements in here
