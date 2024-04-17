@@ -251,8 +251,8 @@ class Cleaner(Processor):
         output = self.model.apply_mask(input)
         output = output.where(output["count"] > 4)
         output = fill_nearby(output)
-        #variation_var = self.water_index + "_mad"
-        variables_to_keep = [self.water_index, "count"]# variation_var, "count"]
+        # variation_var = self.water_index + "_mad"
+        variables_to_keep = [self.water_index, "count"]  # variation_var, "count"]
 
         output = output[variables_to_keep].compute()
 
@@ -294,10 +294,10 @@ class Cleaner(Processor):
             min_vertices=5,
         )
 
-        #certainty_masks = certainty_masking(output, variation_var)
-        #coastlines = contour_certainty(
+        # certainty_masks = certainty_masking(output, variation_var)
+        # coastlines = contour_certainty(
         #    coastlines.set_index("year"), certainty_masks
-        #).reset_index()  # .set_index("year")
+        # ).reset_index()  # .set_index("year")
 
         # Taking this out for now as these data are not open
         # eez = read_file("data/src/global_ffa_spc_sla_pol_-180-180_mar2023.zip").to_crs( water_index.rio.crs)
