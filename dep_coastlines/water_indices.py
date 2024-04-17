@@ -39,17 +39,17 @@ def nirwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
 
 
 def tndwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
-    big_green = xr.green.where(xr.green > cutoff, 0.128)
+    big_green = xr.green.where(xr.green > cutoff, cutoff)
     return normalized_ratio(big_green, xr.nir08)
 
 
-def awei(xr: DataArray) -> DataArray:
-    green = xr.sel(band="green")
-    swir1 = xr.sel(band="swir16")
-    swir2 = xr.sel(band="swir22")
-    nir = xr.sel(band="nir08")
+def tmndwi(xr: Dataset, cutoff: float = 0.1) -> DataArray:
+    big_green = xr.green.where(xr.green > cutoff, cutoff)
+    return normalized_ratio(big_green, xr.swir16)
 
-    awei = 4 * (green - swir2) - (0.25 * nir + 2.75 * swir1)
+
+def awei(xr: Dataset) -> DataArray:
+    awei = 4 * (xr.green - xr.swir22) - (0.25 * xr.nir08 + 2.75 * xr.swir16)
     return awei.rename("awei")
 
 
