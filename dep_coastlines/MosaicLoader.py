@@ -14,7 +14,7 @@ from dep_tools.loaders import Loader
 from dep_tools.namers import DepItemPath
 from dep_tools.utils import get_container_client
 
-from dep_coastlines.water_indices import mndwi, ndwi, wndwi
+from dep_coastlines.water_indices import tndwi
 
 
 # see the old utils.py for improvements in here
@@ -158,6 +158,8 @@ class MosaicLoader(Loader):
                     if not (k.endswith("mad") or k.endswith("stdev") or k == "count")
                 ]
             ] /= 10_000
+            output["tndwi"] = tndwi(output)
+
             return add_deviations(output, all_time) if self._add_deviations else output
         else:
             message = "No items in folder " + self._itempath._folder(item_id)

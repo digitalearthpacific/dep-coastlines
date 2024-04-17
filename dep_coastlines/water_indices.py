@@ -38,6 +38,11 @@ def nirwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
     return normalized_ratio(cutoff, xr.nir08).rename("nirwi")
 
 
+def tndwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
+    big_green = xr.green.where(xr.green > cutoff, 0.128)
+    return normalized_ratio(big_green, xr.nir08)
+
+
 def awei(xr: DataArray) -> DataArray:
     green = xr.sel(band="green")
     swir1 = xr.sel(band="swir16")
