@@ -14,7 +14,7 @@ from dep_tools.loaders import Loader
 from dep_tools.namers import DepItemPath
 from dep_tools.utils import get_container_client
 
-from dep_coastlines.water_indices import tndwi, tmndwi
+from dep_coastlines.water_indices import tndwi, tmndwi, twndwi
 
 
 # see the old utils.py for improvements in here
@@ -160,6 +160,7 @@ class MosaicLoader(Loader):
             ] /= 10_000
             output["tndwi"] = tndwi(output)
             output["tmndwi"] = tmndwi(output)
+            output["twndwi"] = twndwi(output)
 
             return add_deviations(output, all_time) if self._add_deviations else output
         else:

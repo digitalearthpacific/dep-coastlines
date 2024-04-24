@@ -51,6 +51,8 @@ class CoastlineWriter(Writer):
         if rates_of_change is not None:
             self._vectorWriter.kwargs["layer"] = f"roc_{item_id}"
             roc_schema = vector_schema(rates_of_change)
+            # This is too short in the deafrica schema
+            roc_schema["outl_time"] = "str:120"
             roc_schema.pop("index", None)
             self._vectorWriter.kwargs["schema"] = dict(
                 properties=roc_schema, geometry="Point"
