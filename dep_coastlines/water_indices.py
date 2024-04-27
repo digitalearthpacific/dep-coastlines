@@ -55,6 +55,13 @@ def tndwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
     return normalized_ratio(big_green, xr.nir08)
 
 
+def stndwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
+    values_are_high = (xr.green > cutoff) & (xr.nir08 > cutoff)
+    land = xr.green < xr.nir08
+    super_green = xr.green.where(values_are_high | land, cutoff)
+    return normalized_ratio(super_green, xr.nir08)
+
+
 def tmndwi(xr: Dataset, cutoff: float = 0.1) -> DataArray:
     big_green = xr.green.where(xr.green > cutoff, cutoff)
     return normalized_ratio(big_green, xr.swir16)
