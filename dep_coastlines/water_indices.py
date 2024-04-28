@@ -31,6 +31,8 @@ def wndwi(xr: Dataset, alpha: float = 0.5) -> DataArray:
 
 
 def twndwi(xr: Dataset, alpha: float = 0.5) -> DataArray:
+    return (1 - alpha) * mndwi(xr) + alpha * tndwi(xr)
+
     # Alpha ranges from 0 to 1, with higher values indicating
     # greater influence of nir08.
     # See https://doi.org/10.1080/01431161.2017.1341667
@@ -56,8 +58,8 @@ def nirwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
 
 
 def tndwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
-    big_green = xr.green.where(xr.green > cutoff, cutoff)
-    return normalized_ratio(big_green, xr.nir08)
+    green = xr.green.where((xr.nir08 >= cutoff) & (xr.green < cutoff), cutoff)
+    return normalized_ratio(green, xr.nir08)
 
 
 def stndwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
