@@ -70,7 +70,7 @@ def stndwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
 
 
 def tmndwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
-    green = xr.green.where((xr.nir08 >= cutoff) & (xr.green < cutoff), cutoff)
+    green = xr.green.where((xr.swir16 >= cutoff) & (xr.green < cutoff), cutoff)
     return normalized_ratio(green, xr.swir16)
 
 
