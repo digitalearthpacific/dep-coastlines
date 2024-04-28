@@ -35,7 +35,12 @@ def twndwi(xr: Dataset, alpha: float = 0.5) -> DataArray:
     # greater influence of nir08.
     # See https://doi.org/10.1080/01431161.2017.1341667
     cutoff = 0.128
-    green = xr.green.where(xr.green > cutoff, cutoff)
+    # green = xr.green.where(xr.green > cutoff, cutoff)
+    green = xr.green.where((xr.nir08 >= cutoff) & (xr.green < cutoff), cutoff)
+    # green_for_nir = xr.green.where((xr.nir08 >= cutoff) & (xr.green < cutoff), cutoff)
+    # nir_term = green_for_nir - alpha * xr.nir08
+    # swir_term = xr.green - (1 - alpha) * xr.swir16
+    # wndwi = nir_term + swir_term / (
     wndwi = (green - alpha * xr.nir08 - (1 - alpha) * xr.swir16) / (
         green + alpha * xr.nir08 + (1 - alpha) * xr.swir16
     )
