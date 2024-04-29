@@ -269,7 +269,7 @@ class Cleaner(Processor):
         analysis_zone, max_cap = self.expand_analysis_zone(analysis_zone, output, True)
         obvious_water = 0.5
 
-        gadm_land = mask_cleanup(load_gadm_land(output), mask_filters=[("erosion", 60)])
+        gadm_land = load_gadm_land(output)
         # consensus land may have inland water, but gadm doesn't.
         # Also, consensus land will have masked areas as False rather
         # than nan. Neither of these should matter because gadm doesn't have
@@ -279,9 +279,13 @@ class Cleaner(Processor):
         ocean = mask_cleanup(~land, mask_filters=[("erosion", 2)])
         inland_areas = find_inland_areas(self.water(output), ocean)
 
+        # basically to capture land outside the buffer that would otherwise
+        # link inland water to perceived ocean
+        core_land = mask_cleanup(gadm_land, mask_filters=[("erosion", 60)])
+
         water_index = (
             output[self.water_index]
-            .where(analysis_zone | land, obvious_water)
+            .where(analysis_zone | core_land, obvious_water)
             .where(~inland_areas)
             .groupby("year")
             .map(convolve)
