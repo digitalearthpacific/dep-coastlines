@@ -31,7 +31,7 @@ def wndwi(xr: Dataset, alpha: float = 0.5) -> DataArray:
 
 
 def twndwi(xr: Dataset, alpha: float = 0.5) -> DataArray:
-    return (1 - alpha) * tmndwi(xr) + alpha * tndwi(xr)
+    return (1 - alpha) * mndwi(xr) + alpha * tndwi(xr)
 
     # Alpha ranges from 0 to 1, with higher values indicating
     # greater influence of nir08.

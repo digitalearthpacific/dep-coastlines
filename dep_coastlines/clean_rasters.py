@@ -269,7 +269,7 @@ class Cleaner(Processor):
         analysis_zone, max_cap = self.expand_analysis_zone(analysis_zone, output, True)
         obvious_water = 0.5
 
-        gadm_land = load_gadm_land(output)
+        gadm_land = mask_cleanup(load_gadm_land(output), mask_filters=[("erosion", 60)])
         # consensus land may have inland water, but gadm doesn't.
         # Also, consensus land will have masked areas as False rather
         # than nan. Neither of these should matter because gadm doesn't have
