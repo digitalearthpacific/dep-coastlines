@@ -291,8 +291,13 @@ class Cleaner(Processor):
             .rio.write_crs(output.rio.crs)
         )
 
+        # Need to use negative of land rather than water so nans are water
+        water = ~(self.land(output.to_dataset(name=self.water_index)))
+
         inland_water = find_inland_areas(
-            self.water(output.to_dataset(name=self.water_index)), ocean
+            # self.water(output.to_dataset(name=self.water_index)), ocean
+            water,
+            ocean,
         )
         water_index = output.where(~inland_water)
 
