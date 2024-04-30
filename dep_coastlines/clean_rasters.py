@@ -207,14 +207,14 @@ class Cleaner(Processor):
         def expand_once(analysis_zone):
             return analysis_zone | mask_cleanup(
                 self.land(output.where(analysis_zone)),
-                mask_filters=[("dilation", 1)],
+                mask_filters=[("dilation", 2)],
             )
 
         for _ in range(self.number_of_expansions):
             analysis_zone = expand_once(analysis_zone)
 
         if return_max_cap:
-            last_expansion = expand_once(analysis_zone)
+            last_expansion = expand_once(expand_once(analysis_zone))
             max_cap = last_expansion & ~analysis_zone
             return analysis_zone, max_cap
 
@@ -277,20 +277,24 @@ class Cleaner(Processor):
         # near shoreline that gadm may miss.
         land = gadm_land | consensus_land
         ocean = mask_cleanup(~land, mask_filters=[("erosion", 2)])
-        inland_areas = find_inland_areas(self.water(output), ocean)
 
         # basically to capture land outside the buffer that would otherwise
         # link inland water to perceived ocean
         core_land = mask_cleanup(gadm_land, mask_filters=[("erosion", 60)])
 
-        water_index = (
+        output = (
             output[self.water_index]
-            .where(analysis_zone | core_land, obvious_water)
-            .where(~inland_areas)
+            .where(analysis_zone | core_land)
+            .where(~max_cap, obvious_water)
             .groupby("year")
             .map(convolve)
             .rio.write_crs(output.rio.crs)
         )
+
+        inland_water = find_inland_areas(
+            self.water(output.to_dataset(name=self.water_index)), ocean
+        )
+        water_index = output.where(~inland_water)
 
         coastlines = subpixel_contours(
             water_index,
