@@ -291,14 +291,16 @@ class Cleaner(Processor):
             .rio.write_crs(output.rio.crs)
         )
 
-        # Need to use negative of land rather than water so nans are water
-        water = ~(self.land(output.to_dataset(name=self.water_index)))
-
-        inland_water = find_inland_areas(
-            # self.water(output.to_dataset(name=self.water_index)), ocean
-            water,
-            ocean,
+        # All this logic is to ensure areas on the landward side of the analysis
+        # buffer aren't coded as water
+        obvious_land = -0.5
+        water = ~self.land(
+            output.where(
+                ~(output.isnull() & (core_land | consensus_land)), obvious_land
+            ).to_dataset(name="twndwi")
         )
+
+        inland_water = find_inland_areas(water, ocean)
         water_index = output.where(~inland_water)
 
         coastlines = subpixel_contours(
