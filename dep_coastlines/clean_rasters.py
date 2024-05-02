@@ -31,6 +31,7 @@ from typer import Option, Typer
 from xarray import DataArray, Dataset, concat, apply_ufunc
 import xrspatial as xs
 from skimage.measure import label
+from skimage.morphology import binary_dilation
 
 from azure_logger import CsvLogger
 from dep_tools.namers import DepItemPath
@@ -204,14 +205,20 @@ class Cleaner(Processor):
         # to fill between larger areas
         # say in Funafuti or Majiro. Later we will fill one last time with
         # water to ensure lines are closed.
+
         def expand_once(analysis_zone):
-            return analysis_zone | mask_cleanup(
-                self.land(output.where(analysis_zone)),
-                mask_filters=[("dilation", 2)],
-            )
+            return analysis_zone | self.land(output.where(analysis_zone)).groupby(
+                "year"
+            ).apply(binary_dilation, footprint=np.ones((3, 3)))
+
+        #            return analysis_zone | mask_cleanup( self.land(output.where(analysis_zone)), mask_filters=[("dilation", 1)],)
 
         for _ in range(self.number_of_expansions):
             analysis_zone = expand_once(analysis_zone)
+
+        analysis_zone = analysis_zone.groupby("year").apply(
+            binary_dilation, footprint=np.ones((3, 3))
+        )
 
         if return_max_cap:
             last_expansion = expand_once(expand_once(analysis_zone))
