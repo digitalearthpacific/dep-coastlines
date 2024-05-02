@@ -180,7 +180,7 @@ class Cleaner(Processor):
         water_index: str = "meanwi",
         index_threshold: float = 0,
         comparison: Callable = operator.lt,
-        number_of_expansions: int = 4,
+        number_of_expansions: int = 8,
         baseline_year: str = "2023",
         model_file=Path(__file__).parent / "full_model_9Apr2024.joblib",
         **kwargs,
