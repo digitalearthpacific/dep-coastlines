@@ -207,18 +207,21 @@ class Cleaner(Processor):
         # water to ensure lines are closed.
 
         def expand_once(analysis_zone):
-            return analysis_zone | self.land(output.where(analysis_zone)).groupby(
-                "year"
-            ).apply(binary_dilation, footprint=np.ones((3, 3)))
+            return analysis_zone | mask_cleanup(
+                self.land(output.where(analysis_zone)),
+                mask_filters=[("dilation", 2)],
+            )
 
-        #            return analysis_zone | mask_cleanup( self.land(output.where(analysis_zone)), mask_filters=[("dilation", 1)],)
+        #            return analysis_zone | self.land(output.where(analysis_zone)).groupby(
+        #                "year"
+        #            ).apply(binary_dilation, footprint=np.ones((3, 3)))
 
         for _ in range(self.number_of_expansions):
             analysis_zone = expand_once(analysis_zone)
 
-        analysis_zone = analysis_zone.groupby("year").apply(
-            binary_dilation, footprint=np.ones((3, 3))
-        )
+        #        analysis_zone = analysis_zone.groupby("year").apply(
+        #            binary_dilation, footprint=np.ones((3, 3))
+        #        )
 
         if return_max_cap:
             last_expansion = expand_once(expand_once(analysis_zone))
