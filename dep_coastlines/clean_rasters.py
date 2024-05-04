@@ -262,8 +262,8 @@ class Cleaner(Processor):
         output = self.model.apply_mask(input)
         output = output.where(output["count"] > 4)
         output = fill_nearby(output)
-        # variation_var = self.water_index + "_mad"
-        variables_to_keep = [self.water_index, "count"]  # variation_var, "count"]
+        variation_var = self.water_index + "_mad"
+        variables_to_keep = [self.water_index, variation_var, "count"]
 
         output = output[variables_to_keep].compute()
 
@@ -320,10 +320,10 @@ class Cleaner(Processor):
             min_vertices=5,
         )
 
-        # certainty_masks = certainty_masking(output, variation_var)
-        # coastlines = contour_certainty(
-        #    coastlines.set_index("year"), certainty_masks
-        # ).reset_index()  # .set_index("year")
+        certainty_masks = certainty_masking(output, variation_var)
+        coastlines = contour_certainty(
+            coastlines.set_index("year"), certainty_masks
+        ).reset_index()  # .set_index("year")
 
         # Supposedly coarser than the (embargoed) global eez zones, the attributes here are more accurate in terms of country codes
         # eez = read_file("https://pacificdata.org/data/dataset/964dbebf-2f42-414e-bf99-dd7125eedb16/resource/dad3f7b2-a8aa-4584-8bca-a77e16a391fe/download/country_boundary_eez.geojson")
@@ -371,7 +371,7 @@ def run(
         start_year=start_year,
         end_year=end_year,
         years_per_composite=[1, 3],
-        version="0.7.0.1",
+        version="0.7.0.2",
     )
     processor = Cleaner(water_index=water_index, send_area_to_processor=True)
     writer = CoastlineWriter(
