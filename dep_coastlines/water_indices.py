@@ -33,21 +33,6 @@ def wndwi(xr: Dataset, alpha: float = 0.5) -> DataArray:
 def twndwi(xr: Dataset, alpha: float = 0.5) -> DataArray:
     return (1 - alpha) * mndwi(xr) + alpha * tndwi(xr)
 
-    # Alpha ranges from 0 to 1, with higher values indicating
-    # greater influence of nir08.
-    # See https://doi.org/10.1080/01431161.2017.1341667
-    cutoff = 0.128
-    # green = xr.green.where(xr.green > cutoff, cutoff)
-    green = xr.green.where((xr.nir08 >= cutoff) & (xr.green < cutoff), cutoff)
-    # green_for_nir = xr.green.where((xr.nir08 >= cutoff) & (xr.green < cutoff), cutoff)
-    # nir_term = green_for_nir - alpha * xr.nir08
-    # swir_term = xr.green - (1 - alpha) * xr.swir16
-    # wndwi = nir_term + swir_term / (
-    wndwi = (green - alpha * xr.nir08 - (1 - alpha) * xr.swir16) / (
-        green + alpha * xr.nir08 + (1 - alpha) * xr.swir16
-    )
-    return wndwi.rename("twndwi")
-
 
 def nirwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
     # Magic cutoff is from https://doi.org/10.1186/s42834-019-0016-5

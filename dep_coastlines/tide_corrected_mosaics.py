@@ -32,7 +32,7 @@ from dep_tools.task import ErrorCategoryAreaTask, MultiAreaTask
 from dep_tools.utils import get_container_client, scale_to_int16
 from dep_tools.writers import DsWriter
 
-from dep_coastlines.water_indices import mndwi, ndwi, nirwi
+from dep_coastlines.water_indices import mndwi, ndwi, nirwi, twndwi
 from dep_coastlines.ProjOdcLoader import ProjOdcLoader
 from dep_coastlines.tide_utils import filter_by_tides, TideLoader
 from dep_coastlines.task_utils import get_ids, bool_parser
@@ -102,6 +102,7 @@ class MosaicProcessor(LandsatProcessor):
         cutoff = 0.128 if self.scale_and_offset else 1280.0
         xr["nirwi"] = nirwi(xr, cutoff)
         xr["meanwi"] = (xr.ndwi + xr.nirwi) / 2
+        xr["twndwi"] = twndwi(xr)
         output = xr.median("time", keep_attrs=True)
         output_mad = mad(xr, output).astype("float32")
 
@@ -120,6 +121,9 @@ class MosaicProcessor(LandsatProcessor):
         output["mndwi_stdev"] = xr.mndwi.std("time", keep_attrs=True).astype("float32")
 
         output["ndwi_stdev"] = xr.ndwi.std("time", keep_attrs=True).astype("float32")
+        output["twndwi_stdev"] = xr.twndwi.std("time", keep_attrs=True).astype(
+            "float32"
+        )
 
         scalers = [
             key
