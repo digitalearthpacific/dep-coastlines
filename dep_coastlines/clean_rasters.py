@@ -371,7 +371,7 @@ def run(
         start_year=start_year,
         end_year=end_year,
         years_per_composite=[1, 3],
-        version="0.7.0.2",
+        version="0.7.0.3",
     )
     processor = Cleaner(water_index=water_index, send_area_to_processor=True)
     writer = CoastlineWriter(

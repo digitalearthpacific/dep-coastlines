@@ -1,15 +1,4 @@
 """Calculates water indices for the given areas and times and saves to blob storage.
-As of this writing we are focusing on the use of the nir band for all coastline
-work, but the other bands are here for legacy sake and possible use later.
-
-This is best run using kbatch (see calculate_water_indices.yml) with a single
-year or group of years (e.g. 2013/2015). We previously tried to run this
-variously using all years / all composite years , separately for each variable, 
-etc. but the long running / task heavy processes often failed in practice.
-
-Each year took an hour or two to run, so if you start multiple
-processes you can calculate for all years within a day or so.
-
 """
 
 from typing import Iterable, Tuple, Annotated
@@ -133,6 +122,7 @@ class MosaicProcessor(LandsatProcessor):
         output[scalers] = scale_to_int16(
             output[scalers], output_multiplier=10_000, output_nodata=-32767
         )
+        breakpoint()
 
         return set_stac_properties(xr, output).chunk(dict(x=2048, y=2048))
 
