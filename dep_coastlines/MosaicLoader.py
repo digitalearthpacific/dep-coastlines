@@ -158,11 +158,6 @@ class MosaicLoader(Loader):
                     if not (k.endswith("mad") or k.endswith("stdev") or k == "count")
                 ]
             ] /= 10_000
-            output["tndwi"] = tndwi(output)
-            output["tmndwi"] = tmndwi(output)
-            output["twndwi"] = twndwi(output)
-            output["stndwi"] = stndwi(output)
-            output["wndwi"] = wndwi(output)
 
             return add_deviations(output, all_time) if self._add_deviations else output
         else:

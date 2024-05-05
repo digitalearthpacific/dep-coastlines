@@ -259,6 +259,7 @@ class Cleaner(Processor):
     def process(
         self, input: Dataset | list[Dataset], area
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
+        breakpoint()
         output = self.model.apply_mask(input)
         output = output.where(output["count"] > 4)
         output = fill_nearby(output)
@@ -292,7 +293,7 @@ class Cleaner(Processor):
         # link inland water to perceived ocean
         core_land = mask_cleanup(gadm_land, mask_filters=[("erosion", 60)])
 
-        output = (
+        water_index = (
             output[self.water_index]
             .where(analysis_zone | core_land)
             .where(~max_cap, obvious_water)
@@ -305,13 +306,13 @@ class Cleaner(Processor):
         # buffer aren't coded as water
         obvious_land = -0.5
         water = ~self.land(
-            output.where(
-                ~(output.isnull() & (core_land | consensus_land)), obvious_land
+            water_index.where(
+                ~(water_index.isnull() & (core_land | consensus_land)), obvious_land
             ).to_dataset(name="twndwi")
         )
 
         inland_water = find_inland_areas(water, ocean)
-        water_index = output.where(~inland_water)
+        water_index = water_index.where(~inland_water)
 
         coastlines = subpixel_contours(
             water_index,
