@@ -202,8 +202,7 @@ class Cleaner(Processor):
 
     def expand_analysis_zone(self, analysis_zone, output, return_max_cap: bool = False):
         # Only expand where there's an edge that's land. Do it multiple times
-        # to fill between larger areas
-        # say in Funafuti or Majiro. Later we will fill one last time with
+        # to fill between larger areas. Later we will fill one last time with
         # water to ensure lines are closed.
 
         def expand_once(analysis_zone):
@@ -224,7 +223,7 @@ class Cleaner(Processor):
         #        )
 
         if return_max_cap:
-            last_expansion = expand_once(expand_once(analysis_zone))
+            last_expansion = expand_once(analysis_zone)
             max_cap = last_expansion & ~analysis_zone
             return analysis_zone, max_cap
 
@@ -267,16 +266,28 @@ class Cleaner(Processor):
 
         output = output[variables_to_keep].compute()
 
-        candidate_land = self.land(output)
         an_input = input[0] if isinstance(input, list) else input
         consensus_land = calculate_consensus_land(an_input.isel(year=0)).compute()
+
+        candidate_land = self.land(output)
         # Connected are contiguous zones that are connected in some way to
         # the consensus areas. This ensures that all edges of these are included
         connected_areas = remove_disconnected_land(consensus_land, candidate_land)
         no_connected_neighbors = xs.focal.mean(consensus_land) == 0
         suspicious_connected_areas = candidate_land & no_connected_neighbors
+        # So we don't expand disconnected land
         analysis_zone = connected_areas & ~suspicious_connected_areas
+
         analysis_zone, max_cap = self.expand_analysis_zone(analysis_zone, output, True)
+        # To remove disconnected land we expanded into
+        # land must be expanded for algo to work
+        # this needs to return connected land and water
+        candidate_land = self.land(output.where(analysis_zone))
+        connected_areas = remove_disconnected_land(consensus_land, candidate_land)
+        # don't remove suspicous areas because expanded land may not be within
+        # 1 cell of consensus land
+        disconnected_areas = self.land(output.where(analysis_zone)) & ~connected_areas
+        analysis_zone = analysis_zone & ~disconnected_areas
         obvious_water = 0.5
 
         gadm_land = load_gadm_land(output)
