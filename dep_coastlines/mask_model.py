@@ -1,11 +1,9 @@
 from dataclasses import dataclass
 import geopandas as gpd
 import pandas as pd
-import xarray as xr
 
 from dep_coastlines.MosaicLoader import MosaicLoader
 from dep_tools.namers import DepItemPath
-from dep_tools.utils import get_container_client
 
 
 def split_multiyears(df, time_column="time", splitter=","):
@@ -47,7 +45,7 @@ def pull_data_for_datetime(df):
     itempath = DepItemPath(
         sensor="ls",
         dataset_id="coastlines/mosaics-corrected",
-        version="0.7.0",
+        version="0.7.0.3",
         time=df.time.iloc[0].replace("/", "_"),
         zero_pad_numbers=True,
     )
@@ -70,7 +68,7 @@ def load_point_values(points):
 
 def prep_training_data():
     load_point_values(gpd.read_file("data/training_data_v7.gpkg")).to_csv(
-        "data/training_data_with_features_9Apr2024.csv", index=False
+        "data/training_data_with_features_0-7-0-3_9May2024.csv", index=False
     )
 
 

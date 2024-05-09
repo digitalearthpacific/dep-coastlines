@@ -182,7 +182,7 @@ class Cleaner(Processor):
         comparison: Callable = operator.lt,
         number_of_expansions: int = 8,
         baseline_year: str = "2023",
-        model_file=Path(__file__).parent / "full_model_9Apr2024.joblib",
+        model_file=Path(__file__).parent / "shrunk_model_9May2024.joblib",
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -365,8 +365,8 @@ class Cleaner(Processor):
 def run(
     task_id: Tuple | list[Tuple] | None,
     dataset_id=DATASET_ID,
-    version: str = "0.6.0",
-    water_index="meanwi",
+    version: str = "0.7.0",
+    water_index="twndwi",
 ) -> None:
     start_year = 1999
     end_year = 2023
@@ -429,7 +429,7 @@ def process_id(
 def process_all_ids(
     version: Annotated[str, Option()],
     overwrite_log: Annotated[bool, Option()] = False,
-    water_index: str = "meanwi",
+    water_index: str = "twndwi",
     dataset_id=DATASET_ID,
     datetime="1999/2023",
 ):

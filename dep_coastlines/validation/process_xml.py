@@ -5,7 +5,7 @@ from dea_tools.coastal import pixel_tides
 import geopandas as gpd
 import numpy as np
 from odc.geo import Resolution
-from odc.geo.geom import BoundingBox, box
+from odc.geo.geom import BoundingBox, box, Geometry
 from odc.geo.geobox import GeoBox
 from odc.geo.xr import xr_zeros
 import xarray as xr
@@ -14,30 +14,28 @@ from dep_tools.namers import DepItemPath
 from dep_coastlines.tide_utils import filter_by_tides, TideLoader
 
 
-def _get_da(record):
-    bbox = BoundingBox(record["xmin"], record["ymin"], record["xmax"], record["ymax"])
-    # All projections are utm, all datums are wgs84. If we process another set,
-    # this may need to change
-    proj_string = f"+proj=utm +datum=WGS84 +zone={record['utm_zone']}"
-    if record["utm_hemi"] == "S":
-        proj_string += " +south"
+def _get_da(record, crs):
+    resolution = Resolution(30, 30)
 
-    resolution = Resolution(record["res_x"], record["res_y"])
+    geobox = GeoBox.from_geopolygon(
+        Geometry(record.geometry, crs=3832).to_crs(crs), resolution=resolution
+    )
     return xr_zeros(
-        GeoBox.from_bbox(bbox, proj_string, resolution=resolution),
+        geobox,
         chunks=(1000, 1000),
     ).expand_dims(time=[record["time"]])
 
 
-def make_tides(record):
-    da = _get_da(record)
+def make_tides(record, crs):
+    da = _get_da(record, crs)
     return pixel_tides(
         da,
         resample=False,
         model="TPXO9-atlas-v5",
         directory="../coastlines-local/tidal-models/",
-        resolution=4980,
+        resolution=30,
         parallel=False,
+        extrapolate=False,  # greatly speeds up tide calcs
     )
 
 
@@ -113,17 +111,17 @@ def calculate_valid_areas(gdf):
     # 1 load existing tides
     tide_cutoff_min_lr, tide_cutoff_max_lr = load_tides(gdf)
     # 2 calculate tides for here
-    this_tide = make_tides(gdf.iloc[0])
+    this_tide = make_tides(gdf.iloc[0], tide_cutoff_min_lr.odc.crs)
     # 3 see if within cutoff and where
-    # TODO: different crses (ex: 32655[cutoff] and 32755[image]), need to
-    # reproject something
     valid_areas = (this_tide > tide_cutoff_min_lr) & (this_tide < tide_cutoff_max_lr)
+    valid_areas.load()
     # 4 write output
-    breakpoint()
-    fpath = "data/validation/valid_areas_{gdf.iloc[0]['image_id']}.tif"
-    valid_areas.astype(int).rio.to_raster(fpath)
-    # 5 make / find transect locations
-    # 6 return 1/0 if any valid places
+
+    if valid_areas.values.any():
+        fpath = f"data/validation/valid_areas_{gdf.iloc[0]['image_id']}_8May_1.tif"
+        # 6 return 1/0 if any valid places
+        valid_areas.rio.write_crs(this_tide.rio.crs).astype(int).rio.to_raster(fpath)
+    # 7 make / find transect locations
 
 
 if __name__ == "__main__":
