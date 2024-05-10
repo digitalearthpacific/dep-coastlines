@@ -261,7 +261,8 @@ class Cleaner(Processor):
         # output = self.model.apply_mask(input)
         one_yr = input[0].where(input[0]["count"] > 4)
         three_yr = input[1].where(input[1]["count"] > 4)
-        output = three_yr.where(one_yr.isnull(), one_yr)
+        three_yr = three_yr.sel(year=three_yr.year[three_yr.year.isin(one_yr.year)])
+        output = one_yr.where(~one_yr.isnull(), three_yr)
         # output = input.where(input["count"] > 4)
         output = fill_nearby(output)
         variation_var = self.water_index + "_mad"
