@@ -259,9 +259,9 @@ class Cleaner(Processor):
         self, input: Dataset | list[Dataset], area
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
         # output = self.model.apply_mask(input)
-        output = input[0].where(
-            input[0]["count"] > 4, input[1].where(input[1]["count"] > 4)
-        )
+        one_yr = input[0].where(input[0]["count"] > 4)
+        three_yr = input[1].where(input[1]["count"] > 4)
+        output = three_yr.where(one_yr.isnull(), one_yr)
         # output = input.where(input["count"] > 4)
         output = fill_nearby(output)
         variation_var = self.water_index + "_mad"
