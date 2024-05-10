@@ -258,7 +258,7 @@ class Cleaner(Processor):
     def process(
         self, input: Dataset | list[Dataset], area
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
-        output = self.model.apply_mask(input)
+        # output = self.model.apply_mask(input)
         output = output.where(output["count"] > 4)
         output = fill_nearby(output)
         variation_var = self.water_index + "_mad"
