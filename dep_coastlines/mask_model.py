@@ -68,7 +68,7 @@ def load_point_values(points):
 
 def prep_training_data():
     load_point_values(gpd.read_file("data/training_data_v7.gpkg")).to_csv(
-        "data/training_data_with_features_0-7-0-3_9May2024.csv", index=False
+        "data/training_data_with_features_0-7-0-3_10May2024.csv", index=False
     )
 
 
