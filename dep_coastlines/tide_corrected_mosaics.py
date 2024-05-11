@@ -25,7 +25,7 @@ from dep_coastlines.water_indices import mndwi, ndwi, nirwi, twndwi
 from dep_coastlines.ProjOdcLoader import ProjOdcLoader
 from dep_coastlines.tide_utils import filter_by_tides, TideLoader
 from dep_coastlines.task_utils import get_ids, bool_parser
-from dep_coastlines.grid import test_buffered_grid as test_grid
+from dep_coastlines.grid import buffered_grid as grid
 
 DATASET_ID = "coastlines/mosaics-corrected"
 app = Typer()
@@ -86,12 +86,12 @@ class MosaicProcessor(LandsatProcessor):
 
         # or mean or median or whatever
         xr = xr.groupby("time").first().drop_vars(["qa_pixel"])
-        xr["mndwi"] = mndwi(xr)
-        xr["ndwi"] = ndwi(xr)
+        # xr["mndwi"] = mndwi(xr)
+        # xr["ndwi"] = ndwi(xr)
         cutoff = 0.128 if self.scale_and_offset else 1280.0
-        xr["nirwi"] = nirwi(xr, cutoff)
-        xr["meanwi"] = (xr.ndwi + xr.nirwi) / 2
-        xr["twndwi"] = twndwi(xr)
+        # xr["nirwi"] = nirwi(xr, cutoff)
+        # xr["meanwi"] = (xr.ndwi + xr.nirwi) / 2
+        xr["twndwi"] = twndwi(xr, nir_cutoff=cutoff)
         output = xr.median("time", keep_attrs=True)
         output_mad = mad(xr, output).astype("float32")
 
@@ -100,16 +100,16 @@ class MosaicProcessor(LandsatProcessor):
         )
         output = output.merge(output_mad)
         output["count"] = xr.nir08.count("time").fillna(0).astype("int16")
-        output["nir08_stdev"] = xr.nir08.std("time", keep_attrs=True).astype("float32")
-        output["meanwi_stdev"] = xr.meanwi.std("time", keep_attrs=True).astype(
-            "float32"
-        )
+        # output["nir08_stdev"] = xr.nir08.std("time", keep_attrs=True).astype("float32")
+        # output["meanwi_stdev"] = xr.meanwi.std("time", keep_attrs=True).astype(
+        #    "float32"
+        # )
 
-        output["nirwi_stdev"] = xr.nirwi.std("time", keep_attrs=True).astype("float32")
+        # output["nirwi_stdev"] = xr.nirwi.std("time", keep_attrs=True).astype("float32")
 
-        output["mndwi_stdev"] = xr.mndwi.std("time", keep_attrs=True).astype("float32")
+        # output["mndwi_stdev"] = xr.mndwi.std("time", keep_attrs=True).astype("float32")
 
-        output["ndwi_stdev"] = xr.ndwi.std("time", keep_attrs=True).astype("float32")
+        # output["ndwi_stdev"] = xr.ndwi.std("time", keep_attrs=True).astype("float32")
         output["twndwi_stdev"] = xr.twndwi.std("time", keep_attrs=True).astype(
             "float32"
         )
@@ -122,7 +122,6 @@ class MosaicProcessor(LandsatProcessor):
         output[scalers] = scale_to_int16(
             output[scalers], output_multiplier=10_000, output_nodata=-32767
         )
-        breakpoint()
 
         return set_stac_properties(xr, output).chunk(dict(x=2048, y=2048))
 
@@ -185,7 +184,7 @@ def run(
     if isinstance(task_id, list):
         MultiAreaTask(
             task_id,
-            test_grid,
+            grid,
             ErrorCategoryAreaTask,
             loader,
             processor,
@@ -194,7 +193,7 @@ def run(
         ).run()
     else:
         ErrorCategoryAreaTask(
-            task_id, test_grid.loc[[task_id]], loader, processor, writer, logger
+            task_id, grid.loc[[task_id]], loader, processor, writer, logger
         ).run()
 
 
@@ -225,7 +224,7 @@ def process_all_ids(
     load_before_write: Annotated[str, Option(parser=bool_parser)] = "False",
 ):
     task_ids = get_ids(
-        datetime, version, dataset_id, grid=test_grid, delete_existing_log=overwrite_log
+        datetime, version, dataset_id, grid=grid, delete_existing_log=overwrite_log
     )
 
     with Client(memory_limit="16GiB"):
