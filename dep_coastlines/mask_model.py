@@ -45,7 +45,7 @@ def pull_data_for_datetime(df):
     itempath = DepItemPath(
         sensor="ls",
         dataset_id="coastlines/mosaics-corrected",
-        version="0.7.0.3",
+        version="0.7.0.4",
         time=df.time.iloc[0].replace("/", "_"),
         zero_pad_numbers=True,
     )
@@ -68,7 +68,7 @@ def load_point_values(points):
 
 def prep_training_data():
     load_point_values(gpd.read_file("data/training_data_v7.gpkg")).to_csv(
-        "data/training_data_with_features_0-7-0-3_10May2024.csv", index=False
+        "data/training_data_with_features_0-7-0-4_13May2024.csv", index=False
     )
 
 
