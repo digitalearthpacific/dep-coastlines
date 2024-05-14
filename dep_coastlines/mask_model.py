@@ -49,11 +49,11 @@ def pull_data_for_datetime(df):
         time=df.time.iloc[0].replace("/", "_"),
         zero_pad_numbers=True,
     )
-    loader = MosaicLoader(itempath=itempath, add_deviations=False)
+    loader = MosaicLoader(itempath=itempath, add_deviations=True)
 
     def _pull_data_for_cell(group):
         ds = loader.load(group.set_index(["row_2", "column_2"]))
-        print(f"{df.time.iloc[0]}|{group.row_2.iloc[0]}|{group.column.iloc[0]}")
+        print(f"{df.time.iloc[0]}|{group.row_2.iloc[0]}|{group.column_2.iloc[0]}")
         return add_image_values(group, ds)
 
     output = df.groupby(["row_2", "column_2"]).apply(_pull_data_for_cell)

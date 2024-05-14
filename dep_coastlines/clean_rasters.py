@@ -44,7 +44,7 @@ from dep_coastlines.raster_cleaning import (
     load_gadm_land,
     find_inland_areas,
 )
-from dep_coastlines.grid import test_grid
+from dep_coastlines.grid import test_grid as GRID
 from dep_coastlines.mask_model import SavedModel
 from dep_coastlines.task_utils import get_ids
 from dep_coastlines.vector import certainty_masking
@@ -182,7 +182,7 @@ class Cleaner(Processor):
         comparison: Callable = operator.lt,
         number_of_expansions: int = 8,
         baseline_year: str = "2023",
-        model_file=Path(__file__).parent / "shrunk_model_9May2024.joblib",
+        model_file=Path(__file__).parent / "full_model_14May2024.joblib",
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -258,12 +258,8 @@ class Cleaner(Processor):
     def process(
         self, input: Dataset | list[Dataset], area
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
-        # output = self.model.apply_mask(input)
-        one_yr = input[0].where(input[0]["count"] > 4)
-        three_yr = input[1].where(input[1]["count"] > 4)
-        three_yr = three_yr.sel(year=three_yr.year[three_yr.year.isin(one_yr.year)])
-        output = one_yr.where(~one_yr.isnull(), three_yr)
-        # output = input.where(input["count"] > 4)
+        output = self.model.apply_mask(input)
+        output = output.where(output["count"] > 4)
         output = fill_nearby(output)
         variation_var = self.water_index + "_mad"
         variables_to_keep = [self.water_index, variation_var, "count"]
@@ -386,7 +382,7 @@ def run(
         start_year=start_year,
         end_year=end_year,
         years_per_composite=[1, 3],
-        version="0.7.0.3",
+        version="0.7.0.4",
     )
     processor = Cleaner(water_index=water_index, send_area_to_processor=True)
     writer = CoastlineWriter(
@@ -405,7 +401,7 @@ def run(
     if isinstance(task_id, list):
         MultiAreaTask(
             task_id,
-            test_grid,
+            GRID,
             ErrorCategoryAreaTask,
             loader,
             processor,
@@ -414,7 +410,7 @@ def run(
         ).run()
     else:
         ErrorCategoryAreaTask(
-            task_id, test_grid.loc[[task_id]], loader, processor, writer, logger
+            task_id, GRID.loc[[task_id]], loader, processor, writer, logger
         ).run()
 
 
@@ -423,7 +419,7 @@ def process_id(
     row: Annotated[str, Option()],
     column: Annotated[str, Option()],
     version: Annotated[str, Option()],
-    water_index: str = "meanwi",
+    water_index: str = "twndwi",
 ):
     with Client():
         run((int(row), int(column)), version=version, water_index=water_index)
@@ -438,7 +434,7 @@ def process_all_ids(
     datetime="1999/2023",
 ):
     task_ids = get_ids(
-        datetime, version, dataset_id, grid=test_grid, delete_existing_log=overwrite_log
+        datetime, version, dataset_id, grid=GRID, delete_existing_log=overwrite_log
     )
 
     with Client():
