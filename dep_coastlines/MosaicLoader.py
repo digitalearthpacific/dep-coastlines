@@ -14,7 +14,7 @@ from dep_tools.loaders import Loader
 from dep_tools.namers import DepItemPath
 from dep_tools.utils import get_container_client
 
-from dep_coastlines.water_indices import twndwi, mndwi, ndwi
+from dep_coastlines.water_indices import twndwi, mndwi, ndwi, nirwi
 
 
 # see the old utils.py for improvements in here
@@ -95,6 +95,7 @@ class MultiyearMosaicLoader(Loader):
         output = xr.concat(dss, dim="year")
         output["mndwi"] = mndwi(output)
         output["ndwi"] = ndwi(output)
+        output["nirwi"] = nirwi(output)
         #        output["twndwi"] = twndwi(output)
         if years_per_composite > 1:
             output = _set_year_to_middle_year(output)
