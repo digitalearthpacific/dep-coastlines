@@ -44,7 +44,7 @@ from dep_coastlines.raster_cleaning import (
     load_gadm_land,
     find_inland_areas,
 )
-from dep_coastlines.grid import test_grid as GRID
+from dep_coastlines.grid import buffered_grid as GRID
 from dep_coastlines.mask_model import SavedModel
 from dep_coastlines.task_utils import get_ids
 from dep_coastlines.vector import certainty_masking
