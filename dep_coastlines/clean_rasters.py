@@ -182,7 +182,7 @@ class Cleaner(Processor):
         comparison: Callable = operator.lt,
         number_of_expansions: int = 8,
         baseline_year: str = "2023",
-        model_file=Path(__file__).parent / "full_model_14May2024.joblib",
+        model_file=Path(__file__).parent / "full_model_16May2024.joblib",
         **kwargs,
     ):
         super().__init__(**kwargs)
