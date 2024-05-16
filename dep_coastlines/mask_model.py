@@ -49,7 +49,7 @@ def pull_data_for_datetime(df):
         time=df.time.iloc[0].replace("/", "_"),
         zero_pad_numbers=True,
     )
-    loader = MosaicLoader(itempath=itempath, add_deviations=True)
+    loader = MosaicLoader(itempath=itempath, add_deviations=False)
 
     def _pull_data_for_cell(group):
         ds = loader.load(group.set_index(["row_2", "column_2"]))
