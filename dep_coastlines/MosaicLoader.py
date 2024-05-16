@@ -93,10 +93,10 @@ class MultiyearMosaicLoader(Loader):
                 dss.append(ds.assign_coords({"year": datetime}))
 
         output = xr.concat(dss, dim="year")
+        output["twndwi"] = twndwi(output)
         output["mndwi"] = mndwi(output)
         output["ndwi"] = ndwi(output)
         output["nirwi"] = nirwi(output)
-        #        output["twndwi"] = twndwi(output)
         if years_per_composite > 1:
             output = _set_year_to_middle_year(output)
 
