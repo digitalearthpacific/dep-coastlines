@@ -182,7 +182,7 @@ class Cleaner(Processor):
         comparison: Callable = operator.lt,
         number_of_expansions: int = 8,
         baseline_year: str = "2023",
-        model_file=Path(__file__).parent / "full_model_16May2024.joblib",
+        model_file=Path(__file__).parent / "full_model_17May2024.joblib",
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -259,7 +259,6 @@ class Cleaner(Processor):
         self, input: Dataset | list[Dataset], area
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
         output = self.model.apply_mask(input)
-        breakpoint()
         output = output.where(output["count"] > 4)
         output = fill_nearby(output)
         variation_var = self.water_index + "_mad"
