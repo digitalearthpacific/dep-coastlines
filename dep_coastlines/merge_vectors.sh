@@ -17,7 +17,8 @@ INPUTS=`find $ODIR/$version/ -type f -name "*3.gpkg"`
 ogrmerge.py -o tmp.gpkg $INPUTS -field_strategy Union -single -nln coastlines -overwrite_ds -t_srs EPSG:$gpkg_epsg
 
 # Fixes feature misordering across files
-ogr2ogr $output -dialect sqlite tmp.gpkg -nln coastlines -sql "select year, certainty, st_union(geom) as geom from coastlines group by year, certainty"
+#ogr2ogr $output -dialect sqlite tmp.gpkg -nln coastlines -sql "select year, certainty, st_union(geom) as geom from coastlines group by year, certainty"
+ogr2ogr $output -dialect sqlite tmp.gpkg -nln coastlines -sql "select year, st_union(geom) as geom from coastlines group by year"
 # rm tmp.gpkg
 
 python dep_coastlines/fix_lines_across_antimeridian.py $output $output_4326
@@ -29,12 +30,12 @@ ogrmerge.py -o $roc_output $INPUTS -field_strategy Union -single -nln rates_of_c
 
 
 #azcopy copy $output https://deppcpublicstorage.blob.core.windows.net/output/coastlines/$version/?$AZURE_STORAGE_SAS_TOKEN --from-to=LocalBlob --blob-type BlockBlob 
-#
+
 #azcopy copy $output_geojson https://deppcpublicstorage.blob.core.windows.net/output/coastlines/$version/?$AZURE_STORAGE_SAS_TOKEN --from-to=LocalBlob --blob-type BlockBlob 
-##
-#mkdir -p $tile_folder
-#tippecanoe -e $tile_folder/coastlines -z 12 -l coastlines $output_geojson --force
-#
-#ogr2ogr -nlt MULTILINESTRING $output_exploded $tile_folder/coastlines/12
-#
+
+mkdir -p $tile_folder
+tippecanoe -e $tile_folder/coastlines -z 12 -l coastlines $output_geojson --force
+
+ogr2ogr -nlt MULTILINESTRING $output_exploded $tile_folder/coastlines/12
+
 #azcopy copy $tile_folder/coastlines https://deppcpublicstorage.blob.core.windows.net/output/tiles/$prefix/?$AZURE_STORAGE_SAS_TOKEN --from-to=LocalBlob --blob-type BlockBlob --content-type application/vnd.mapbox-vector-tile --content-encoding gzip --recursive
