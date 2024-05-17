@@ -31,7 +31,7 @@ def wndwi(xr: Dataset, alpha: float = 0.5) -> DataArray:
 
 
 def twndwi(xr: Dataset, alpha: float = 0.5, nir_cutoff: float = 0.128) -> DataArray:
-    return (1 - alpha) * mndwi(xr) + alpha * tndwi(xr, nir_cutoff)
+    return (1 - alpha) * tmndwi(xr) + alpha * tndwi(xr, nir_cutoff)
 
 
 def nirwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
@@ -54,7 +54,7 @@ def stndwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
     return normalized_ratio(super_green, xr.nir08)
 
 
-def tmndwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
+def tmndwi(xr: Dataset, cutoff: float = 0.081) -> DataArray:
     green = xr.green.where((xr.swir16 >= cutoff) & (xr.green < cutoff), cutoff)
     return normalized_ratio(green, xr.swir16)
 
