@@ -31,7 +31,7 @@ def wndwi(xr: Dataset, alpha: float = 0.5) -> DataArray:
 
 
 def twndwi(xr: Dataset, alpha: float = 0.5, nir_cutoff: float = 0.128) -> DataArray:
-    return (1 - alpha) * tmndwi(xr) + alpha * tndwi(xr, nir_cutoff)
+    return (1 - alpha) * mndwi(xr) + alpha * tndwi(xr, nir_cutoff)
 
 
 def nirwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
