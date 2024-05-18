@@ -24,14 +24,13 @@ from coastlines.vector import (
 )
 from dea_tools.classification import predict_xr
 from dea_tools.spatial import subpixel_contours
-from geopandas import GeoDataFrame, read_file
-import numpy as np
+from geopandas import GeoDataFrame
 from odc.algo import mask_cleanup
+from retry import retry
+from skimage.measure import label
 from typer import Option, Typer
 from xarray import DataArray, Dataset, concat, apply_ufunc
 import xrspatial as xs
-from skimage.measure import label
-from skimage.morphology import binary_dilation
 
 from azure_logger import CsvLogger
 from dep_tools.namers import DepItemPath
@@ -420,6 +419,7 @@ def run(
 
 
 @app.command()
+@retry(tries=3)
 def process_id(
     row: Annotated[str, Option()],
     column: Annotated[str, Option()],
