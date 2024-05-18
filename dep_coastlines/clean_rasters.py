@@ -36,7 +36,12 @@ from skimage.morphology import binary_dilation
 from azure_logger import CsvLogger
 from dep_tools.namers import DepItemPath
 from dep_tools.processors import Processor
-from dep_tools.task import MultiAreaTask, ErrorCategoryAreaTask
+from dep_tools.task import (
+    EmptyCollectionError,
+    MultiAreaTask,
+    ErrorCategoryAreaTask,
+    NoOutputError,
+)
 from dep_tools.utils import get_container_client, write_to_local_storage
 
 from dep_coastlines.MosaicLoader import MultiyearMosaicLoader
@@ -422,7 +427,10 @@ def process_id(
     water_index: str = "twndwi",
 ):
     with Client():
-        run((int(row), int(column)), version=version, water_index=water_index)
+        try:
+            run((int(row), int(column)), version=version, water_index=water_index)
+        except (NoOutputError, EmptyCollectionError):
+            pass
 
 
 @app.command()
