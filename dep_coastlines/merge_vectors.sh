@@ -17,7 +17,7 @@ INPUTS=`find $ODIR/$version/ -type f -name "*3.gpkg"`
 #ogrmerge.py -o tmp.gpkg $INPUTS -field_strategy Union -single -nln coastlines -overwrite_ds -t_srs EPSG:$gpkg_epsg
 #
 # Fixes feature misordering across files
-#ogr2ogr $output -dialect sqlite tmp.gpkg -nln coastlines -sql "select year, certainty, st_union(geom) as geom from coastlines group by year, certainty"
+ogr2ogr $output -dialect sqlite tmp.gpkg -nln coastlines -sql "select year, certainty, st_union(geom) as geom from coastlines group by year, certainty"
 ogr2ogr $output -dialect sqlite tmp.gpkg -nln coastlines -sql "select year, geom from coastlines order by year"
 # rm tmp.gpkg
 

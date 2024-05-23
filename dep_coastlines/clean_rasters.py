@@ -22,14 +22,13 @@ from coastlines.vector import (
     contour_certainty,
     region_atttributes,
 )
-from dea_tools.classification import predict_xr
 from dea_tools.spatial import subpixel_contours
-from geopandas import GeoDataFrame
+from geopandas import GeoDataFrame, read_file
 from odc.algo import mask_cleanup
 from retry import retry
 from skimage.measure import label
 from typer import Option, Typer
-from xarray import DataArray, Dataset, concat, apply_ufunc
+from xarray import DataArray, Dataset, apply_ufunc
 import xrspatial as xs
 
 from azure_logger import CsvLogger
@@ -44,12 +43,12 @@ from dep_tools.task import (
 from dep_tools.utils import get_container_client, write_to_local_storage
 
 from dep_coastlines.MosaicLoader import MultiyearMosaicLoader
+from dep_coastlines.mask_model import ModelPredictor
 from dep_coastlines.raster_cleaning import (
     load_gadm_land,
     find_inland_areas,
 )
 from dep_coastlines.grid import buffered_grid as GRID
-from dep_coastlines.mask_model import SavedModel
 from dep_coastlines.task_utils import get_ids
 from dep_coastlines.vector import certainty_masking
 from dep_coastlines.writer import CoastlineWriter
@@ -58,8 +57,21 @@ from dep_coastlines.writer import CoastlineWriter
 app = Typer()
 DATASET_ID = "coastlines/coastlines"
 
+BooleanDataArray = DataArray
 
-def remove_disconnected_land(certain_land, candidate_land):
+
+def remove_disconnected_land(
+    certain_land: BooleanDataArray, candidate_land: BooleanDataArray
+):
+    """Remove pixels from `candidate_land` that are not connected to `certain_land`.
+    The algorithm is to first identify unique land regions and use them as zones,
+    calculating the maximum value of certain_land (i.e. 1 or 0) within each. Regions
+    with a max of 1 are kept.
+
+    This is similar to, but more restrictive than the `coastlines.vector.temporal_masking`
+    function.
+    """
+
     if candidate_land.year.size > 1:
         return candidate_land.groupby("year").map(
             lambda candidate_year: remove_disconnected_land(
@@ -77,8 +89,8 @@ def remove_disconnected_land(certain_land, candidate_land):
     return candidate_land.where(zones.isin(connected_zones)) == 1
 
 
-def fill_nearby(xr):
-    def fill(da):
+def fill_nearby(xarr: DataArray | Dataset) -> DataArray:
+    def fill(da: DataArray) -> DataArray:
         output = da.to_dataset("year")
         for year in da.year.values:
             output[year] = da.sel(year=year)
@@ -94,10 +106,12 @@ def fill_nearby(xr):
                 )
         return output.to_array(dim="year")
 
-    return xr.apply(fill) if isinstance(xr, Dataset) else fill(xr)
+    return xarr.apply(fill) if isinstance(xarr, Dataset) else fill(xarr)
 
 
 def fill_with_nearest_later_date(xr):
+    """A liberal fill job."""
+
     def fill_da(da):
         output = da.to_dataset("year")
         for year in da.year.values:
@@ -113,53 +127,18 @@ def fill_with_nearest_later_date(xr):
     return xr.apply(fill_da) if isinstance(xr, Dataset) else fill_da(xr)
 
 
-class ModelPredictor:
-    def __init__(self, model: SavedModel):
-        self.model = model
-        self.codes = self.model.codes.groupby(self.model.response_column).first()
-
-    def code_for_name(self, name):
-        return (
-            self.model.codes.reset_index()
-            .set_index("code")
-            .loc[name, self.model.response_column]
-        )
-
-    def calculate_mask(self, input):
-        masks = []
-        for year in input.year:
-            year_mask = predict_xr(
-                self.model.model,
-                input.sel(year=year)[self.model.predictor_columns],
-                clean=True,
-            ).Predictions
-            year_mask.coords["year"] = year
-            masks.append(year_mask)
-        return concat(masks, dim="year")
-
-    def apply_mask(self, input):
-        cloud_code = self.code_for_name("cloud")
-        if isinstance(input, list):
-            this_mask = self.calculate_mask(input[0])
-            output = input[0].where(this_mask != cloud_code, drop=False)
-            for ds in input[1:]:
-                ds = ds.sel(year=ds.year[ds.year.isin(output.year)])
-                this_mask = self.calculate_mask(ds)
-                missings = (output.isnull()) | (output["count"] <= 4)
-                output = output.where(
-                    ~missings, ds.where(this_mask != cloud_code, drop=False)
-                )
-        else:
-            mask = self.calculate_mask(input)
-            output = input.where(mask != cloud_code)
-        return output
-
-
-def calculate_consensus_land(ds):
+def calculate_consensus_land(ds: Dataset) -> BooleanDataArray:
+    """Returns true for areas for which the all-years medians of mndwi,
+    ndwi and nirwi are less than zero. (nirwi
+    is negative where the nir08 band is greater than 0.128.)"""
     return (ds.nirwi_all < 0) & (ds.mndwi_all < 0) & (ds.ndwi_all < 0)
 
 
-def convolve(da):
+def smooth_gaussian(da: DataArray):
+    """Apply a 3x3 gaussian kernel to the input. The convolution ignores nan values
+    by using the kernel values for the non-nan pixels only, and scaling the
+    divisor accordingly."""
+
     # This is a convolution with a gaussian kernel that ignores NAs.
     weights = DataArray([[1, 2, 1], [2, 4, 2], [1, 2, 1]], dims=("xw", "yw"))
     total = (
@@ -262,12 +241,12 @@ class Cleaner(Processor):
     def process(
         self, input: Dataset | list[Dataset], area
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
-        output = self.model.apply_mask(input)
-        # output = output.where(output["count"] > 4)
+        output, mask = self.model.apply_mask(input)
+        # output = output.where(output["count"] > 2)
         output = fill_nearby(output)
+
         variation_var = self.water_index + "_mad"
         variables_to_keep = [self.water_index, variation_var, "count"]
-
         output = output[variables_to_keep].compute()
 
         an_input = input[0] if isinstance(input, list) else input
@@ -305,6 +284,7 @@ class Cleaner(Processor):
 
         # basically to capture land outside the buffer that would otherwise
         # link inland water to perceived ocean
+        # The amount here is linked to the buffer value in the grid
         core_land = mask_cleanup(gadm_land, mask_filters=[("erosion", 60)])
 
         water_index = (
@@ -312,7 +292,7 @@ class Cleaner(Processor):
             .where(analysis_zone | core_land)
             .where(~max_cap, obvious_water)
             .groupby("year")
-            .map(convolve)
+            .map(smooth_gaussian)
             .rio.write_crs(output.rio.crs)
         )
 
@@ -335,32 +315,41 @@ class Cleaner(Processor):
             min_vertices=5,
         )
 
+        if len(coastlines) == 0:
+            raise NoOutputError("no coastlines created; water index may be empty")
+
         certainty_masks = certainty_masking(output, variation_var)
         coastlines = contour_certainty(
             coastlines.set_index("year"), certainty_masks
         ).reset_index()  # .set_index("year")
 
-        # Supposedly coarser than the (embargoed) global eez zones, the attributes here are more accurate in terms of country codes
-        # eez = read_file("https://pacificdata.org/data/dataset/964dbebf-2f42-414e-bf99-dd7125eedb16/resource/dad3f7b2-a8aa-4584-8bca-a77e16a391fe/download/country_boundary_eez.geojson")
-        # these_areas = eez  # .clip(coastlines.to_crs(4326).total_bounds).to_crs( water_index.rio.crs)
+        # Supposedly coarser than the eez zones, the attributes here are more
+        # accurate in terms of country codes
+        eez = read_file(
+            "https://pacificdata.org/data/dataset/964dbebf-2f42-414e-bf99-dd7125eedb16/resource/dad3f7b2-a8aa-4584-8bca-a77e16a391fe/download/country_boundary_eez.geojson"
+        )
+        these_areas = eez.clip(coastlines.to_crs(4326).total_bounds).to_crs(
+            water_index.rio.crs
+        )
         # these_areas.geometry = these_areas.geometry.buffer(250)
         roc_points = self.points(coastlines, water_index)
-        #        coastlines = region_atttributes(
-        #            coastlines.set_index("year"),
-        #            these_areas,
-        #            attribute_col="ISO_Ter1",
-        #            rename_col="eez_territory",
-        #        )
-        #        roc_points = region_atttributes(
-        #            roc_points,
-        #            these_areas,
-        #            attribute_col="ISO_Ter1",
-        #            rename_col="eez_territory",
-        #        )
+        coastlines = region_atttributes(
+            coastlines.set_index("year"),
+            these_areas,
+            attribute_col="ISO_Ter1",
+            rename_col="eez_territory",
+        )
+        roc_points = region_atttributes(
+            roc_points,
+            these_areas,
+            attribute_col="ISO_Ter1",
+            rename_col="eez_territory",
+        )
 
         water_index["year"] = water_index.year.astype(str)
         return (
             water_index.to_dataset("year"),  # .rio.clip(area_proj.geometry),
+            mask,
             coastlines,
             roc_points,
         )
