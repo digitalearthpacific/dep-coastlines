@@ -24,6 +24,7 @@ from coastlines.vector import (
 )
 from dea_tools.spatial import subpixel_contours
 from geopandas import GeoDataFrame, read_file
+from numpy import isfinite
 from odc.algo import mask_cleanup
 from retry import retry
 from skimage.measure import label
@@ -306,7 +307,7 @@ class Cleaner(Processor):
         )
 
         inland_water = find_inland_areas(water, ocean)
-        water_index = water_index.where(~inland_water)
+        water_index = water_index.where(~inland_water).where(lambda wi: isfinite(wi))
 
         coastlines = subpixel_contours(
             water_index,

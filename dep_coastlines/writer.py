@@ -37,10 +37,10 @@ class CoastlineWriter(Writer):
     ):
         water_index, mask, contours, rates_of_change = output
         self._rasterWriter.write(water_index, item_id)
-        self._rasterWriter.write(mask.Predictions, item_id, ext="_mask_prediction.tif")
-        self._rasterWriter.write(
-            mask.Probabilities, item_id, ext="_mask_probabilities.tif"
-        )
+        #        self._rasterWriter.write(mask.Predictions, item_id, ext="_mask_prediction.tif")
+        #        self._rasterWriter.write(
+        #            mask.Probabilities, item_id, ext="_mask_probabilities.tif"
+        #        )
         self._vectorWriter.kwargs["layer"] = f"lines_{item_id}"
         contour_schema = vector_schema(contours)
         contour_schema["eez_territory"] = "str:3"
