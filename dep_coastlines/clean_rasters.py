@@ -243,7 +243,6 @@ class Cleaner(Processor):
         self, input: Dataset | list[Dataset], area
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
         output, mask = self.model.apply_mask(input)
-        # output = output.where(output["count"] > 2)
         output = fill_nearby(output)
 
         variation_var = self.water_index + "_mad"
@@ -322,17 +321,14 @@ class Cleaner(Processor):
         certainty_masks = certainty_masking(output, variation_var)
         coastlines = contour_certainty(
             coastlines.set_index("year"), certainty_masks
-        ).reset_index()  # .set_index("year")
+        ).reset_index()
 
-        # Supposedly coarser than the eez zones, the attributes here are more
-        # accurate in terms of country codes
         eez = read_file(
             "https://pacificdata.org/data/dataset/964dbebf-2f42-414e-bf99-dd7125eedb16/resource/dad3f7b2-a8aa-4584-8bca-a77e16a391fe/download/country_boundary_eez.geojson"
         )
-        these_areas = eez.clip(coastlines.to_crs(4326).total_bounds).to_crs(
+        these_areas = eez.clip(coastlines.buffer(250).to_crs(4326).total_bounds).to_crs(
             water_index.rio.crs
         )
-        # these_areas.geometry = these_areas.geometry.buffer(250)
         roc_points = self.points(coastlines, water_index)
         coastlines = region_atttributes(
             coastlines.set_index("year"),
