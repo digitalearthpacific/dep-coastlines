@@ -128,7 +128,7 @@ if not blob_exists(buffered_grid_blob_path) or OVERWRITE:
 
 
 grid = gpd.read_file(grid_url).set_index(["row", "column"])
-# Only filter to those areas in grid...we don't want just buffer
+# Only filter to those ids in grid...we don't want just buffer
 buffered_grid = (
     gpd.read_file(buffered_grid_url).set_index(["row", "column"]).loc[grid.index]
 )

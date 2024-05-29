@@ -21,7 +21,7 @@ from dep_tools.task import ErrorCategoryAreaTask, MultiAreaTask
 from dep_tools.utils import get_container_client, scale_to_int16
 from dep_tools.writers import DsWriter
 
-from dep_coastlines.water_indices import mndwi, ndwi, nirwi, twndwi
+from dep_coastlines.water_indices import twndwi
 from dep_coastlines.ProjOdcLoader import ProjOdcLoader
 from dep_coastlines.tide_utils import filter_by_tides, TideLoader
 from dep_coastlines.task_utils import get_ids, bool_parser
@@ -29,26 +29,6 @@ from dep_coastlines.grid import buffered_grid as grid
 
 DATASET_ID = "coastlines/mosaics-corrected"
 app = Typer()
-
-
-def mask_clouds_by_day(
-    xr: DataArray | Dataset,
-    filters: Iterable[Tuple[str, int]] | None = None,
-) -> DataArray | Dataset:
-    mask = cloud_mask(xr, filters)
-    mask.coords["day"] = mask.time.dt.floor("1D")
-    mask_by_day = mask.groupby("day").max().sel(day=mask.day)
-
-    if isinstance(xr, DataArray):
-        return xr.where(~mask_by_day, xr.rio.nodata)
-    else:
-        for variable in xr:
-            xr[variable] = xr[variable].where(~mask_by_day, xr[variable].rio.nodata)
-        return xr
-
-
-def mad(da, median_da):
-    return abs(da - median_da).median(dim="time")
 
 
 class MosaicProcessor(LandsatProcessor):
@@ -72,25 +52,11 @@ class MosaicProcessor(LandsatProcessor):
         if not "time" in xr.coords or len(xr.time) == 0:
             return None
 
-        # TODO:
-        # ✔ check cloud mask merging,
-        # ✓ calc geomad,
-        # make all_times mosaic and
-        # tier 1 only mosaic, etc
-        # ✔ set stac properties
-        # ✔ check CRS
-        # ✓ Any way to not load so many times? In the writer maybe?
-        # ✔ clip to area
-
         xr.coords["time"] = xr.time.dt.floor("1D")
 
         # or mean or median or whatever
         xr = xr.groupby("time").first().drop_vars(["qa_pixel"])
-        # xr["mndwi"] = mndwi(xr)
-        # xr["ndwi"] = ndwi(xr)
         cutoff = 0.128 if self.scale_and_offset else 1280.0
-        # xr["nirwi"] = nirwi(xr, cutoff)
-        # xr["meanwi"] = (xr.ndwi + xr.nirwi) / 2
         xr["twndwi"] = twndwi(xr, nir_cutoff=cutoff)
         output = xr.median("time", keep_attrs=True)
         output_mad = mad(xr, output).astype("float32")
@@ -100,16 +66,6 @@ class MosaicProcessor(LandsatProcessor):
         )
         output = output.merge(output_mad)
         output["count"] = xr.nir08.count("time").fillna(0).astype("int16")
-        # output["nir08_stdev"] = xr.nir08.std("time", keep_attrs=True).astype("float32")
-        # output["meanwi_stdev"] = xr.meanwi.std("time", keep_attrs=True).astype(
-        #    "float32"
-        # )
-
-        # output["nirwi_stdev"] = xr.nirwi.std("time", keep_attrs=True).astype("float32")
-
-        # output["mndwi_stdev"] = xr.mndwi.std("time", keep_attrs=True).astype("float32")
-
-        # output["ndwi_stdev"] = xr.ndwi.std("time", keep_attrs=True).astype("float32")
         output["twndwi_stdev"] = xr.twndwi.std("time", keep_attrs=True).astype(
             "float32"
         )
@@ -124,6 +80,26 @@ class MosaicProcessor(LandsatProcessor):
         )
 
         return set_stac_properties(xr, output).chunk(dict(x=2048, y=2048))
+
+
+def mask_clouds_by_day(
+    xr: DataArray | Dataset,
+    filters: Iterable[Tuple[str, int]] | None = None,
+) -> DataArray | Dataset:
+    mask = cloud_mask(xr, filters)
+    mask.coords["day"] = mask.time.dt.floor("1D")
+    mask_by_day = mask.groupby("day").max().sel(day=mask.day)
+
+    if isinstance(xr, DataArray):
+        return xr.where(~mask_by_day, xr.rio.nodata)
+    else:
+        for variable in xr:
+            xr[variable] = xr[variable].where(~mask_by_day, xr[variable].rio.nodata)
+        return xr
+
+
+def mad(da, median_da):
+    return abs(da - median_da).median(dim="time")
 
 
 def run(

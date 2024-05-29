@@ -3,7 +3,6 @@ import sys
 
 from typing import Annotated, Optional
 
-from pandas import DataFrame, Series, concat
 from typer import Typer, Option
 
 from azure_logger import CsvLogger, filter_by_log

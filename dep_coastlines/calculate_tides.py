@@ -1,11 +1,9 @@
 """Calculates low-resolution tide rasters for all areas and times using 
 functionality from the Digital Earth Austalia project. In the DEA and DEAfrica
 coastline processing this is included with other raster processing but 
-1) For this project all the water index, etc. calculations are dask-enabled,
-   while this is not.
-2) It has separate prerequisites that other pieces due to the tidal calculation
+1) It has separate prerequisites that other pieces due to the tidal calculation
    packages (see below).
-3) This is the most static part of the workflow in that once the areas are
+2) This is the most static part of the workflow in that once the areas are
    set, the tidal calculations can be "one and done" for the most part (unless
    you wish to revisit for more recent data at a later time). No reason to redo
    this every time if testing out new water indices / cloud masking etc.
@@ -14,14 +12,11 @@ Tidal processing should be done before anything else, as results are needed for
 filtering input landsat data before water index calculation.
 
 This can be run locally with tidal model data in ../coastlines-local (see below) as
-it does not actually pull any planetary computer data and only writes
-small-ish (5km resolution) data to blob storage. It has low memory requirements
-and takes just a few hours to run for the full area and all times. It could be
-modified to run in kbatch but requires a docker image with the large tidal models
+it does not actually pull any remote data and only writes
+small-ish (5km resolution) data to cloud storage. It has low memory requirements
+and takes a reasonable time to run for the full area and all times. It could be
+modified to run in the cloud but would require a docker image with the large tidal models
 embedded.
-
-TODO: If revisiting this file, consider abstracting some of the constant values
-set in the main script body and using typer.
 """
 
 import planetary_computer

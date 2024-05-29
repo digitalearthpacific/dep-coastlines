@@ -24,6 +24,7 @@ from coastlines.vector import (
 )
 from dea_tools.spatial import subpixel_contours
 from geopandas import GeoDataFrame, read_file
+import geohash
 from numpy import isfinite
 from odc.algo import mask_cleanup
 from retry import retry
@@ -135,12 +136,11 @@ def calculate_consensus_land(ds: Dataset) -> BooleanDataArray:
     return (ds.nirwi_all < 0) & (ds.mndwi_all < 0) & (ds.ndwi_all < 0)
 
 
-def smooth_gaussian(da: DataArray):
+def smooth_gaussian(da: DataArray) -> DataArray:
     """Apply a 3x3 gaussian kernel to the input. The convolution ignores nan values
     by using the kernel values for the non-nan pixels only, and scaling the
     divisor accordingly."""
 
-    # This is a convolution with a gaussian kernel that ignores NAs.
     weights = DataArray([[1, 2, 1], [2, 4, 2], [1, 2, 1]], dims=("xw", "yw"))
     total = (
         da.fillna(0)
@@ -195,16 +195,8 @@ class Cleaner(Processor):
                 mask_filters=[("dilation", 2)],
             )
 
-        #            return analysis_zone | self.land(output.where(analysis_zone)).groupby(
-        #                "year"
-        #            ).apply(binary_dilation, footprint=np.ones((3, 3)))
-
         for _ in range(self.number_of_expansions):
             analysis_zone = expand_once(analysis_zone)
-
-        #        analysis_zone = analysis_zone.groupby("year").apply(
-        #            binary_dilation, footprint=np.ones((3, 3))
-        #        )
 
         if return_max_cap:
             last_expansion = expand_once(analysis_zone)
@@ -235,6 +227,39 @@ class Cleaner(Processor):
         points_gdf[stats_list] = points_gdf.apply(
             lambda x: all_time_stats(x, initial_year=1999), axis=1
         )
+
+        points_gdf["certainty"] = "good"
+        # for now, leaving out "offshore_islands" category, as most of the study
+        # area would be in there. However, consider (if available) breakdowns
+        # like "atolls", "volcanic", etc
+
+        # These would need to be mapped.
+        # points_gdf.loc[
+        #    rocky_shoreline_flag(points_gdf, geomorphology_gdf), "certainty"
+        # ] = "likely rocky coastline"
+
+        # Other things to consider:
+        # tidal flats
+        # reefs
+
+        points_gdf.loc[
+            points_gdf.rate_time.abs() > 200, "certainty"
+        ] = "extreme value (> 200 m)"
+        points_gdf.loc[
+            points_gdf.angle_std > 30, "certainty"
+        ] = "high angular variability"
+        points_gdf.loc[
+            points_gdf.valid_obs < 15, "certainty"
+        ] = "insufficient observations"
+
+        # Generate a geohash UID for each point and set as index
+        uids = (
+            points_gdf.geometry.to_crs("EPSG:4326")
+            .apply(lambda x: geohash.encode(x.y, x.x, precision=10))
+            .rename("uid")
+        )
+        points_gdf = points_gdf.set_index(uids)
+
         contours = contours.reset_index()
         contours.year = contours.year.astype(int)
         return points_gdf

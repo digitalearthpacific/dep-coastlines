@@ -14,11 +14,11 @@ roc_output=${ODIR}/coastlines_${version}_roc_$gpkg_epsg.gpkg
 
 INPUTS=`find $ODIR/$version/ -type f -name "*3.gpkg"`
 #az storage fs directory download -f output -s $az_src -d $dst --recursive 
-#ogrmerge.py -o tmp.gpkg $INPUTS -field_strategy Union -single -nln coastlines -overwrite_ds -t_srs EPSG:$gpkg_epsg
+ogrmerge.py -o tmp.gpkg $INPUTS -field_strategy Union -single -nln coastlines -overwrite_ds -t_srs EPSG:$gpkg_epsg
 #
 # Fixes feature misordering across files
-ogr2ogr $output -dialect sqlite tmp.gpkg -nln coastlines -sql "select year, certainty, st_union(geom) as geom from coastlines group by year, certainty"
-ogr2ogr $output -dialect sqlite tmp.gpkg -nln coastlines -sql "select year, geom from coastlines order by year"
+#ogr2ogr $output -dialect sqlite tmp.gpkg -nln coastlines -sql "select year, certainty, eez_territory, st_union(geom) as geom from coastlines group by year, certainty"
+ogr2ogr $output -dialect sqlite tmp.gpkg -nln coastlines -sql "select year, certainty, eez_territory, geom from coastlines order by year"
 # rm tmp.gpkg
 
 python dep_coastlines/fix_lines_across_antimeridian.py $output $output_4326
