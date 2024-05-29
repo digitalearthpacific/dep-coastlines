@@ -195,11 +195,11 @@ def continental_cli(
         # Load continental shoreline and rates of change data
         try:
             ratesofchange_gdf = gpd.read_file(
-                OUTPUT_GPKG, layer="rates_of_change"
-            )  # .set_index("uid")
+                OUTPUT_GPKG, layer="rates_of_change", engine="pyogrio", use_arrow=True
+            ).set_index("uid")
 
             shorelines_gdf = gpd.read_file(
-                OUTPUT_GPKG, layer="shorelines_annual"
+                OUTPUT_GPKG, layer="shorelines_annual", engine="pyogrio", use_arrow=True
             ).set_index("year")
 
         except (fiona.errors.DriverError, ValueError):
@@ -234,6 +234,7 @@ def continental_cli(
                     ratesofchange_gdf.columns.str.contains("dist_|geometry"),
                 ]
                 .sjoin(buffered_gdf, predicate="within")
+                .drop(columns=["geometry"])
                 .groupby("index_right")
             )
 
