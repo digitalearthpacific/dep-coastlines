@@ -270,7 +270,8 @@ class Cleaner(Processor):
         output, mask = self.model.apply_mask(input)
         output = fill_nearby(output)
 
-        variation_var = self.water_index + "_mad"
+        #       variation_var = self.water_index + "_mad"
+        variation_var = "twndwi_mad"
         variables_to_keep = [self.water_index, variation_var, "count"]
         output = output[variables_to_keep].compute()
 
