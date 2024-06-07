@@ -328,7 +328,7 @@ class Cleaner(Processor):
         water = ~self.land(
             water_index.where(
                 ~(water_index.isnull() & (core_land | consensus_land)), obvious_land
-            ).to_dataset(name="twndwi")
+            ).to_dataset(name=self.water_index)
         )
 
         inland_water = find_inland_areas(water, ocean)
