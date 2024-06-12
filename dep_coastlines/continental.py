@@ -15,15 +15,17 @@
 
 
 import os
-import sys
-import fiona
-import click
-import pandas as pd
-import geohash as gh
-import geopandas as gpd
 from pathlib import Path
+import sys
+
+import click
 from coastlines.utils import configure_logging, STYLES_FILE
 from coastlines.vector import points_on_line, change_regress, vector_schema
+from dep_tools.utils import shift_negative_longitudes
+import fiona
+import geohash as gh
+import geopandas as gpd
+import pandas as pd
 
 
 def wms_fields(gdf):
@@ -136,6 +138,7 @@ def continental_cli(
     hotspots_radius,
     baseline_year,
     include_styles,
+    tiles=True,
 ):
     #################
     # Merge vectors #
@@ -163,12 +166,22 @@ def continental_cli(
 
     # Combine annual shorelines into a single continental layer
     if shorelines:
+        from tempfile import NamedTemporaryFile
+
+        TMP_GPKG = NamedTemporaryFile(suffix=".gpkg").name
         os.system(
             f"ogrmerge.py -o "
-            f"{OUTPUT_GPKG} {shoreline_paths} "
+            f"{TMP_GPKG} {shoreline_paths} "
             f"-single -overwrite_ds -t_srs epsg:3832 "
             f"-nln shorelines_annual"
         )
+
+        os.system(
+            f"ogr2ogr {OUTPUT_GPKG} {TMP_GPKG} "
+            f"-dialect sqlite -nln shorelines_annual "
+            f'-sql "select * from shorelines_annual order by year"'
+        )
+
         log.info("Merging annual shorelines complete")
 
     else:
@@ -194,6 +207,7 @@ def continental_cli(
 
         # Load continental shoreline and rates of change data
         try:
+            # Use alt engines to speed up reading
             ratesofchange_gdf = gpd.read_file(
                 OUTPUT_GPKG, layer="rates_of_change", engine="pyogrio", use_arrow=True
             ).set_index("uid")
@@ -274,9 +288,9 @@ def continental_cli(
             # hotspots radius by 30 m along-shore rates of change point distance)
             hotspots_gdf["n"] = hotspot_grouped.size()
             hotspots_gdf["n"] = hotspots_gdf["n"].fillna(0)
-            hotspots_gdf.loc[
-                hotspots_gdf.n < (radius / 30), "certainty"
-            ] = "insufficient points"
+            hotspots_gdf.loc[hotspots_gdf.n < (radius / 30), "certainty"] = (
+                "insufficient points"
+            )
 
             # Generate a geohash UID for each point and set as index
             uids = (
@@ -368,6 +382,51 @@ def continental_cli(
     else:
         log.info("Not writing styles to GeoPackage")
 
+    if tiles:
+        OUTPUT_TILES = (
+            Path(output_dir) / f"dep_ls_coastlines_{continental_version}.pmtiles"
+        )
+        build_tiles(OUTPUT_GPKG, OUTPUT_TILES)
+
+
+def build_tiles(output_gpkg: Path, output_file: Path) -> None:
+    layers = {
+        layer_name: gpd.read_file(
+            output_gpkg, layer=layer_name, engine="pyogrio", use_arrow=True
+        )
+        for layer_name in fiona.listlayers(output_gpkg)
+        if layer_name != "layer_styles"
+    }
+    tippecanoe_layers = ""
+    for name, gdf in layers.items():
+        # gdf = gdf.to_crs(4326)
+        # gdf["geometry"] = gdf.geometry.apply(shift_negative_longitudes)
+        output_geojson_path = output_file.parent / f"{output_file.stem}_{name}.geojson"
+        output_pmtile_path = output_file.parent / f"{output_file.stem}_{name}.pmtiles"
+        # gdf.to_file(output_geojson_path)
+        # tippecanoe_layers += "-L {name}:{output_pmtile_path} "
+        tippecanoe_layers += f"{output_pmtile_path} "
+        roc_opts = " -y sig_time -y rate_time -y certainty"
+        opts = dict(
+            hotspots_zoom_1=f"-B 0 {roc_opts}",
+            hotspots_zoom_2=f"-B 4 {roc_opts}",
+            hotspots_zoom_3=f"-B 7 {roc_opts}",
+            rates_of_change=f"-B 10 {roc_opts} -y se_time",
+            shorelines_annual="-y year -y certainty",
+        )[name]
+        os.system(
+            f"tippecanoe {opts} -pi -z13 -f -o {output_pmtile_path} -L {name}:{output_geojson_path}"
+        )
+
+    #    os.system(f"tile-join -f -pk -o {output_file} {tippecanoe_layers}")
+    os.system(
+        f"tile-join -f -pk -e data/tiles/dep_ls_coastlines_0-7-0-53 {tippecanoe_layers}"
+    )
+
 
 if __name__ == "__main__":
-    continental_cli()
+    build_tiles(
+        Path("data/processed/0-7-0-53/dep_ls_coastlines_0-7-0-53.gpkg"),
+        Path("data/processed/0-7-0-53/dep_ls_coastlines_0-7-0-53.pmtiles"),
+    )
+#    continental_cli()
