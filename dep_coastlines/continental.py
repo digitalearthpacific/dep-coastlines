@@ -399,12 +399,11 @@ def build_tiles(output_gpkg: Path, output_file: Path) -> None:
     }
     tippecanoe_layers = ""
     for name, gdf in layers.items():
-        # gdf = gdf.to_crs(4326)
-        # gdf["geometry"] = gdf.geometry.apply(shift_negative_longitudes)
+        gdf = gdf.to_crs(4326)
+        gdf["geometry"] = gdf.geometry.apply(shift_negative_longitudes)
         output_geojson_path = output_file.parent / f"{output_file.stem}_{name}.geojson"
         output_pmtile_path = output_file.parent / f"{output_file.stem}_{name}.pmtiles"
-        # gdf.to_file(output_geojson_path)
-        # tippecanoe_layers += "-L {name}:{output_pmtile_path} "
+        gdf.to_file(output_geojson_path)
         tippecanoe_layers += f"{output_pmtile_path} "
         roc_opts = " -y sig_time -y rate_time -y certainty"
         opts = dict(
@@ -418,10 +417,7 @@ def build_tiles(output_gpkg: Path, output_file: Path) -> None:
             f"tippecanoe {opts} -pi -z13 -f -o {output_pmtile_path} -L {name}:{output_geojson_path}"
         )
 
-    #    os.system(f"tile-join -f -pk -o {output_file} {tippecanoe_layers}")
-    os.system(
-        f"tile-join -f -pk -e data/tiles/dep_ls_coastlines_0-7-0-53 {tippecanoe_layers}"
-    )
+    os.system(f"tile-join -f -pk -o {output_file} {tippecanoe_layers}")
 
 
 if __name__ == "__main__":
