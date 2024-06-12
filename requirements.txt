@@ -4,6 +4,8 @@ dep-grid @ git+https://github.com/digitalearthpacific/dep-grid.git@cleanup
 deafrica_coastlines @ git+https://github.com/digitalearthafrica/deafrica-coastlines.git@169e166befc76a2d4fd63cbb43ced01d7416a080
 joblib
 odc-geo>=0.4.2
+pyarrow
+pyogrio
+scikit-learn==1.3.2
 typer
 xarray-spatial
-scikit-learn==1.3.2
