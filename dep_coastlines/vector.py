@@ -2,6 +2,11 @@ import numpy as np
 from rasterio.features import sieve
 from skimage.morphology import dilation, disk
 from dea_tools.spatial import xr_vectorize
+import geopandas as gpd
+import xarray as xr
+import pyproj
+from scipy.stats import circstd, circmean
+from shapely.ops import nearest_points
 
 # Taken from the latest deafrica code for now, needed to remove the "transform=" arg from xr_vectorize since it is redundant with the current version of dea-tools.
 
