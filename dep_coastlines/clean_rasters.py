@@ -17,7 +17,6 @@ from dask.distributed import Client
 from coastlines.vector import (
     all_time_stats,
     points_on_line,
-    annual_movements,
     calculate_regressions,
     contour_certainty,
     region_atttributes,
@@ -52,7 +51,7 @@ from dep_coastlines.raster_cleaning import (
 )
 from dep_coastlines.grid import buffered_grid as GRID
 from dep_coastlines.task_utils import get_ids
-from dep_coastlines.vector import certainty_masking
+from dep_coastlines.vector import certainty_masking, annual_movements
 from dep_coastlines.writer import CoastlineWriter
 
 
