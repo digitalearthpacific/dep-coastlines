@@ -170,7 +170,7 @@ class Cleaner(Processor):
     ):
         super().__init__(**kwargs)
         self.index_threshold = index_threshold
-        self.water_index = water_index
+        self.water_index_name = water_index
         self.baseline_year = baseline_year
 
         self.model = ModelPredictor(load(model_file))
@@ -178,10 +178,10 @@ class Cleaner(Processor):
         self.number_of_expansions = number_of_expansions
 
     def land(self, output):
-        return self.comparison(output[self.water_index], self.index_threshold)
+        return self.comparison(output[self.water_index_name], self.index_threshold)
 
     def water(self, output):
-        return output[self.water_index] >= self.index_threshold
+        return output[self.water_index_name] >= self.index_threshold
 
     def expand_analysis_zone(self, analysis_zone, output, return_max_cap: bool = False):
         # Only expand where there's an edge that's land. Do it multiple times
@@ -204,6 +204,28 @@ class Cleaner(Processor):
 
         return analysis_zone
 
+    def add_attributes(self):
+        eez = read_file(
+            "https://pacificdata.org/data/dataset/964dbebf-2f42-414e-bf99-dd7125eedb16/resource/dad3f7b2-a8aa-4584-8bca-a77e16a391fe/download/country_boundary_eez.geojson"
+        )
+        these_areas = (
+            eez.to_crs(3832)
+            .clip(self.coastlines.buffer(250).to_crs(3832).total_bounds)
+            .to_crs(self.water_index.rio.crs)
+        )
+        self.coastlines = region_atttributes(
+            self.coastlines.set_index("year"),
+            these_areas,
+            attribute_col="ISO_Ter1",
+            rename_col="eez_territory",
+        )
+        self.roc_points = region_atttributes(
+            self.roc_points,
+            these_areas,
+            attribute_col="ISO_Ter1",
+            rename_col="eez_territory",
+        )
+
     def points(self, contours, water_index):
         water_index["year"] = water_index.year.astype(int)
         contours.year = contours.year.astype(str)
@@ -215,9 +237,9 @@ class Cleaner(Processor):
             points_gdf = annual_movements(
                 points_gdf,
                 contours,
-                water_index.to_dataset(name=self.water_index),
+                water_index.to_dataset(name=self.water_index_name),
                 self.baseline_year,
-                self.water_index,
+                self.water_index_name,
                 max_valid_dist=5000,
             )
         points_gdf = calculate_regressions(points_gdf, contours)
@@ -241,15 +263,15 @@ class Cleaner(Processor):
         # tidal flats
         # reefs
 
-        points_gdf.loc[
-            points_gdf.rate_time.abs() > 200, "certainty"
-        ] = "extreme value (> 200 m)"
-        points_gdf.loc[
-            points_gdf.angle_std > 30, "certainty"
-        ] = "high angular variability"
-        points_gdf.loc[
-            points_gdf.valid_obs < 15, "certainty"
-        ] = "insufficient observations"
+        points_gdf.loc[points_gdf.rate_time.abs() > 200, "certainty"] = (
+            "extreme value (> 200 m)"
+        )
+        points_gdf.loc[points_gdf.angle_std > 30, "certainty"] = (
+            "high angular variability"
+        )
+        points_gdf.loc[points_gdf.valid_obs < 15, "certainty"] = (
+            "insufficient observations"
+        )
 
         # Generate a geohash UID for each point and set as index
         uids = (
@@ -269,9 +291,8 @@ class Cleaner(Processor):
         output, mask = self.model.apply_mask(input)
         output = fill_nearby(output)
 
-        #       variation_var = self.water_index + "_mad"
-        variation_var = "twndwi_mad"
-        variables_to_keep = [self.water_index, variation_var, "count"]
+        variation_var = self.water_index_name + "_mad"
+        variables_to_keep = [self.water_index_name, variation_var, "count"]
         output = output[variables_to_keep].compute()
 
         an_input = input[0] if isinstance(input, list) else input
@@ -312,8 +333,8 @@ class Cleaner(Processor):
         # The amount here is linked to the buffer value in the grid
         core_land = mask_cleanup(gadm_land, mask_filters=[("erosion", 60)])
 
-        water_index = (
-            output[self.water_index]
+        self.water_index = (
+            output[self.water_index_name]
             .where(analysis_zone | core_land)
             .where(~max_cap, obvious_water)
             .groupby("year")
@@ -325,55 +346,41 @@ class Cleaner(Processor):
         # buffer aren't coded as water
         obvious_land = -0.5
         water = ~self.land(
-            water_index.where(
-                ~(water_index.isnull() & (core_land | consensus_land)), obvious_land
-            ).to_dataset(name=self.water_index)
+            self.water_index.where(
+                ~(self.water_index.isnull() & (core_land | consensus_land)),
+                obvious_land,
+            ).to_dataset(name=self.water_index_name)
         )
 
         inland_water = find_inland_areas(water, ocean)
-        water_index = water_index.where(~inland_water).where(lambda wi: isfinite(wi))
+        water_index = self.water_index.where(~inland_water).where(
+            lambda wi: isfinite(wi)
+        )
 
-        coastlines = subpixel_contours(
+        self.coastlines = subpixel_contours(
             water_index,
             dim="year",
             z_values=[self.index_threshold],
             min_vertices=5,
         )
 
-        if len(coastlines) == 0:
+        if len(self.coastlines) == 0:
             raise NoOutputError("no coastlines created; water index may be empty")
 
         certainty_masks = certainty_masking(output, variation_var)
         coastlines = contour_certainty(
-            coastlines.set_index("year"), certainty_masks
+            self.coastlines.set_index("year"), certainty_masks
         ).reset_index()
+        self.roc_points = self.points(coastlines, water_index)
 
-        eez = read_file(
-            "https://pacificdata.org/data/dataset/964dbebf-2f42-414e-bf99-dd7125eedb16/resource/dad3f7b2-a8aa-4584-8bca-a77e16a391fe/download/country_boundary_eez.geojson"
-        )
-        these_areas = eez.clip(coastlines.buffer(250).to_crs(4326).total_bounds).to_crs(
-            water_index.rio.crs
-        )
-        roc_points = self.points(coastlines, water_index)
-        coastlines = region_atttributes(
-            coastlines.set_index("year"),
-            these_areas,
-            attribute_col="ISO_Ter1",
-            rename_col="eez_territory",
-        )
-        roc_points = region_atttributes(
-            roc_points,
-            these_areas,
-            attribute_col="ISO_Ter1",
-            rename_col="eez_territory",
-        )
+        self.add_attributes()
 
         water_index["year"] = water_index.year.astype(str)
         return (
-            water_index.to_dataset("year"),  # .rio.clip(area_proj.geometry),
+            water_index.to_dataset("year"),
             mask,
-            coastlines,
-            roc_points,
+            self.coastlines,
+            self.roc_points,
         )
 
 
@@ -403,7 +410,6 @@ def run(
     writer = CoastlineWriter(
         namer,
         extra_attrs=dict(dep_version=version),
-        #        writer=write_to_local_storage,
     )
     logger = CsvLogger(
         name=dataset_id,
