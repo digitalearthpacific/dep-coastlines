@@ -16,7 +16,98 @@ import rioxarray as rx
 from skimage.measure import label
 import xarray as xr
 import xrspatial as xs
-from xarray import DataArray, Dataset
+from xarray import apply_ufunc, DataArray, Dataset
+
+BooleanDataArray = DataArray
+
+
+def smooth_gaussian(da: DataArray) -> DataArray:
+    """Apply a 3x3 gaussian kernel to the input. The convolution ignores nan values
+    by using the kernel values for the non-nan pixels only, and scaling the
+    divisor accordingly."""
+
+    weights = DataArray([[1, 2, 1], [2, 4, 2], [1, 2, 1]], dims=("xw", "yw"))
+    total = (
+        da.fillna(0)
+        .rolling(x=3, y=3, center=True)
+        .construct(x="xw", y="yw")
+        .dot(weights)
+    )
+    divisor = (
+        (~da.isnull())
+        .astype(int)
+        .rolling(x=3, y=3, center=True)
+        .construct(x="xw", y="yw")
+        .dot(weights)
+    )
+    return (total / divisor).where(~da.isnull())
+
+
+def remove_disconnected_land(
+    certain_land: BooleanDataArray, candidate_land: BooleanDataArray
+):
+    """Remove pixels from `candidate_land` that are not connected to `certain_land`.
+    The algorithm is to first identify unique land regions and use them as zones,
+    calculating the maximum value of certain_land (i.e. 1 or 0) within each. Regions
+    with a max of 1 are kept.
+
+    This is similar to, but more restrictive than the `coastlines.vector.temporal_masking`
+    function.
+    """
+
+    if candidate_land.year.size > 1:
+        return candidate_land.groupby("year").map(
+            lambda candidate_year: remove_disconnected_land(
+                certain_land, candidate_year
+            )
+        )
+
+    zones = apply_ufunc(
+        label, candidate_land, None, 0, dask="parallelized", kwargs=dict(connectivity=1)
+    )
+    connected_or_not = xs.zonal_stats(
+        zones, certain_land.astype("int8"), stats_funcs=["max"]
+    )
+    connected_zones = connected_or_not["zone"][connected_or_not["max"] == 1]
+    return candidate_land.where(zones.isin(connected_zones)) == 1
+
+
+def fill_with_nearby_dates(xarr: DataArray | Dataset) -> DataArray:
+    def fill(da: DataArray) -> DataArray:
+        output = da.to_dataset("year")
+        for year in da.year.values:
+            output[year] = da.sel(year=year)
+            intyear = int(year)
+            years = [
+                str(y)
+                for y in [intyear + 1, intyear - 1, intyear + 2, intyear - 2]
+                if str(y) in da.year.values
+            ]
+            for inner_year in years:
+                output[year] = output[year].where(
+                    ~output[year].isnull(), output[inner_year]
+                )
+        return output.to_array(dim="year")
+
+    return xarr.apply(fill) if isinstance(xarr, Dataset) else fill(xarr)
+
+
+def fill_with_nearest_later_date(xr):
+    """A liberal fill job."""
+
+    def fill_da(da):
+        output = da.to_dataset("year")
+        for year in da.year.values:
+            output[year] = da.sel(year=year)
+            for inner_year in da.year.values:
+                if int(inner_year) <= int(year):
+                    continue
+                output[year] = output[year].where(
+                    ~output[year].isnull(), output[inner_year]
+                )
+        return output.to_array(dim="year")
+
+    return xr.apply(fill_da) if isinstance(xr, Dataset) else fill_da(xr)
 
 
 def find_inland_areas(water_bool_da, ocean_bool_da) -> DataArray:

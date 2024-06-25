@@ -27,9 +27,8 @@ import geohash
 from numpy import isfinite
 from odc.algo import mask_cleanup
 from retry import retry
-from skimage.measure import label
 from typer import Option, Typer
-from xarray import DataArray, Dataset, apply_ufunc
+from xarray import DataArray, Dataset
 import xrspatial as xs
 
 from azure_logger import CsvLogger
@@ -41,13 +40,16 @@ from dep_tools.task import (
     ErrorCategoryAreaTask,
     NoOutputError,
 )
-from dep_tools.utils import get_container_client, write_to_local_storage
+from dep_tools.utils import get_container_client
 
 from dep_coastlines.MosaicLoader import MultiyearMosaicLoader
-from dep_coastlines.mask_model import ModelPredictor
+from dep_coastlines.cloud_model.predictor import ModelPredictor
 from dep_coastlines.raster_cleaning import (
     load_gadm_land,
     find_inland_areas,
+    fill_with_nearby_dates,
+    remove_disconnected_land,
+    smooth_gaussian,
 )
 from dep_coastlines.grid import buffered_grid as GRID
 from dep_coastlines.task_utils import get_ids
@@ -61,100 +63,11 @@ DATASET_ID = "coastlines/coastlines"
 BooleanDataArray = DataArray
 
 
-def remove_disconnected_land(
-    certain_land: BooleanDataArray, candidate_land: BooleanDataArray
-):
-    """Remove pixels from `candidate_land` that are not connected to `certain_land`.
-    The algorithm is to first identify unique land regions and use them as zones,
-    calculating the maximum value of certain_land (i.e. 1 or 0) within each. Regions
-    with a max of 1 are kept.
-
-    This is similar to, but more restrictive than the `coastlines.vector.temporal_masking`
-    function.
-    """
-
-    if candidate_land.year.size > 1:
-        return candidate_land.groupby("year").map(
-            lambda candidate_year: remove_disconnected_land(
-                certain_land, candidate_year
-            )
-        )
-
-    zones = apply_ufunc(
-        label, candidate_land, None, 0, dask="parallelized", kwargs=dict(connectivity=1)
-    )
-    connected_or_not = xs.zonal_stats(
-        zones, certain_land.astype("int8"), stats_funcs=["max"]
-    )
-    connected_zones = connected_or_not["zone"][connected_or_not["max"] == 1]
-    return candidate_land.where(zones.isin(connected_zones)) == 1
-
-
-def fill_nearby(xarr: DataArray | Dataset) -> DataArray:
-    def fill(da: DataArray) -> DataArray:
-        output = da.to_dataset("year")
-        for year in da.year.values:
-            output[year] = da.sel(year=year)
-            intyear = int(year)
-            years = [
-                str(y)
-                for y in [intyear + 1, intyear - 1, intyear + 2, intyear - 2]
-                if str(y) in da.year.values
-            ]
-            for inner_year in years:
-                output[year] = output[year].where(
-                    ~output[year].isnull(), output[inner_year]
-                )
-        return output.to_array(dim="year")
-
-    return xarr.apply(fill) if isinstance(xarr, Dataset) else fill(xarr)
-
-
-def fill_with_nearest_later_date(xr):
-    """A liberal fill job."""
-
-    def fill_da(da):
-        output = da.to_dataset("year")
-        for year in da.year.values:
-            output[year] = da.sel(year=year)
-            for inner_year in da.year.values:
-                if int(inner_year) <= int(year):
-                    continue
-                output[year] = output[year].where(
-                    ~output[year].isnull(), output[inner_year]
-                )
-        return output.to_array(dim="year")
-
-    return xr.apply(fill_da) if isinstance(xr, Dataset) else fill_da(xr)
-
-
 def calculate_consensus_land(ds: Dataset) -> BooleanDataArray:
     """Returns true for areas for which the all-years medians of mndwi,
     ndwi and nirwi are less than zero. (nirwi
     is negative where the nir08 band is greater than 0.128.)"""
     return (ds.nirwi_all < 0) & (ds.mndwi_all < 0) & (ds.ndwi_all < 0)
-
-
-def smooth_gaussian(da: DataArray) -> DataArray:
-    """Apply a 3x3 gaussian kernel to the input. The convolution ignores nan values
-    by using the kernel values for the non-nan pixels only, and scaling the
-    divisor accordingly."""
-
-    weights = DataArray([[1, 2, 1], [2, 4, 2], [1, 2, 1]], dims=("xw", "yw"))
-    total = (
-        da.fillna(0)
-        .rolling(x=3, y=3, center=True)
-        .construct(x="xw", y="yw")
-        .dot(weights)
-    )
-    divisor = (
-        (~da.isnull())
-        .astype(int)
-        .rolling(x=3, y=3, center=True)
-        .construct(x="xw", y="yw")
-        .dot(weights)
-    )
-    return (total / divisor).where(~da.isnull())
 
 
 class Cleaner(Processor):
@@ -263,15 +176,15 @@ class Cleaner(Processor):
         # tidal flats
         # reefs
 
-        points_gdf.loc[points_gdf.rate_time.abs() > 200, "certainty"] = (
-            "extreme value (> 200 m)"
-        )
-        points_gdf.loc[points_gdf.angle_std > 30, "certainty"] = (
-            "high angular variability"
-        )
-        points_gdf.loc[points_gdf.valid_obs < 15, "certainty"] = (
-            "insufficient observations"
-        )
+        points_gdf.loc[
+            points_gdf.rate_time.abs() > 200, "certainty"
+        ] = "extreme value (> 200 m)"
+        points_gdf.loc[
+            points_gdf.angle_std > 30, "certainty"
+        ] = "high angular variability"
+        points_gdf.loc[
+            points_gdf.valid_obs < 15, "certainty"
+        ] = "insufficient observations"
 
         # Generate a geohash UID for each point and set as index
         uids = (
@@ -289,7 +202,7 @@ class Cleaner(Processor):
         self, input: Dataset | list[Dataset], area
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
         output, mask = self.model.apply_mask(input)
-        output = fill_nearby(output)
+        output = fill_with_nearby_dates(output)
 
         variation_var = self.water_index_name + "_mad"
         variables_to_keep = [self.water_index_name, variation_var, "count"]
