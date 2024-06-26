@@ -44,7 +44,7 @@ from dep_tools.task import (
 )
 from dep_tools.utils import get_container_client
 
-from dep_coastlines.MosaicLoader import MultiyearMosaicLoader
+from dep_coastlines.io import CoastlineWriter, MultiyearMosaicLoader
 from dep_coastlines.cloud_model.predictor import ModelPredictor
 from dep_coastlines.raster_cleaning import (
     load_gadm_land,
@@ -55,7 +55,6 @@ from dep_coastlines.raster_cleaning import (
 )
 from dep_coastlines.grid import buffered_grid as GRID
 from dep_coastlines.task_utils import get_ids
-from dep_coastlines.writer import CoastlineWriter
 
 
 app = Typer()

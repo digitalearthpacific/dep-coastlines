@@ -22,8 +22,8 @@ from dep_tools.utils import get_container_client, scale_to_int16
 from dep_tools.writers import DsWriter
 
 from dep_coastlines.water_indices import twndwi
-from dep_coastlines.ProjOdcLoader import ProjOdcLoader
-from dep_coastlines.tide_utils import filter_by_tides, TideLoader
+from dep_coastlines.io import ProjOdcLoader, TideLoader
+from dep_coastlines.tide_utils import filter_by_tides
 from dep_coastlines.task_utils import get_ids, bool_parser
 from dep_coastlines.grid import buffered_grid as grid
 

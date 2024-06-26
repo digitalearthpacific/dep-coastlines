@@ -1,6 +1,7 @@
 """Calculates low-resolution tide rasters for all areas and times using 
 functionality from the Digital Earth Austalia project. In the DEA and DEAfrica
 coastline processing this is included with other raster processing but 
+in our work
 1) It has separate prerequisites that other pieces due to the tidal calculation
    packages (see below).
 2) This is the most static part of the workflow in that once the areas are
@@ -33,7 +34,7 @@ from dep_tools.processors import Processor
 from dep_tools.task import ErrorCategoryAreaTask, MultiAreaTask
 from dep_tools.utils import get_container_client
 
-from dep_coastlines.ProjOdcLoader import ProjOdcLoader
+from dep_coastlines.io import ProjOdcLoader
 from grid import grid
 from task_utils import get_ids
 from writer import DaWriter
