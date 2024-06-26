@@ -16,9 +16,11 @@ from typing import Tuple, Annotated, Callable
 from dask.distributed import Client
 from coastlines.vector import (
     all_time_stats,
-    points_on_line,
+    annual_movements,
     calculate_regressions,
+    certainty_masking,
     contour_certainty,
+    points_on_line,
     region_atttributes,
 )
 from dea_tools.spatial import subpixel_contours
@@ -53,7 +55,6 @@ from dep_coastlines.raster_cleaning import (
 )
 from dep_coastlines.grid import buffered_grid as GRID
 from dep_coastlines.task_utils import get_ids
-from dep_coastlines.vector import certainty_masking, annual_movements
 from dep_coastlines.writer import CoastlineWriter
 
 
