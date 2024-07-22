@@ -1,4 +1,4 @@
-FROM ghcr.io/osgeo/gdal:ubuntu-full-3.7.1
+FROM ghcr.io/osgeo/gdal:ubuntu-full-3.8.4
 
 RUN apt-get update && apt-get install -y \
     python3-pip \
