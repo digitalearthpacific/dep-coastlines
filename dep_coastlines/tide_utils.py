@@ -1,25 +1,9 @@
 from typing import Tuple
 
-from pandas import Timestamp
 from retry import retry
-import rioxarray as rx
 from xarray import DataArray, Dataset
 
-
 from dep_tools.loaders import Loader
-from dep_tools.namers import DepItemPath
-
-
-def tides_lowres(da: Dataset, item_id, tide_loader: Loader) -> DataArray:
-    tides_lowres = tide_loader.load(item_id)
-    da = da.sel(time=da.time[da.time.isin(tides_lowres.time)])
-
-    # Now filter out tide times that are not in the ds
-    tides_lowres = tides_lowres.sel(
-        time=tides_lowres.time[tides_lowres.time.isin(da.time)]
-    ).chunk(dict(x=-1, y=-1, time=1))
-
-    return tides_lowres
 
 
 @retry(tries=10, delay=3)
@@ -70,36 +54,3 @@ def tide_cutoffs_dask(
     tide_cutoff_max = tide_centre + tide_cutoff_buffer
 
     return tide_cutoff_min, tide_cutoff_max
-
-
-class TideLoader(Loader):
-    def __init__(
-        self,
-        itempath: DepItemPath,
-        storage_account: str = "deppcpublicstorage",
-        container_name: str = "output",
-    ):
-        self._itempath = itempath
-        self._storage_account = storage_account
-        self._container_name = container_name
-
-    def load(self, item_id) -> DataArray:
-        da = rx.open_rasterio(
-            f"https://{self._storage_account}.blob.core.windows.net/{self._container_name}/{self._itempath.path(item_id)}",
-            chunks={"x": 1, "y": 1},
-        )
-        time_strings = da.attrs["long_name"]
-        band_names = (
-            # this is the original data type produced by pixel_tides
-            [Timestamp(t) for t in time_strings]
-            # In case there's only one
-            if isinstance(time_strings, Tuple)
-            else [Timestamp(time_strings)]
-        )
-
-        return (
-            da.assign_coords(band=("band", band_names))
-            .rename(band="time")
-            .drop_duplicates(...)
-            .rio.write_nodata(float("nan"))
-        )

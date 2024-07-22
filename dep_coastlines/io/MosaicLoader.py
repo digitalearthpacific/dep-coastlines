@@ -1,5 +1,4 @@
 from pathlib import Path
-from statistics import mode
 import warnings
 
 from azure.storage.blob import ContainerClient
@@ -17,14 +16,6 @@ from dep_tools.utils import get_container_client
 from dep_coastlines.water_indices import twndwi, mndwi, ndwi, nirwi
 
 
-# see the old utils.py for improvements in here
-def _set_year_to_middle_year(xr: xr.Dataset) -> xr.Dataset:
-    edge_years = [y.split("/") for y in xr.year.to_numpy()]
-    middle_years = [str(int(mean([int(y[0]), int(y[1])]))) for y in edge_years]
-    xr["year"] = middle_years
-    return xr
-
-
 def get_datetimes(start_year, end_year, years_per_composite):
     # nearly duplicated in task_utils, should probably refactor
     # yeah, just switch to get_composite_datetime and make years separate
@@ -37,17 +28,6 @@ def get_datetimes(start_year, end_year, years_per_composite):
             for y in sliding_window_view(list(years), years_per_composite)
         ]
     return [str(y) for y in years]
-
-
-def unify_crses(dss):
-    crses = [ds.odc.crs.to_epsg() for ds in dss]
-    if len(set(crses)) > 1:
-        most_common_crs = mode(crses)
-        most_common_geobox = dss[crses.index(most_common_crs)].odc.geobox
-        for i, ds in enumerate(dss):
-            if ds.odc.crs.to_epsg() != most_common_crs:
-                dss[i] = ds.odc.reproject(most_common_geobox)
-    return dss
 
 
 class MultiyearMosaicLoader(Loader):
@@ -104,7 +84,7 @@ class MultiyearMosaicLoader(Loader):
 
     def load(self, area) -> xr.Dataset | list[xr.Dataset]:
         if not isinstance(self._years_per_composite, list):
-            return add_deviations(
+            return _add_deviations(
                 self.load_composite_set(area, self._years_per_composite)
             )
         else:
@@ -115,7 +95,7 @@ class MultiyearMosaicLoader(Loader):
             # all_time = composite_sets[0].median(dim="year").compute()
 
             return [
-                add_deviations(composite_set)  # , all_time)
+                _add_deviations(composite_set)  # , all_time)
                 for composite_set in composite_sets
             ]
 
@@ -163,14 +143,24 @@ class MosaicLoader(Loader):
                 ]
             ] /= 10_000
 
-            return add_deviations(output, all_time) if self._add_deviations else output
+            return _add_deviations(output, all_time) if self._add_deviations else output
         else:
             message = "No items in folder " + self._itempath._folder(item_id)
             warnings.warn(message)
             return None
 
 
-def add_deviations(xr, all_time=None):
+def _set_year_to_middle_year(ds: xr.Dataset) -> xr.Dataset:
+    """For an xarray Dataset with a "year" coordinate with format YYYY/YYYY+2
+    (e.g. 2021/2023), the year is set to the midpoint (2022 in this example)
+    """
+    edge_years = [y.split("/") for y in ds.year.to_numpy()]
+    middle_years = [str(int(mean([int(y[0]), int(y[1])]))) for y in edge_years]
+    ds["year"] = middle_years
+    return ds
+
+
+def _add_deviations(xr, all_time=None):
     if all_time is None:
         all_time = xr.median(dim="year")
     deviation = xr - all_time

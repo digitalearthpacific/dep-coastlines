@@ -46,6 +46,7 @@ from dep_tools.utils import get_container_client
 
 from dep_coastlines.io import CoastlineWriter, MultiyearMosaicLoader
 from dep_coastlines.cloud_model.predictor import ModelPredictor
+from dep_coastlines.cloud_model.fit_model import SavedModel
 from dep_coastlines.raster_cleaning import (
     load_gadm_land,
     find_inland_areas,
@@ -53,7 +54,7 @@ from dep_coastlines.raster_cleaning import (
     remove_disconnected_land,
     smooth_gaussian,
 )
-from dep_coastlines.grid import buffered_grid as GRID
+from dep_coastlines.grid import test_buffered_grid as GRID
 from dep_coastlines.task_utils import get_ids
 
 
@@ -78,7 +79,7 @@ class Cleaner(Processor):
         comparison: Callable = operator.lt,
         number_of_expansions: int = 8,
         baseline_year: str = "2023",
-        model_file=Path(__file__).parent / "models/full_model_17May2024.joblib",
+        model_file=Path(__file__).parent / "cloud_model/full_model_0-7-0-4.joblib",
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -284,7 +285,7 @@ class Cleaner(Processor):
         coastlines = contour_certainty(
             self.coastlines.set_index("year"), certainty_masks
         ).reset_index()
-        self.roc_points = self.points(coastlines, water_index)
+        self.roc_points = self.points(coastlines, output[self.water_index_name])
 
         self.add_attributes()
 
@@ -349,7 +350,7 @@ def run(
 
 
 @app.command()
-@retry(tries=3)
+# @retry(tries=3)
 def process_id(
     row: Annotated[str, Option()],
     column: Annotated[str, Option()],

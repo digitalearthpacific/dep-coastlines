@@ -72,6 +72,8 @@ def train(training_data):
 
 
 if __name__ == "__main__":
-    training_data_file = "../data/training_data_with_features_0-7-0-4_17May2024.csv"
+    training_data_file = (
+        "dep_coastlines/cloud_model/training_data_with_features_0-7-0-4_17May2024.csv"
+    )
     output = train(training_data_file)
-    dump(output, "../dep_coastlines/full_model_17May2024.joblib")
+    dump(output, "dep_coastlines/cloud_model/full_model_0-7-0-4.joblib")

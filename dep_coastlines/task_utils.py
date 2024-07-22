@@ -1,7 +1,6 @@
+from typing import Annotated, Optional
 import json
 import sys
-
-from typing import Annotated, Optional
 
 from typer import Typer, Option
 

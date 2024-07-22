@@ -80,7 +80,7 @@ def fill_with_nearby_dates(xarr: DataArray | Dataset) -> DataArray:
             intyear = int(year)
             years = [
                 str(y)
-                for y in [intyear + 1, intyear - 1, intyear + 2, intyear - 2]
+                for y in [intyear + 1, intyear - 1]  # , intyear + 2, intyear - 2]
                 if str(y) in da.year.values
             ]
             for inner_year in years:
