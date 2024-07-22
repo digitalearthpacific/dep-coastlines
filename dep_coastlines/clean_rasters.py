@@ -177,16 +177,16 @@ class Cleaner(Processor):
         # tidal flats
         # reefs
 
-        points_gdf.loc[points_gdf.rate_time.abs() > 200, "certainty"] = (
-            "extreme value (> 200 m)"
-        )
+        points_gdf.loc[
+            points_gdf.rate_time.abs() > 200, "certainty"
+        ] = "extreme value (> 200 m)"
 
-        points_gdf.loc[points_gdf.angle_std > 30, "certainty"] = (
-            "high angular variability"
-        )
-        points_gdf.loc[points_gdf.valid_obs < 15, "certainty"] = (
-            "insufficient observations"
-        )
+        points_gdf.loc[
+            points_gdf.angle_std > 30, "certainty"
+        ] = "high angular variability"
+        points_gdf.loc[
+            points_gdf.valid_obs < 15, "certainty"
+        ] = "insufficient observations"
 
         # Generate a geohash UID for each point and set as index
         uids = (
