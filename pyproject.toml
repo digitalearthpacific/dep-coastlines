@@ -13,7 +13,12 @@ requires-python = ">=3.10"
 dynamic = ["dependencies"]
 
 [tool.setuptools]
-packages = ["dep_coastlines"]
+packages = [
+  "dep_coastlines",
+  "dep_coastlines.io",
+  "dep_coastlines.cloud_model",
+  "dep_coastlines.validation"
+]
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
