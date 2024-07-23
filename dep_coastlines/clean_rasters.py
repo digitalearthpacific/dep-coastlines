@@ -177,16 +177,16 @@ class Cleaner(Processor):
         # tidal flats
         # reefs
 
-        points_gdf.loc[
-            points_gdf.rate_time.abs() > 200, "certainty"
-        ] = "extreme value (> 200 m)"
+        points_gdf.loc[points_gdf.rate_time.abs() > 200, "certainty"] = (
+            "extreme value (> 200 m)"
+        )
 
-        points_gdf.loc[
-            points_gdf.angle_std > 30, "certainty"
-        ] = "high angular variability"
-        points_gdf.loc[
-            points_gdf.valid_obs < 15, "certainty"
-        ] = "insufficient observations"
+        points_gdf.loc[points_gdf.angle_std > 30, "certainty"] = (
+            "high angular variability"
+        )
+        points_gdf.loc[points_gdf.valid_obs < 15, "certainty"] = (
+            "insufficient observations"
+        )
 
         # Generate a geohash UID for each point and set as index
         uids = (
@@ -283,10 +283,10 @@ class Cleaner(Processor):
             raise NoOutputError("no coastlines created; water index may be empty")
 
         certainty_masks = certainty_masking(output, variation_var)
-        coastlines = contour_certainty(
+        self.coastlines = contour_certainty(
             self.coastlines.set_index("year"), certainty_masks
         ).reset_index()
-        self.roc_points = self.points(coastlines, output[self.water_index_name])
+        self.roc_points = self.points(self.coastlines, output[self.water_index_name])
 
         self.add_attributes()
 
