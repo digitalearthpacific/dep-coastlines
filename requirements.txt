@@ -1,7 +1,7 @@
 azure-logger @ git+https://github.com/jessjaco/azure-logger.git
 dep-tools @ git+https://github.com/digitalearthpacific/dep-tools.git
 dep-grid @ git+https://github.com/digitalearthpacific/dep-grid.git@cleanup
-deafrica_coastlines @ git+https://github.com/digitalearthpacific/deafrica-coastlines.git@5a393e2
+# deafrica_coastlines @ git+https://github.com/digitalearthpacific/deafrica-coastlines.git@5a393e2
 joblib
 odc-geo>=0.4.2
 pyarrow
