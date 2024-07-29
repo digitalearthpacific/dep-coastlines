@@ -101,7 +101,6 @@ class Cleaner(Processor):
         # Only expand where there's an edge that's land. Do it multiple times
         # to fill between larger areas. Later we will fill one last time with
         # water to ensure lines are closed.
-
         def expand_once(analysis_zone):
             return analysis_zone | mask_cleanup(
                 self.land(output.where(analysis_zone)),
@@ -253,7 +252,7 @@ class Cleaner(Processor):
             .where(analysis_zone | core_land)
             .where(~max_cap, obvious_water)
             .groupby("year")
-            .map(smooth_gaussian)
+            .map(smooth_gaussian, sigma=0.4)
             .rio.write_crs(output.rio.crs)
         )
 

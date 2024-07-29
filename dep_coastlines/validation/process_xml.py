@@ -11,7 +11,7 @@ from odc.geo.xr import xr_zeros
 import xarray as xr
 
 from dep_tools.namers import DepItemPath
-from dep_coastlines.tide_utils import filter_by_tides, TideLoader
+from dep_coastlines.io.TideLoader import TideLoader
 
 
 def _get_da(record, crs):
@@ -50,6 +50,7 @@ def prep_xml():
 
         record = dict(
             image_id=root.findall("./IMD/PRODUCTORDERID")[0].text,
+            product_level=root.findall("./IMD/PRODUCTLEVEL")[0].text,
             path=str(xml_file),
             time=np.datetime64(mpp["EARLIESTACQTIME"]),
             datum=mpp["DATUMNAME"],
@@ -126,7 +127,7 @@ def calculate_valid_areas(gdf):
 
 if __name__ == "__main__":
     image_boxes = prep_xml()
+    breakpoint()
     coastline_grid = gpd.read_file("data/coastline_grid.gpkg")
     coastal_areas_in_boxes = image_boxes.overlay(coastline_grid, how="intersection")
     coastal_areas_in_boxes.groupby("image_id").apply(calculate_valid_areas)
-    breakpoint()

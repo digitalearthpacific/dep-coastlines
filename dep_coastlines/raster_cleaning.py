@@ -11,9 +11,11 @@ instance, temporal_masking), and I am sure there will be modifications /
 additions to the workflow which are study area specific to the Pacific.
 """
 
+import numpy as np
 from rasterio.warp import transform_bounds
 import rioxarray as rx
 from skimage.measure import label
+from scipy.ndimage import gaussian_filter
 import xarray as xr
 import xrspatial as xs
 from xarray import apply_ufunc, DataArray, Dataset
@@ -21,12 +23,23 @@ from xarray import apply_ufunc, DataArray, Dataset
 BooleanDataArray = DataArray
 
 
-def smooth_gaussian(da: DataArray) -> DataArray:
+def smooth_gaussian(da: DataArray, sigma: float = 0.799) -> DataArray:
     """Apply a 3x3 gaussian kernel to the input. The convolution ignores nan values
     by using the kernel values for the non-nan pixels only, and scaling the
-    divisor accordingly."""
+    divisor accordingly.
 
-    weights = DataArray([[1, 2, 1], [2, 4, 2], [1, 2, 1]], dims=("xw", "yw"))
+    A sigma value of 0.799 represents a "classic" 3x3 kernel with a center weight
+    of approximately 1/4, side weights of approximately 1/8, and corner weights of
+    approximately 1/16. Lower values more heavily weight the center.
+    """
+
+    def kernel(sigma: float):
+        """Returns a 2D Gaussian kernel array."""
+        input = np.zeros((3, 3))
+        input[1, 1] = 1
+        return gaussian_filter(input, sigma)
+
+    weights = DataArray(kernel(sigma), dims=("xw", "yw"))
     total = (
         da.fillna(0)
         .rolling(x=3, y=3, center=True)
