@@ -20,24 +20,23 @@ modified to run in the cloud but would require a docker image with the large tid
 embedded.
 """
 
-import planetary_computer
-import pystac_client
+import planetary_computer as pc
 from xarray import Dataset
 
 from dea_tools.coastal import pixel_tides
 
-from azure_logger import CsvLogger
+from cloud_logger import CsvLogger, S3Handler
 from dep_tools.loaders import SearchLoader
 from dep_tools.searchers import LandsatPystacSearcher
 from dep_tools.namers import DepItemPath
 from dep_tools.processors import Processor
 from dep_tools.task import ErrorCategoryAreaTask, MultiAreaTask
-from dep_tools.utils import get_container_client
+from dep_tools.aws import write_to_s3
 
-from dep_coastlines.io import ProjOdcLoader
+from dep_coastlines.config import BUCKET
 from grid import grid
 from task_utils import get_ids
-from writer import DaWriter
+from dep_coastlines.io import PreprocessWriter, ProjOdcLoader, OdcMemoryWriter, S3Writer
 
 
 class TideProcessor(Processor):
@@ -56,21 +55,20 @@ class TideProcessor(Processor):
         ).transpose("time", "y", "x")
 
         tides_lowres.coords["time"] = tides_lowres.coords["time"].astype("str")
-        return tides_lowres.to_dataset("time")
+        return tides_lowres  # .to_dataset("time")
 
 
 def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) -> None:
-    client = pystac_client.Client.open(
-        "https://planetarycomputer.microsoft.com/api/stac/v1",
-        modifier=planetary_computer.sign_inplace,
-    )
     searcher = LandsatPystacSearcher(
-        search_intersecting_pathrows=True, client=client, datetime=datetime
+        search_intersecting_pathrows=True,
+        catalog="https://planetarycomputer.microsoft.com/api/stac/v1",
+        datetime=datetime,
     )
     stacloader = ProjOdcLoader(
         fail_on_error=False,
         chunks=dict(band=1, time=1, x=1024, y=1024),
         bands=["red"],
+        url_patch=pc.sign,
     )
     loader = SearchLoader(searcher, stacloader)
 
@@ -83,14 +81,20 @@ def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) 
         zero_pad_numbers=True,
     )
 
-    writer = DaWriter(itempath=namer, driver="COG", blocksize=16)
+    memory_writer = OdcMemoryWriter(block_size=16)
+    s3_writer = S3Writer(itempath=namer, bucket=BUCKET)
+    writer = PreprocessWriter(pre_processor=memory_writer, writer=s3_writer)
+
+    # writer = CompositeWriter(
+    #    itempath=namer, driver="COG", blocksize=16, writer=write_to_s3, bucket="dep-cl"
+    # )
 
     logger = CsvLogger(
         name=dataset_id,
-        container_client=get_container_client(),
-        path=namer.log_path(),
+        path=f"{BUCKET}/{namer.log_path()}",
         overwrite=False,
         header="time|index|status|paths|comment\n",
+        cloud_handler=S3Handler,
     )
 
     if isinstance(task_id, list):
@@ -111,7 +115,7 @@ def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) 
 
 if __name__ == "__main__":
     datetime = "1984/2023"
-    version = "0.7.0"
-    dataset_id = "coastlines/tpxo9"
+    version = "0.8.0"
+    dataset_id = "coastlines/interim/tpxo9"
     task_ids = get_ids(datetime, version, dataset_id)
     run(task_ids, datetime, version, dataset_id)

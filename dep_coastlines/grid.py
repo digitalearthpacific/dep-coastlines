@@ -1,23 +1,24 @@
 from pathlib import Path
+from threading import local
 
 import geopandas as gpd
 from shapely import make_valid
+from s3fs import S3FileSystem
 
 from dep_grid.grid import grid, PACIFIC_EPSG
-from dep_tools.azure import blob_exists
-from dep_tools.utils import write_to_blob_storage
 
-url_prefix = "https://deppcpublicstorage.blob.core.windows.net/output/"
+import dep_coastlines.config as config
 
-grid_blob_path = "aoi/coastline_grid.gpkg"
-local_grid_blob_path = Path(__file__).parent / "../data/coastline_grid.gpkg"
-grid_url = url_prefix + grid_blob_path
+remote_fs = S3FileSystem()
 
-buffered_grid_blob_path = "aoi/buffered_coastline_grid.gpkg"
-local_buffered_grid_blob_path = (
-    Path(__file__).parent / "../data/buffered_coastline_grid.gpkg"
-)
-buffered_grid_url = url_prefix + buffered_grid_blob_path
+grid_name = "coastline_grid.gpkg"
+local_grid_blob_path = Path(__file__).parent / f"../data/{grid_name}"
+grid_bucket_path = f"{config.BUCKET}/aoi/{grid_name}"
+
+buffered_grid_name = "buffered_coastline_grid.gpkg"
+local_buffered_grid_blob_path = Path(__file__).parent / f"../data/{buffered_grid_name}"
+buffered_grid_bucket_path = f"{config.BUCKET}/aoi/{grid_name}"
+
 
 OVERWRITE = False
 
@@ -58,7 +59,7 @@ def get_best_zone(gdf) -> gpd.GeoDataFrame:
 
 
 def make_grid(buffer=None) -> gpd.GeoDataFrame:
-    aoi = gpd.read_file(url_prefix + "aoi/aoi.gpkg")
+    aoi = gpd.read_file(f"s3://{config.BUCKET}/aoi/aoi.gpkg")
 
     # A buffer of the exterior line created weird interior gaps,
     # (See https://github.com/locationtech/jts/issues/876)
@@ -106,31 +107,28 @@ def make_grid(buffer=None) -> gpd.GeoDataFrame:
     return get_best_zone(coastline_grid)
 
 
-if not blob_exists(grid_blob_path) or OVERWRITE:
+if not local_grid_blob_path.exists or OVERWRITE:
     coastline_grid = make_grid()
-    write_to_blob_storage(
-        coastline_grid,
-        grid_blob_path,
-        driver="GPKG",
-        layer_name="coastline_grid",
-    )
-    coastline_grid.to_file(local_grid_blob_path)
+    coastline_grid.to_file(local_grid_blob_path, layer_name="coastline_grid")
 
-if not blob_exists(buffered_grid_blob_path) or OVERWRITE:
+if not remote_fs.exists(grid_bucket_path) or OVERWRITE:
+    remote_fs.put_file(local_grid_blob_path, grid_bucket_path)
+
+
+if not local_buffered_grid_blob_path.exists or OVERWRITE:
     coastline_grid = make_grid(250)
-    write_to_blob_storage(
-        coastline_grid,
-        buffered_grid_blob_path,
-        driver="GPKG",
-        layer_name="coastline_grid",
-    )
     coastline_grid.to_file(local_buffered_grid_blob_path)
 
+if not remote_fs.exists(buffered_grid_bucket_path) or OVERWRITE:
+    remote_fs.put_file(local_buffered_grid_blob_path, buffered_grid_bucket_path)
 
-grid = gpd.read_file(grid_url).set_index(["row", "column"])
+
+grid = gpd.read_file(f"s3://{grid_bucket_path}").set_index(["row", "column"])
 # Only filter to those ids in grid...we don't want just buffer
 buffered_grid = (
-    gpd.read_file(buffered_grid_url).set_index(["row", "column"]).loc[grid.index]
+    gpd.read_file(f"s3://{buffered_grid_bucket_path}")
+    .set_index(["row", "column"])
+    .loc[grid.index]
 )
 
 test_tiles = [

@@ -147,7 +147,6 @@ def run(
         overwrite=False,
         load_before_write=load_before_write,
         extra_attrs=dict(dep_version=version),
-        #        write_multithreaded=False,
     )
     logger = CsvLogger(
         name=DATASET_ID,
