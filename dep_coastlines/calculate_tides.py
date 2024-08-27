@@ -20,6 +20,8 @@ modified to run in the cloud but would require a docker image with the large tid
 embedded.
 """
 
+from pathlib import Path
+
 import planetary_computer
 import pystac_client
 from xarray import Dataset
@@ -35,22 +37,29 @@ from dep_tools.task import ErrorCategoryAreaTask, MultiAreaTask
 from dep_tools.utils import get_container_client
 
 from dep_coastlines.io import ProjOdcLoader
-from grid import grid
-from task_utils import get_ids
-from writer import DaWriter
+from dep_coastlines.grid import grid
+from dep_coastlines.task_utils import get_ids
+from dep_coastlines.io import DaWriter
 
 
 class TideProcessor(Processor):
+    def __init__(self, tide_directory: Path | str = "../coastlines-local/tidal-models"):
+        super().__init__()
+        self._tide_directory = tide_directory
+
     def process(self, xr: Dataset, area) -> Dataset:
+        a_variable = list(xr.keys())[0]
         working_ds = xr.rio.clip(
-            area.to_crs(xr.red.rio.crs).geometry, all_touched=True, from_disk=True
-        ).red.drop_duplicates(...)
+            area.to_crs(xr[a_variable].rio.crs).geometry,
+            all_touched=True,
+            from_disk=True,
+        )[a_variable].drop_duplicates(...)
 
         tides_lowres = pixel_tides(
             working_ds,
             resample=False,
             model="TPXO9-atlas-v5",
-            directory="../coastlines-local/tidal-models/",
+            directory=self._tide_directory,
             resolution=4980,
             parallel=False,
         ).transpose("time", "y", "x")
