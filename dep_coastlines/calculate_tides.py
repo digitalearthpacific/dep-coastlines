@@ -21,28 +21,29 @@ embedded.
 """
 
 from pathlib import Path
-import planetary_computer as pc
+
+from boto3 import setup_default_session
+from dask.distributed import Client
+import typer
 from xarray import Dataset
 
 from dea_tools.coastal import pixel_tides
 
-from cloud_logger import CsvLogger, S3Handler
-from dep_tools.loaders import SearchLoader
 from dep_tools.searchers import LandsatPystacSearcher
-from dep_tools.namers import DepItemPath
 from dep_tools.processors import Processor
-from dep_tools.task import ErrorCategoryAreaTask, MultiAreaTask
-from dep_tools.aws import write_to_s3
+from dep_tools.task import MultiAreaTask, StacTask
 
-from dep_coastlines.io import ProjOdcLoader
+from dep_coastlines.common import coastlineLogger, coastlineItemPath, LOCAL_AWS_PROFILE
+from dep_coastlines.io import ProjOdcLoader, CompositeWriter
 from dep_coastlines.grid import grid
 from dep_coastlines.task_utils import get_ids
-from dep_coastlines.io import DaWriter
 
 
 class TideProcessor(Processor):
-    def __init__(self, tide_directory: Path | str = "../coastlines-local/tidal-models"):
-        super().__init__()
+    def __init__(
+        self, tide_directory: Path | str = "../coastlines-local/tidal-models", **kwargs
+    ):
+        super().__init__(**kwargs)
         self._tide_directory = tide_directory
 
     def process(self, xr: Dataset, area) -> Dataset:
@@ -66,64 +67,65 @@ class TideProcessor(Processor):
         return tides_lowres  # .to_dataset("time")
 
 
-def run(task_id: str | list[str], datetime: str, version: str, dataset_id: str) -> None:
+def run(
+    task_id: str | list[str],
+    datetime: str,
+    version: str,
+    dataset_id: str,
+    setup_auth: bool = False,
+) -> None:
+    if setup_auth:
+        setup_default_session(profile_name=LOCAL_AWS_PROFILE)
+
     searcher = LandsatPystacSearcher(
         search_intersecting_pathrows=True,
-        catalog="https://planetarycomputer.microsoft.com/api/stac/v1",
+        catalog="https://earth-search.aws.element84.com/v1",
         datetime=datetime,
     )
-    stacloader = ProjOdcLoader(
+    loader = ProjOdcLoader(
         fail_on_error=False,
         chunks=dict(band=1, time=1, x=1024, y=1024),
         bands=["red"],
-        url_patch=pc.sign,
     )
-    loader = SearchLoader(searcher, stacloader)
 
     processor = TideProcessor(send_area_to_processor=True)
-    namer = DepItemPath(
-        sensor="ls",
-        dataset_id=dataset_id,
-        version=version,
-        time=datetime.replace("/", "_"),
-        zero_pad_numbers=True,
-    )
+    namer = coastlineItemPath(dataset_id, version, datetime)
 
-    memory_writer = OdcMemoryWriter(block_size=16)
-    s3_writer = S3Writer(itempath=namer, bucket=BUCKET)
-    writer = PreprocessWriter(pre_processor=memory_writer, writer=s3_writer)
+    writer = CompositeWriter(itempath=namer, driver="COG", blocksize=16)
 
-    # writer = CompositeWriter(
-    #    itempath=namer, driver="COG", blocksize=16, writer=write_to_s3, bucket="dep-cl"
-    # )
-
-    logger = CsvLogger(
-        name=dataset_id,
-        path=f"{BUCKET}/{namer.log_path()}",
-        overwrite=False,
-        header="time|index|status|paths|comment\n",
-        cloud_handler=S3Handler,
-    )
+    logger = coastlineLogger(namer, dataset_id=dataset_id, setup_auth=setup_auth)
 
     if isinstance(task_id, list):
         MultiAreaTask(
-            task_id,
-            grid,
-            ErrorCategoryAreaTask,
-            loader,
-            processor,
-            writer,
-            logger,
+            ids=task_id,
+            areas=grid,
+            task_class=StacTask,
+            searcher=searcher,
+            loader=loader,
+            processor=processor,
+            writer=writer,
+            logger=logger,
         ).run()
     else:
-        ErrorCategoryAreaTask(
-            task_id, grid.loc[[task_id]], loader, processor, writer, logger
+        StacTask(
+            task_id,
+            grid.loc[[task_id]],
+            searcher=searcher,
+            loader=loader,
+            processor=processor,
+            writer=writer,
+            logger=logger,
         ).run()
 
 
-if __name__ == "__main__":
+def main(setup_auth: bool = False):
     datetime = "1984/2023"
     version = "0.8.0"
     dataset_id = "coastlines/interim/tpxo9"
-    task_ids = get_ids(datetime, version, dataset_id)
-    run(task_ids, datetime, version, dataset_id)
+    task_ids = get_ids(datetime, version, dataset_id, setup_auth=setup_auth)
+    with Client():
+        run(task_ids, datetime, version, dataset_id, setup_auth=setup_auth)
+
+
+if __name__ == "__main__":
+    typer.run(main)

@@ -11,7 +11,7 @@ import xarray as xr
 from dep_tools.azure import list_blob_container
 from dep_tools.loaders import Loader
 from dep_tools.namers import DepItemPath
-from dep_tools.utils import get_container_client
+from dep_tools.azure import get_container_client
 
 from dep_coastlines.water_indices import twndwi, mndwi, ndwi, nirwi
 

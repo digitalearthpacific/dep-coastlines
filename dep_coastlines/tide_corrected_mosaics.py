@@ -5,27 +5,24 @@ from typing import Iterable, Tuple, Annotated
 
 from dask.distributed import Client
 from odc.geo.geobox import AnchorEnum
-import planetary_computer
-import pystac_client
 from typer import Option, Typer
 from xarray import Dataset, DataArray
 
-from azure_logger import CsvLogger
 from dep_tools.landsat_utils import cloud_mask
-from dep_tools.loaders import SearchLoader
 from dep_tools.namers import DepItemPath
 from dep_tools.searchers import LandsatPystacSearcher
 from dep_tools.stac_utils import set_stac_properties
-from dep_tools.processors import LandsatProcessor
-from dep_tools.task import ErrorCategoryAreaTask, MultiAreaTask
-from dep_tools.utils import get_container_client, scale_to_int16
-from dep_tools.writers import DsWriter
+from dep_tools.processors import LandsatProcessor, XrPostProcessor
+from dep_tools.task import MultiAreaTask, AwsStacTask
+from dep_tools.utils import scale_to_int16
+from dep_tools.writers import AwsDsCogWriter
 
-from dep_coastlines.water_indices import twndwi
+from dep_coastlines.common import coastlineItemPath, coastlineLogger
+from dep_coastlines.grid import buffered_grid as grid
 from dep_coastlines.io import ProjOdcLoader, TideLoader
 from dep_coastlines.tide_utils import filter_by_tides
 from dep_coastlines.task_utils import get_ids, bool_parser
-from dep_coastlines.grid import buffered_grid as grid
+from dep_coastlines.water_indices import twndwi
 
 DATASET_ID = "coastlines/mosaics-corrected"
 app = Typer()
@@ -108,17 +105,14 @@ def run(
     version: str,
     dataset_id: str = DATASET_ID,
     load_before_write: bool = False,
+    setup_auth: bool = False,
 ) -> None:
-    client = pystac_client.Client.open(
-        "https://planetarycomputer.microsoft.com/api/stac/v1",
-        modifier=planetary_computer.sign_inplace,
-    )
     searcher = LandsatPystacSearcher(
         search_intersecting_pathrows=True,
-        client=client,
+        catalog="https://earth-search.aws.element84.com/v1",
         datetime=datetime,
     )
-    stacloader = ProjOdcLoader(
+    loader = ProjOdcLoader(
         datetime=datetime,
         chunks=dict(band=1, time=1, x=8192, y=8192),
         resampling={"qa_pixel": "nearest", "*": "cubic"},
@@ -128,47 +122,44 @@ def run(
         dtype="float32",
         anchor=AnchorEnum.CENTER,  # see relevant issue for why this is needed
     )
-    loader = SearchLoader(searcher, stacloader)
 
     processor = MosaicProcessor(
         mask_clouds=True, scale_and_offset=True, send_area_to_processor=True
     )
 
-    namer = DepItemPath(
-        sensor="ls",
-        dataset_id=dataset_id,
-        version=version,
-        time=datetime.replace("/", "_"),
-        zero_pad_numbers=True,
-    )
-    writer = DsWriter(
-        itempath=namer,
+    namer = coastlineItemPath(dataset_id, version, datetime)
+    logger = coastlineLogger(namer, dataset_id=dataset_id, setup_auth=setup_auth)
+    post_processor = XrPostProcessor(
         convert_to_int16=False,
-        overwrite=False,
-        load_before_write=load_before_write,
         extra_attrs=dict(dep_version=version),
     )
-    logger = CsvLogger(
-        name=DATASET_ID,
-        container_client=get_container_client(),
-        path=namer.log_path(),
-        overwrite=False,
-        header="time|index|status|paths|comment\n",
+
+    writer = AwsDsCogWriter(
+        itempath=namer, overwrite=False, load_before_write=load_before_write
     )
 
     if isinstance(task_id, list):
         MultiAreaTask(
             task_id,
             grid,
-            ErrorCategoryAreaTask,
-            loader,
-            processor,
-            writer,
-            logger,
+            AwsStacTask,
+            searcher=searcher,
+            loader=loader,
+            processor=processor,
+            post_processor=post_processor,
+            writer=writer,
+            logger=logger,
         ).run()
     else:
-        ErrorCategoryAreaTask(
-            task_id, grid.loc[[task_id]], loader, processor, writer, logger
+        AwsStacTask(
+            itempath=namer,
+            id=task_id,
+            area=grid.loc[[task_id]],
+            searcher=searcher,
+            loader=loader,
+            processor=processor,
+            post_processor=post_processor,
+            logger=logger,
         ).run()
 
 

@@ -4,78 +4,79 @@ from coastlines.vector import vector_schema
 from geopandas import GeoDataFrame
 from xarray import Dataset
 
+from dep_tools.aws import write_to_s3
 from dep_tools.processors import Processor
-from dep_tools.namers import DepItemPath
+from dep_tools.namers import S3ItemPath
 from dep_tools.writers import Writer
 
 
-class PreprocessWriter(Writer):
-    def __init__(self, pre_processor: Processor, writer: Writer, **kwargs):
-        self._pre_processor = pre_processor
-        self._writer = writer
-        self._kwargs = kwargs
-
-    def write(self, data, item_id):
-        output = self._pre_processor.process(data)
-        return self._writer.write(output, item_id, **self._kwargs)
-
-
-from odc.geo.xr import to_cog
-
-
-class OdcMemoryWriter(Processor):
-    def __init__(self, **kwargs):
-        self._kwargs = kwargs
-
-    def process(self, d):
-        return to_cog(d, **self._kwargs)
-
-
-import boto3
-from botocore.client import BaseClient
-from dep_tools.aws import s3_dump
-
-
-class S3Writer(Writer):
-    def __init__(
-        self,
-        itempath: DepItemPath,
-        bucket: str,
-        client: BaseClient | None = None,
-        **kwargs,
-    ):
-        self._itempath = itempath
-        self._bucket = bucket
-        if client is None:
-            client = boto3.client("s3")
-        self._client = client
-        self._kwargs = kwargs
-
-    def write(self, d, item_id):
-        path = self._itempath.path(item_id, ext=".tif")
-
-        s3_dump(d, bucket=self._bucket, key=path, client=self._client)
-
-
-# class CompositeWriter(Writer):
-#    def __init__(self, itempath: DepItemPath, writer=write_to_blob_storage, **kwargs):
-#        self._itempath = itempath
+# class PreprocessWriter(Writer):
+#    def __init__(self, pre_processor: Processor, writer: Writer, **kwargs):
+#        self._pre_processor = pre_processor
 #        self._writer = writer
-#        self.kwargs = kwargs
+#        self._kwargs = kwargs
 #
-#    def write(
-#        self, ds: Dataset | GeoDataFrame, item_id: str | list, ext: str = ".tif"
-#    ) -> str | list:
-#        path = self._itempath.path(item_id, ext=ext)
-#        self._writer(ds, path=path, **self.kwargs)
-#        return path
+#    def write(self, data, item_id):
+#        output = self._pre_processor.process(data)
+#        return self._writer.write(output, item_id, **self._kwargs)
 #
 #
-# DaWriter = CompositeWriter
+# from odc.geo.xr import to_cog
+#
+#
+# class OdcMemoryWriter(Processor):
+#    def __init__(self, **kwargs):
+#        self._kwargs = kwargs
+#
+#    def process(self, d):
+#        return to_cog(d, **self._kwargs)
+#
+#
+# import boto3
+# from botocore.client import BaseClient
+# from dep_tools.aws import s3_dump
+#
+#
+# class S3Writer(Writer):
+#    def __init__(
+#        self,
+#        itempath: DepItemPath,
+#        bucket: str,
+#        client: BaseClient | None = None,
+#        **kwargs,
+#    ):
+#        self._itempath = itempath
+#        self._bucket = bucket
+#        if client is None:
+#            client = boto3.client("s3")
+#        self._client = client
+#        self._kwargs = kwargs
+#
+#    def write(self, d, item_id):
+#        path = self._itempath.path(item_id, ext=".tif")
+#
+#        s3_dump(d, bucket=self._bucket, key=path, client=self._client)
+
+
+class CompositeWriter(Writer):
+    def __init__(self, itempath: S3ItemPath, **kwargs):
+        self._itempath = itempath
+        self._writer = write_to_s3
+        self.kwargs = kwargs
+
+    def write(
+        self, ds: Dataset | GeoDataFrame, item_id: str | list, ext: str = ".tif"
+    ) -> str | list:
+        path = self._itempath.path(item_id, ext=ext)
+        self._writer(ds, path=path, bucket=self._itempath.bucket, **self.kwargs)
+        return path
+
+
+DaWriter = CompositeWriter
 
 
 class CoastlineWriter(Writer):
-    def __init__(self, itempath: DepItemPath, **kwargs):
+    def __init__(self, itempath, **kwargs):
         # **kwargs are for e.g. overwrite, which applies to both
         self._rasterWriter = CompositeWriter(itempath, driver="COG", **kwargs)
         self._vectorWriter = CompositeWriter(itempath, driver="GPKG", **kwargs)
