@@ -1,4 +1,6 @@
+import re
 from typing import Optional
+
 from dep_tools.namers import S3ItemPath
 from cloud_logger import CsvLogger, S3Handler
 
@@ -7,7 +9,7 @@ LOCAL_AWS_PROFILE = "dep-staging-admin"
 
 
 def coastlineItemPath(dataset_id: str, version: str, time: str) -> S3ItemPath:
-    return S3ItemPath(
+    namer = S3ItemPath(
         bucket=BUCKET,
         sensor="ls",
         dataset_id=dataset_id,
@@ -15,6 +17,8 @@ def coastlineItemPath(dataset_id: str, version: str, time: str) -> S3ItemPath:
         time=time.replace("/", "_"),
         zero_pad_numbers=True,
     )
+    namer.item_prefix = re.sub("_interim|_raw|_processed", "", namer.item_prefix)
+    return namer
 
 
 def coastlineLogger(

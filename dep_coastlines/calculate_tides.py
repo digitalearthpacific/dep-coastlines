@@ -24,6 +24,11 @@ from pathlib import Path
 
 from boto3 import setup_default_session
 from dask.distributed import Client
+
+# so, um this needs to be imported before h5py or reading sometimes fails.
+# see e.g. https://github.com/Unidata/netcdf4-python/issues/694.
+# might be fixable with how the dependencies are built
+import netCDF4
 import typer
 from xarray import Dataset
 
@@ -57,9 +62,11 @@ class TideProcessor(Processor):
         tides_lowres = pixel_tides(
             working_ds,
             resample=False,
-            model="TPXO9-atlas-v5",
+            # model="TPXO9-atlas-v5",
+            model="FES2022",
             directory=self._tide_directory,
-            resolution=4980,
+            # resolution=4980,
+            resolution=3700,
             parallel=False,
         ).transpose("time", "y", "x")
 
@@ -88,7 +95,9 @@ def run(
         bands=["red"],
     )
 
-    processor = TideProcessor(send_area_to_processor=True)
+    processor = TideProcessor(
+        send_area_to_processor=True, tide_directory="data/raw/tidal_models"
+    )
     namer = coastlineItemPath(dataset_id, version, datetime)
 
     writer = CompositeWriter(itempath=namer, driver="COG", blocksize=16)
@@ -121,7 +130,7 @@ def run(
 def main(setup_auth: bool = False):
     datetime = "1984/2023"
     version = "0.8.0"
-    dataset_id = "coastlines/interim/tpxo9"
+    dataset_id = "coastlines/interim/fes2022b"
     task_ids = get_ids(datetime, version, dataset_id, setup_auth=setup_auth)
     with Client():
         run(task_ids, datetime, version, dataset_id, setup_auth=setup_auth)
