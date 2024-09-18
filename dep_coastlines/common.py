@@ -2,15 +2,14 @@ import re
 from typing import Optional
 
 from dep_tools.namers import S3ItemPath
-from cloud_logger import CsvLogger, S3Handler
+from cloud_logger import CsvLogger
 
-BUCKET = "dep-public-staging"
-LOCAL_AWS_PROFILE = "dep-staging-admin"
+import dep_coastlines.config as config
 
 
 def coastlineItemPath(dataset_id: str, version: str, time: str) -> S3ItemPath:
     namer = S3ItemPath(
-        bucket=BUCKET,
+        bucket=config.BUCKET,
         sensor="ls",
         dataset_id=dataset_id,
         version=version,
@@ -25,22 +24,12 @@ def coastlineLogger(
     itempath: S3ItemPath,
     dataset_id,
     delete_existing_log=False,
-    setup_auth: bool = False,
 ) -> CsvLogger:
-    if setup_auth:
-        from aiobotocore.session import AioSession
-
-        handler_kwargs = dict(session=AioSession(profile=LOCAL_AWS_PROFILE))
-    else:
-        handler_kwargs = dict()
-
     return CsvLogger(
         name=dataset_id,
         path=f"{itempath.bucket}/{itempath.log_path()}",
         overwrite=delete_existing_log,
         header="time|index|status|paths|comment\n",
-        cloud_handler=S3Handler,
-        **handler_kwargs,
     )
 
 

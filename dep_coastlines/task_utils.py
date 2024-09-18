@@ -28,14 +28,12 @@ def get_ids(
     delete_existing_log: bool = False,
     filter_existing_stac_items: bool = False,
     filter_using_log: bool = True,
-    setup_auth: bool = False,
 ) -> list:
     namer = coastlineItemPath(dataset_id=dataset_id, version=version, time=datetime)
     logger = coastlineLogger(
         namer,
         dataset_id=dataset_id,
         delete_existing_log=delete_existing_log,
-        setup_auth=setup_auth,
     )
 
     if filter_existing_stac_items:

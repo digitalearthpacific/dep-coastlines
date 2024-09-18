@@ -9,3 +9,4 @@ pyogrio
 scikit-learn==1.3.2
 typer
 xarray-spatial
+h5netcdf

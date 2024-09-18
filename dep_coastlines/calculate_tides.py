@@ -22,14 +22,13 @@ embedded.
 
 from pathlib import Path
 
-from boto3 import setup_default_session
+import boto3
 from dask.distributed import Client
 
-# so, um this needs to be imported before h5py or reading sometimes fails.
+# This needs to be imported before h5py or reading sometimes fails.
 # see e.g. https://github.com/Unidata/netcdf4-python/issues/694.
 # might be fixable with how the dependencies are built
 import netCDF4
-import typer
 from xarray import Dataset
 
 from dea_tools.coastal import pixel_tides
@@ -38,7 +37,7 @@ from dep_tools.searchers import LandsatPystacSearcher
 from dep_tools.processors import Processor
 from dep_tools.task import MultiAreaTask, StacTask
 
-from dep_coastlines.common import coastlineLogger, coastlineItemPath, LOCAL_AWS_PROFILE
+from dep_coastlines.common import coastlineLogger, coastlineItemPath
 from dep_coastlines.io import ProjOdcLoader, CompositeWriter
 from dep_coastlines.grid import grid
 from dep_coastlines.task_utils import get_ids
@@ -46,7 +45,9 @@ from dep_coastlines.task_utils import get_ids
 
 class TideProcessor(Processor):
     def __init__(
-        self, tide_directory: Path | str = "../coastlines-local/tidal-models", **kwargs
+        self,
+        tide_directory: Path | str = "../coastlines-local/tidal-models",
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self._tide_directory = tide_directory
@@ -68,6 +69,8 @@ class TideProcessor(Processor):
             # resolution=4980,
             resolution=3700,
             parallel=False,
+            extrapolate=False,
+            #            method="bilinear",
         ).transpose("time", "y", "x")
 
         tides_lowres.coords["time"] = tides_lowres.coords["time"].astype("str")
@@ -79,11 +82,7 @@ def run(
     datetime: str,
     version: str,
     dataset_id: str,
-    setup_auth: bool = False,
 ) -> None:
-    if setup_auth:
-        setup_default_session(profile_name=LOCAL_AWS_PROFILE)
-
     searcher = LandsatPystacSearcher(
         search_intersecting_pathrows=True,
         catalog="https://earth-search.aws.element84.com/v1",
@@ -102,7 +101,7 @@ def run(
 
     writer = CompositeWriter(itempath=namer, driver="COG", blocksize=16)
 
-    logger = coastlineLogger(namer, dataset_id=dataset_id, setup_auth=setup_auth)
+    logger = coastlineLogger(namer, dataset_id=dataset_id)
 
     if isinstance(task_id, list):
         MultiAreaTask(
@@ -127,14 +126,15 @@ def run(
         ).run()
 
 
-def main(setup_auth: bool = False):
+def main():
+    boto3.setup_default_session()
     datetime = "1984/2023"
     version = "0.8.0"
-    dataset_id = "coastlines/interim/fes2022b"
-    task_ids = get_ids(datetime, version, dataset_id, setup_auth=setup_auth)
+    dataset_id = "coastlines/interim/fes2022b-test-3"
+    task_ids = get_ids(datetime, version, dataset_id)
     with Client():
-        run(task_ids, datetime, version, dataset_id, setup_auth=setup_auth)
+        run(task_ids, datetime, version, dataset_id)
 
 
 if __name__ == "__main__":
-    typer.run(main)
+    main()

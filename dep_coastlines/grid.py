@@ -1,33 +1,34 @@
 from pathlib import Path
-from threading import local
 
 import geopandas as gpd
 from shapely import make_valid
+from shapely.geometry.polygon import orient
+from shapely.geometry import MultiPolygon
 from s3fs import S3FileSystem
 
 from dep_grid.grid import grid, PACIFIC_EPSG
 
 import dep_coastlines.config as config
 
-remote_fs = S3FileSystem()
+remote_fs = S3FileSystem(anon=True)
 
 grid_name = "coastline_grid.gpkg"
 local_grid_blob_path = Path(__file__).parent / f"../data/{grid_name}"
-grid_bucket_path = f"{config.BUCKET}/aoi/{grid_name}"
+grid_bucket_path = f"{config.BUCKET}/dep_ls_coastlines/raw/{grid_name}"
 
 buffered_grid_name = "buffered_coastline_grid.gpkg"
 local_buffered_grid_blob_path = Path(__file__).parent / f"../data/{buffered_grid_name}"
-buffered_grid_bucket_path = f"{config.BUCKET}/aoi/{grid_name}"
+buffered_grid_bucket_path = f"{config.BUCKET}/dep_ls_coastlines/raw/{grid_name}"
 
 
 OVERWRITE = False
 
 
-def get_best_zone(gdf) -> gpd.GeoDataFrame:
+def assign_crs(gdf) -> gpd.GeoDataFrame:
     # Using the "most common" zone among loaded landsat data works fine except
     # in some years in some areas the most common zone differs, due to data
-    # availability. Here we determine which zone, has the greatest area
-    # of the buffered gadm for each cell.
+    # availability. Here we determine which zone, has the greatest area of
+    # the buffered gadm for each cell.
     #
     # Alternatively, we would need to determine which landsat _scene_ has the
     # most area within the buffered gadm for each cell, then determine the
@@ -39,7 +40,7 @@ def get_best_zone(gdf) -> gpd.GeoDataFrame:
             lambda x: x["ZONE"]
             != 25
         ]
-        .to_crs(3832)
+        .to_crs(config.OUTPUT_CRS)
         .dissolve(by="ZONE")
         .reset_index()
         # makes e.g. 55 32655
@@ -58,8 +59,19 @@ def get_best_zone(gdf) -> gpd.GeoDataFrame:
     return gdf.set_index(["row", "column"]).join(zone_lookup).reset_index()
 
 
-def make_grid(buffer=None) -> gpd.GeoDataFrame:
-    aoi = gpd.read_file(f"s3://{config.BUCKET}/aoi/aoi.gpkg")
+def fix_winding(geom):
+    # This is non-essential but resolves a barrage of warnings from
+    # the antimeridian package
+    if geom.geom_type == "Polygon":
+        return orient(geom)
+    elif geom.geom_type == "MultiPolygon":
+        return MultiPolygon([orient(p) for p in geom])
+    else:
+        return geom
+
+
+def remove_inland_borders(aoi):
+    # The only inland border is between PNG & Indonesia.
 
     # A buffer of the exterior line created weird interior gaps,
     # (See https://github.com/locationtech/jts/issues/876)
@@ -77,19 +89,29 @@ def make_grid(buffer=None) -> gpd.GeoDataFrame:
         f"https://geodata.ucdavis.edu/gadm/gadm4.1/gpkg/gadm41_IDN.gpkg"
     )
     indonesia.geometry = indonesia.buffer(0.01)
-    aoi = gpd.GeoDataFrame(geometry=aoi).overlay(indonesia, how="difference")
+    return gpd.GeoDataFrame(geometry=aoi).overlay(indonesia, how="difference")
 
+
+def make_grid(grid_buffer=None) -> gpd.GeoDataFrame:
+    aoi = gpd.read_file(f"s3://{config.BUCKET}/aoi/aoi.gpkg")
+    aoi = remove_inland_borders(aoi)
+
+    # Buffer the country boundaries enough to be sure to capture the coastline.
     # Approx 2km at equator, other CRSes did not work (horizontal stripes that
     # spanned the globe).
     # Note this will give a warning about geographic buffers being incorrect,
     # but I checked and this is fine
     buffer_distance_dd = 0.018018018018018018
+    tiny_buffer = 0.0001
     coast_buffer = make_valid(
         aoi.buffer(buffer_distance_dd - tiny_buffer).to_crs(PACIFIC_EPSG).unary_union
     )
 
     full_grid = grid(return_type="GeoSeries")
-    if buffer is not None:
+
+    # This buffer is for grid cells. Adding overlap prevents disjoint edges
+    # between tiles.
+    if grid_buffer is not None:
         # join style 2 should make corners stay corners
         full_grid = full_grid.buffer(buffer, join_style=2)
 
@@ -103,16 +125,14 @@ def make_grid(buffer=None) -> gpd.GeoDataFrame:
     coastline_grid["tile_id"] = coastline_grid.apply(
         lambda r: f"{str(r.row)},{str(r.column)}", axis=1
     )
+    coastline_grid["geometry"] = coastline_grid.geometry.apply(fix_winding, axis=1)
 
-    return get_best_zone(coastline_grid)
+    return assign_crs(coastline_grid)
 
 
 if not local_grid_blob_path.exists or OVERWRITE:
     coastline_grid = make_grid()
     coastline_grid.to_file(local_grid_blob_path, layer_name="coastline_grid")
-
-if not remote_fs.exists(grid_bucket_path) or OVERWRITE:
-    remote_fs.put_file(local_grid_blob_path, grid_bucket_path)
 
 
 if not local_buffered_grid_blob_path.exists or OVERWRITE:
@@ -120,14 +140,20 @@ if not local_buffered_grid_blob_path.exists or OVERWRITE:
     coastline_grid.to_file(local_buffered_grid_blob_path)
 
 if not remote_fs.exists(buffered_grid_bucket_path) or OVERWRITE:
-    remote_fs.put_file(local_buffered_grid_blob_path, buffered_grid_bucket_path)
+    rw_fs = S3FileSystem(anon=False)
+    rw_fs.put_file(local_grid_blob_path, grid_bucket_path)
+    rw_fs.put_file(local_buffered_grid_blob_path, buffered_grid_bucket_path)
 
 
-grid = gpd.read_file(f"s3://{grid_bucket_path}").set_index(["row", "column"])
-# Only filter to those ids in grid...we don't want just buffer
+grid = gpd.read_file(remote_fs.open(f"s3://{grid_bucket_path}")).set_index(
+    ["row", "column"]
+)
+
 buffered_grid = (
-    gpd.read_file(f"s3://{buffered_grid_bucket_path}")
-    .set_index(["row", "column"])
+    gpd.read_file(remote_fs.open(f"s3://{buffered_grid_bucket_path}")).set_index(
+        ["row", "column"]
+    )
+    # Only filter to those ids in grid...we don't want just buffer
     .loc[grid.index]
 )
 
