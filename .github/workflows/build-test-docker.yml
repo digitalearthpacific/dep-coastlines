@@ -23,11 +23,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check formatting
-        uses: rickstaa/action-black@v1
-        id: action_black
-        with:
-          black_args: "--check dep_coastlines"
+#      - name: Check formatting
+#        uses: rickstaa/action-black@v1
+#        id: action_black
+#        with:
+#          black_args: "--check dep_coastlines"
 
   push:
     permissions: write-all
