@@ -130,19 +130,14 @@ def make_grid(grid_buffer=None) -> gpd.GeoDataFrame:
     return assign_crs(coastline_grid)
 
 
-if not local_grid_blob_path.exists() or OVERWRITE:
-    coastline_grid = make_grid()
-    coastline_grid.to_file(local_grid_blob_path, layer_name="coastline_grid")
-
-
-if not local_buffered_grid_blob_path.exists() or OVERWRITE:
-    coastline_grid = make_grid(250)
-    coastline_grid.to_file(local_buffered_grid_blob_path)
-
 if not remote_fs.exists(buffered_grid_bucket_path) or OVERWRITE:
     rw_fs = S3FileSystem(anon=False)
     rw_fs.put_file(local_grid_blob_path, grid_bucket_path)
     rw_fs.put_file(local_buffered_grid_blob_path, buffered_grid_bucket_path)
+    coastline_grid = make_grid()
+    coastline_grid.to_file(local_grid_blob_path, layer_name="coastline_grid")
+    coastline_grid = make_grid(250)
+    coastline_grid.to_file(local_buffered_grid_blob_path)
 
 
 grid = gpd.read_file(remote_fs.open(f"s3://{grid_bucket_path}")).set_index(
