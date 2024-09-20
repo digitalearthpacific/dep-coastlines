@@ -1,6 +1,6 @@
 kind: Workflow
 metadata:
-  name: mosaics-corrected-070-test
+  name: mosaics-080
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
@@ -28,7 +28,7 @@ spec:
     - name: version
       value: "0.8.0"
     - name: image-tag
-      value: "v0.8.0dev5"
+      value: "v0.8.0dev7"
     - name: dataset-id
       value: "coastlines/interim/mosaic"
   templates:
@@ -127,7 +127,6 @@ spec:
       command: [ python ]
       args:
         - "{{ workflow.parameters.code-file }}"
-        - process-id
         - --datetime
         - "{{ inputs.parameters.datetime }}"
         - --version
