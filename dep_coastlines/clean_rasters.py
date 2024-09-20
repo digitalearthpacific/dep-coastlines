@@ -378,7 +378,3 @@ def process_all_ids(
 
     with Client():
         run(task_ids, dataset_id=dataset_id, version=version, water_index=water_index)
-
-
-if __name__ == "__main__":
-    app()

@@ -59,10 +59,8 @@ def print_ids(
 ):
     params = []
     # All the casting here is just to appease the linter; the parsers handle
-    # the actual conversions
-    for year in composite_from_years(
-        parse_datetime(datetime), list(years_per_composite)
-    ):
+    # the actual conversions.
+    for year in composite_from_years(parse_datetime(datetime), years_per_composite):
         ids = get_ids(
             datetime=year,
             version=version,

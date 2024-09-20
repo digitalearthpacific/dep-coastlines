@@ -28,12 +28,15 @@ def clip_tide_data(input_dir: Path, output_dir: Path, copy_to_s3: bool = False) 
             remote_path = f"dep_ls_coastlines/raw/fes2022b/{subdir}/{output_filename}"
 
             encoding = {var: _fix_encoding(src[var].encoding) for var in src}
-            # output.to_netcdf( output_path, encoding=encoding, engine="h5netcdf",)
+            output.to_netcdf(
+                output_path,
+                encoding=encoding,
+                engine="h5netcdf",
+            )
 
             if copy_to_s3:
                 client = boto3.client("s3")
-                breakpoint()
-                # client.upload_file(output_path, Bucket=BUCKET, Key=remote_path)
+                client.upload_file(output_path, Bucket=BUCKET, Key=remote_path)
 
 
 def _fix_encoding(encoding: dict) -> dict:

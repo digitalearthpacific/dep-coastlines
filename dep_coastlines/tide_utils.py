@@ -1,17 +1,11 @@
 from typing import Tuple
 
-from retry import retry
 from xarray import DataArray, Dataset
 
-from dep_tools.loaders import Loader
 
-
-@retry(tries=10, delay=3)
-def filter_by_tides(ds: Dataset, item_id, tide_loader: Loader, area=None) -> Dataset:
+def filter_by_tides(ds: Dataset, tides_lr: DataArray) -> Dataset:
     """Remove out of range tide values from a given dataset."""
-    tides_lr = tide_loader.load(item_id)
-
-    tide_cutoff_min, tide_cutoff_max = tide_cutoffs_dask(tides_lr, tide_centre=0.0)
+    tide_cutoff_min, tide_cutoff_max = tide_cutoffs_lr(tides_lr, tide_centre=0.0)
 
     tides_lr = tides_lr.sel(time=ds.time[ds.time.isin(tides_lr.time)])
 
@@ -40,10 +34,11 @@ def filter_by_tides(ds: Dataset, item_id, tide_loader: Loader, area=None) -> Dat
     return ds.where(tide_bool_hr)
 
 
-def tide_cutoffs_dask(
+def tide_cutoffs_lr(
     tides_lowres: DataArray, tide_centre=0.0
 ) -> Tuple[DataArray, DataArray]:
-    """A replacement for coastlines.tide_cutoffs that is dask enabled"""
+    """A replacement for coastlines.tide_cutoffs that is a little memory
+    friendlier"""
     # Calculate min and max tides
     tide_min = tides_lowres.min(dim="time")
     tide_max = tides_lowres.max(dim="time")

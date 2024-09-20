@@ -63,14 +63,11 @@ class TideProcessor(Processor):
         tides_lowres = pixel_tides(
             working_ds,
             resample=False,
-            # model="TPXO9-atlas-v5",
             model="FES2022",
             directory=self._tide_directory,
-            # resolution=4980,
             resolution=3700,
-            parallel=False,
-            extrapolate=False,
-            #            method="bilinear",
+            parallel=False,  # not doing parallel since it seemed to be slower
+            extrapolate=False,  # we should be using the extrapolated fes data
         ).transpose("time", "y", "x")
 
         tides_lowres.coords["time"] = tides_lowres.coords["time"].astype("str")

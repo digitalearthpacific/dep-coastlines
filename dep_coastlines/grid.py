@@ -13,11 +13,13 @@ import dep_coastlines.config as config
 remote_fs = S3FileSystem(anon=True)
 
 grid_name = "coastline_grid.gpkg"
-local_grid_blob_path = Path(__file__).parent / f"../data/{grid_name}"
+local_grid_blob_path = Path(__file__).parent / f"../data/raw/{grid_name}"
 grid_bucket_path = f"{config.BUCKET}/dep_ls_coastlines/raw/{grid_name}"
 
 buffered_grid_name = "buffered_coastline_grid.gpkg"
-local_buffered_grid_blob_path = Path(__file__).parent / f"../data/{buffered_grid_name}"
+local_buffered_grid_blob_path = (
+    Path(__file__).parent / f"../data/raw/{buffered_grid_name}"
+)
 buffered_grid_bucket_path = f"{config.BUCKET}/dep_ls_coastlines/raw/{grid_name}"
 
 
@@ -65,7 +67,7 @@ def fix_winding(geom):
     if geom.geom_type == "Polygon":
         return orient(geom)
     elif geom.geom_type == "MultiPolygon":
-        return MultiPolygon([orient(p) for p in geom])
+        return MultiPolygon([orient(p) for p in geom.geoms])
     else:
         return geom
 
@@ -93,7 +95,7 @@ def remove_inland_borders(aoi):
 
 
 def make_grid(grid_buffer=None) -> gpd.GeoDataFrame:
-    aoi = gpd.read_file(f"s3://{config.BUCKET}/aoi/aoi.gpkg")
+    aoi = gpd.read_file(f"{config.HTTPS_PREFIX}/aoi/aoi.gpkg")
     aoi = remove_inland_borders(aoi)
 
     # Buffer the country boundaries enough to be sure to capture the coastline.
@@ -113,7 +115,7 @@ def make_grid(grid_buffer=None) -> gpd.GeoDataFrame:
     # between tiles.
     if grid_buffer is not None:
         # join style 2 should make corners stay corners
-        full_grid = full_grid.buffer(buffer, join_style=2)
+        full_grid = full_grid.buffer(grid_buffer, join_style=2)
 
     coastline_grid = full_grid.intersection(coast_buffer)
     coastline_grid = gpd.GeoDataFrame(
@@ -125,17 +127,15 @@ def make_grid(grid_buffer=None) -> gpd.GeoDataFrame:
     coastline_grid["tile_id"] = coastline_grid.apply(
         lambda r: f"{str(r.row)},{str(r.column)}", axis=1
     )
-    coastline_grid["geometry"] = coastline_grid.geometry.apply(fix_winding, axis=1)
-
     return assign_crs(coastline_grid)
 
 
-if not local_grid_blob_path.exists or OVERWRITE:
+if not local_grid_blob_path.exists() or OVERWRITE:
     coastline_grid = make_grid()
     coastline_grid.to_file(local_grid_blob_path, layer_name="coastline_grid")
 
 
-if not local_buffered_grid_blob_path.exists or OVERWRITE:
+if not local_buffered_grid_blob_path.exists() or OVERWRITE:
     coastline_grid = make_grid(250)
     coastline_grid.to_file(local_buffered_grid_blob_path)
 

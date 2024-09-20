@@ -3,9 +3,11 @@
 
 from typing import Iterable, Tuple, Annotated
 
+import boto3
 from dask.distributed import Client
 from odc.geo.geobox import AnchorEnum
-from typer import Option, Typer
+from odc.stac import configure_s3_access
+from typer import Option, run
 from xarray import Dataset, DataArray
 
 from dep_tools.landsat_utils import cloud_mask
@@ -20,12 +22,30 @@ from dep_tools.writers import AwsDsCogWriter
 from dep_coastlines.common import coastlineItemPath, coastlineLogger
 from dep_coastlines.grid import buffered_grid as grid
 from dep_coastlines.io import ProjOdcLoader, TideLoader
+from dep_coastlines.calculate_tides import TideProcessor
 from dep_coastlines.tide_utils import filter_by_tides
-from dep_coastlines.task_utils import get_ids, bool_parser
+from dep_coastlines.task_utils import bool_parser
 from dep_coastlines.water_indices import twndwi
 
-DATASET_ID = "coastlines/mosaics-corrected"
-app = Typer()
+DATASET_ID = "coastlines/interim/mosaic"
+
+
+def load_tides(area, full_time="1984/2023"):
+    items = LandsatPystacSearcher(
+        search_intersecting_pathrows=True,
+        catalog="https://earth-search.aws.element84.com/v1",
+        datetime=full_time,
+    ).search(area)
+
+    ds = ProjOdcLoader(
+        fail_on_error=False,
+        chunks=dict(band=1, time=1, x=1024, y=1024),
+        bands=["red"],
+    ).load(items, area)
+
+    return TideProcessor(
+        send_area_to_processor=True, tide_directory="data/raw/tidal_models"
+    ).process(ds, area)
 
 
 class MosaicProcessor(LandsatProcessor):
@@ -34,25 +54,23 @@ class MosaicProcessor(LandsatProcessor):
         # When masking by day is stable, move to LandsatProcessor
         xr = super().process(mask_clouds_by_day(xr)).drop_duplicates(...)
 
-        tide_namer = DepItemPath(
-            sensor="ls",
-            dataset_id="coastlines/tpxo9",
-            version="0.7.0",
-            time="1984_2023",
-            zero_pad_numbers=True,
-        )
-        tide_loader = TideLoader(tide_namer)
+        tides = load_tides(area)
+        tides["time"] = tides.time.astype(xr.time.dtype)
 
-        xr = filter_by_tides(xr, area.index[0], tide_loader)
+        xr = filter_by_tides(xr, tides)
 
         # In case we filtered out all the data
         if not "time" in xr.coords or len(xr.time) == 0:
             return None
 
+        # Limit to one reading per day. This can be accomplished by
+        # using groupby="solarday" when loading, but I discovered that landsat
+        # masks are not consistent between images (see `mask_clouds_by_day`).
         xr.coords["time"] = xr.time.dt.floor("1D")
-
-        # or mean or median or whatever
         xr = xr.groupby("time").first().drop_vars(["qa_pixel"])
+
+        # This is the nir cutoff for water / land established in
+        # https://doi.org/10.1186/s42834-019-0016-5
         cutoff = 0.128 if self.scale_and_offset else 1280.0
         xr["twndwi"] = twndwi(xr, nir_cutoff=cutoff)
         output = xr.median("time", keep_attrs=True)
@@ -76,7 +94,7 @@ class MosaicProcessor(LandsatProcessor):
             output[scalers], output_multiplier=10_000, output_nodata=-32767
         )
 
-        return set_stac_properties(xr, output).chunk(dict(x=2048, y=2048))
+        return output.chunk(dict(x=2048, y=2048))
 
 
 def mask_clouds_by_day(
@@ -99,13 +117,12 @@ def mad(da, median_da):
     return abs(da - median_da).median(dim="time")
 
 
-def run(
+def process_id(
     task_id: Tuple | list[Tuple] | None,
     datetime: str,
     version: str,
     dataset_id: str = DATASET_ID,
     load_before_write: bool = False,
-    setup_auth: bool = False,
 ) -> None:
     searcher = LandsatPystacSearcher(
         search_intersecting_pathrows=True,
@@ -128,7 +145,7 @@ def run(
     )
 
     namer = coastlineItemPath(dataset_id, version, datetime)
-    logger = coastlineLogger(namer, dataset_id=dataset_id, setup_auth=setup_auth)
+    logger = coastlineLogger(namer, dataset_id=dataset_id)
     post_processor = XrPostProcessor(
         convert_to_int16=False,
         extra_attrs=dict(dep_version=version),
@@ -138,41 +155,30 @@ def run(
         itempath=namer, overwrite=False, load_before_write=load_before_write
     )
 
-    if isinstance(task_id, list):
-        MultiAreaTask(
-            task_id,
-            grid,
-            AwsStacTask,
-            searcher=searcher,
-            loader=loader,
-            processor=processor,
-            post_processor=post_processor,
-            writer=writer,
-            logger=logger,
-        ).run()
-    else:
-        AwsStacTask(
-            itempath=namer,
-            id=task_id,
-            area=grid.loc[[task_id]],
-            searcher=searcher,
-            loader=loader,
-            processor=processor,
-            post_processor=post_processor,
-            logger=logger,
-        ).run()
+    AwsStacTask(
+        itempath=namer,
+        id=task_id,
+        area=grid.loc[[task_id]],
+        searcher=searcher,
+        loader=loader,
+        processor=processor,
+        post_processor=post_processor,
+        writer=writer,
+        logger=logger,
+    ).run()
 
 
-@app.command()
-def process_id(
+def main(
     datetime: Annotated[str, Option()],
     version: Annotated[str, Option()],
     row: Annotated[str, Option()],
     column: Annotated[str, Option()],
     load_before_write: Annotated[str, Option(parser=bool_parser)] = "False",
 ):
+    configure_s3_access(cloud_defaults=True, requester_pays=True)
+    boto3.setup_default_session()
     with Client(memory_limit="16GiB"):
-        run(
+        process_id(
             (int(row), int(column)),
             datetime,
             version,
@@ -180,28 +186,5 @@ def process_id(
         )
 
 
-@app.command()
-def process_all_ids(
-    datetime: Annotated[str, Option()],
-    version: Annotated[str, Option()],
-    dataset_id=DATASET_ID,
-    # If run in argo this needs to be changed but I should not ever do that
-    overwrite_log: Annotated[bool, Option()] = False,
-    load_before_write: Annotated[str, Option(parser=bool_parser)] = "False",
-):
-    task_ids = get_ids(
-        datetime, version, dataset_id, grid=grid, delete_existing_log=overwrite_log
-    )
-
-    with Client(memory_limit="16GiB"):
-        run(
-            task_ids,
-            datetime,
-            version,
-            dataset_id,
-            load_before_write=load_before_write,
-        )
-
-
 if __name__ == "__main__":
-    app()
+    run(main)
