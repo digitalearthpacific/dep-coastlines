@@ -25,7 +25,7 @@ def clip_tide_data(input_dir: Path, output_dir: Path, copy_to_s3: bool = False) 
             full_output_dir.mkdir(parents=True, exist_ok=True)
 
             output_path = f"{full_output_dir}/{output_filename}"
-            remote_path = f"dep_ls_coastlines/raw/fes2022b/{subdir}/{output_filename}"
+            remote_path = f"dep_ls_coastlines/raw/tidal_models/fes2022b/{subdir}/{output_filename}"
 
             encoding = {var: _fix_encoding(src[var].encoding) for var in src}
             output.to_netcdf(
@@ -69,5 +69,4 @@ def main(
 
 
 if __name__ == "__main__":
-    breakpoint()
     typer.run(main)
