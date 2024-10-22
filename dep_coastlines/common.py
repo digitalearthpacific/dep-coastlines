@@ -33,6 +33,8 @@ def coastlineLogger(
     )
 
 
+# These are parsers for use with typer and argo (since argo can only use
+# strings), and doesn't allow missing parameters, etc.
 def int_or_none(raw: str) -> Optional[int]:
     return None if raw == "None" else int(raw)
 

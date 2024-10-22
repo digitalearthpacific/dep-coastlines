@@ -20,7 +20,9 @@ buffered_grid_name = "buffered_coastline_grid.gpkg"
 local_buffered_grid_blob_path = (
     Path(__file__).parent / f"../data/raw/{buffered_grid_name}"
 )
-buffered_grid_bucket_path = f"{config.BUCKET}/dep_ls_coastlines/raw/{grid_name}"
+buffered_grid_bucket_path = (
+    f"{config.BUCKET}/dep_ls_coastlines/raw/{buffered_grid_name}"
+)
 
 
 OVERWRITE = False
@@ -95,7 +97,7 @@ def remove_inland_borders(aoi):
 
 
 def make_grid(grid_buffer=None) -> gpd.GeoDataFrame:
-    aoi = gpd.read_file(f"{config.HTTPS_PREFIX}/aoi/aoi.gpkg")
+    aoi = gpd.read_file(config.AOI_URL)
     aoi = remove_inland_borders(aoi)
 
     # Buffer the country boundaries enough to be sure to capture the coastline.
@@ -141,101 +143,104 @@ if not remote_fs.exists(buffered_grid_bucket_path) or OVERWRITE:
 
 
 grid = gpd.read_file(remote_fs.open(f"s3://{grid_bucket_path}")).set_index(
-    ["row", "column"]
+    ["column", "row"]
 )
 
 buffered_grid = (
     gpd.read_file(remote_fs.open(f"s3://{buffered_grid_bucket_path}")).set_index(
-        ["row", "column"]
+        ["column", "row"]
     )
     # Only filter to those ids in grid...we don't want just buffer
     .loc[grid.index]
 )
 
-test_tiles = [
-    (11, 123),
-    (14, 50),
-    (15, 50),
-    (15, 51),
-    (16, 67),
-    (16, 71),
-    (17, 67),
-    (17, 71),
-    (18, 68),
-    (19, 63),
-    (19, 64),
-    (19, 65),
-    (19, 66),
-    (19, 67),
-    (20, 62),
-    (20, 63),
-    (20, 64),
-    (20, 65),
-    (20, 66),
-    (20, 67),
-    (21, 62),
-    (21, 63),
-    (21, 64),
-    (21, 65),
-    (21, 66),
-    (21, 67),
-    (22, 63),
-    (22, 64),
-    (22, 65),
-    (22, 66),
-    (22, 67),
-    (23, 66),
-    (24, 68),
-    (25, 68),
-    (26, 70),
-    (27, 62),
-    (29, 65),
-    (31, 64),
-    (31, 65),
-    (32, 23),
-    (32, 24),
-    (33, 24),
-    (49, 55),
-    (49, 56),
-    (51, 51),
-    (52, 51),
-    (20, 108),
-    (28, 98),
-    (30, 100),
-    (35, 93),
-    (35, 94),
-    (36, 72),
-    (36, 75),
-    (36, 76),
-    (36, 95),
-    (37, 72),
-    (37, 75),
-    (37, 76),
-    (37, 95),
-    (38, 61),
-    (38, 62),
-    (38, 75),
-    (38, 76),
-    (39, 60),
-    (40, 53),
-    (40, 59),
-    (40, 60),
-    (40, 61),
-    (41, 58),
-    (41, 59),
-    (42, 57),
-    (42, 58),
-    (42, 59),
-    (43, 57),
-    (43, 58),
-    (43, 92),
-    (44, 58),
-    (44, 92),
-    (45, 57),
-    (46, 89),
-    (46, 90),
-    (47, 88),
-]
+buffered_grid["geometry"] = buffered_grid.apply(
+    lambda row: fix_winding(row.geometry), axis=1
+)
 
+test_tiles = [
+    (123, 11),
+    (50, 14),
+    (50, 15),
+    (51, 15),
+    (67, 16),
+    (71, 16),
+    (67, 17),
+    (71, 17),
+    (68, 18),
+    (63, 19),
+    (64, 19),
+    (65, 19),
+    (66, 19),
+    (67, 19),
+    (62, 20),
+    (63, 20),
+    (64, 20),
+    (65, 20),
+    (66, 20),
+    (67, 20),
+    (62, 21),
+    (63, 21),
+    (64, 21),
+    (65, 21),
+    (66, 21),
+    (67, 21),
+    (63, 22),
+    (64, 22),
+    (65, 22),
+    (66, 22),
+    (67, 22),
+    (66, 23),
+    (68, 24),
+    (68, 25),
+    (70, 26),
+    (62, 27),
+    (65, 29),
+    (64, 31),
+    (65, 31),
+    (23, 32),
+    (24, 32),
+    (24, 33),
+    (55, 49),
+    (56, 49),
+    (51, 51),
+    (51, 52),
+    (108, 20),
+    (98, 28),
+    (100, 30),
+    (93, 35),
+    (94, 35),
+    (72, 36),
+    (75, 36),
+    (76, 36),
+    (95, 36),
+    (72, 37),
+    (75, 37),
+    (76, 37),
+    (95, 37),
+    (61, 38),
+    (62, 38),
+    (75, 38),
+    (76, 38),
+    (60, 39),
+    (53, 40),
+    (59, 40),
+    (60, 40),
+    (61, 40),
+    (58, 41),
+    (59, 41),
+    (57, 42),
+    (58, 42),
+    (59, 42),
+    (57, 43),
+    (58, 43),
+    (92, 43),
+    (58, 44),
+    (92, 44),
+    (57, 45),
+    (89, 46),
+    (90, 46),
+    (88, 47),
+]
 test_grid = grid.loc[test_tiles]
 test_buffered_grid = buffered_grid.loc[test_tiles]

@@ -92,9 +92,7 @@ def fill_with_nearby_dates(xarr: DataArray | Dataset) -> DataArray:
             output[year] = da.sel(year=year)
             intyear = int(year)
             years = [
-                str(y)
-                for y in [intyear + 1, intyear - 1]  # , intyear + 2, intyear - 2]
-                if str(y) in da.year.values
+                str(y) for y in [intyear + 1, intyear - 1] if str(y) in da.year.values
             ]
             for inner_year in years:
                 output[year] = output[year].where(
@@ -103,24 +101,6 @@ def fill_with_nearby_dates(xarr: DataArray | Dataset) -> DataArray:
         return output.to_array(dim="year")
 
     return xarr.apply(fill) if isinstance(xarr, Dataset) else fill(xarr)
-
-
-def fill_with_nearest_later_date(xr):
-    """A liberal fill job."""
-
-    def fill_da(da):
-        output = da.to_dataset("year")
-        for year in da.year.values:
-            output[year] = da.sel(year=year)
-            for inner_year in da.year.values:
-                if int(inner_year) <= int(year):
-                    continue
-                output[year] = output[year].where(
-                    ~output[year].isnull(), output[inner_year]
-                )
-        return output.to_array(dim="year")
-
-    return xr.apply(fill_da) if isinstance(xr, Dataset) else fill_da(xr)
 
 
 def find_inland_areas(water_bool_da, ocean_bool_da) -> DataArray:

@@ -28,7 +28,6 @@ from geopandas import GeoDataFrame, read_file
 import geohash
 from numpy import isfinite
 from odc.algo import mask_cleanup
-from retry import retry
 from typer import Option, Typer
 from xarray import DataArray, Dataset
 import xrspatial as xs
@@ -46,7 +45,6 @@ from dep_tools.utils import get_container_client
 
 from dep_coastlines.io import CoastlineWriter, MultiyearMosaicLoader
 from dep_coastlines.cloud_model.predictor import ModelPredictor
-from dep_coastlines.cloud_model.fit_model import SavedModel
 from dep_coastlines.raster_cleaning import (
     load_gadm_land,
     find_inland_areas,
@@ -176,16 +174,16 @@ class Cleaner(Processor):
         # tidal flats
         # reefs
 
-        points_gdf.loc[points_gdf.rate_time.abs() > 200, "certainty"] = (
-            "extreme value (> 200 m)"
-        )
+        points_gdf.loc[
+            points_gdf.rate_time.abs() > 200, "certainty"
+        ] = "extreme value (> 200 m)"
 
-        points_gdf.loc[points_gdf.angle_std > 30, "certainty"] = (
-            "high angular variability"
-        )
-        points_gdf.loc[points_gdf.valid_obs < 15, "certainty"] = (
-            "insufficient observations"
-        )
+        points_gdf.loc[
+            points_gdf.angle_std > 30, "certainty"
+        ] = "high angular variability"
+        points_gdf.loc[
+            points_gdf.valid_obs < 15, "certainty"
+        ] = "insufficient observations"
 
         # Generate a geohash UID for each point and set as index
         uids = (
