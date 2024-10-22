@@ -71,7 +71,7 @@ def print_ids(
             filter_existing_stac_items=bool(filter_existing_stac_items),
         )
 
-        params += [{"row": id[0], "column": id[1], "datetime": year} for id in ids]
+        params += [{"column": id[0], "row": id[1], "datetime": year} for id in ids]
 
     if limit is not None:
         params = params[0 : int(limit)]
