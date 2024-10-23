@@ -33,14 +33,14 @@ DATASET_ID = "coastlines/interim/mosaic"
 
 from urllib3 import Retry
 
-from pystac_client import Client
+from pystac_client import Client as PSClient
 from pystac_client.stac_api_io import StacApiIO
 
 retry = Retry(
     total=20, backoff_factor=1, status_forcelist=[502, 503, 504], allowed_methods=None
 )
 stac_api_io = StacApiIO(max_retries=retry)
-client = Client.open("https://earth-search.aws.element84.com/v1", stac_io=stac_api_io)
+client = PSClient.open("https://earth-search.aws.element84.com/v1", stac_io=stac_api_io)
 
 
 class MultiYearTask:
