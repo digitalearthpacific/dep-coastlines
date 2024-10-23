@@ -45,7 +45,7 @@ class MultiYearTask:
     def run(self):
         paths = []
         for year in self._years:
-            self._itempath.time = year
+            self._itempath.time = year.replace("/", "_")
             # Re-search instead of filtering the dates. We could do the
             # latter if the searches take too much time
             year_searcher = LandsatPystacSearcher(

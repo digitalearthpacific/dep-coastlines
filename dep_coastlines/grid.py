@@ -2,8 +2,6 @@ from pathlib import Path
 
 import geopandas as gpd
 from shapely import make_valid
-from shapely.geometry.polygon import orient
-from shapely.geometry import MultiPolygon
 from s3fs import S3FileSystem
 
 from dep_grid.grid import grid, PACIFIC_EPSG
@@ -61,17 +59,6 @@ def assign_crs(gdf) -> gpd.GeoDataFrame:
     ).epsg
 
     return gdf.set_index(["row", "column"]).join(zone_lookup).reset_index()
-
-
-def fix_winding(geom):
-    # This is non-essential but resolves a barrage of warnings from
-    # the antimeridian package
-    if geom.geom_type == "Polygon":
-        return orient(geom)
-    elif geom.geom_type == "MultiPolygon":
-        return MultiPolygon([orient(p) for p in geom.geoms])
-    else:
-        return geom
 
 
 def remove_inland_borders(aoi):
@@ -154,9 +141,7 @@ buffered_grid = (
     .loc[grid.index]
 )
 
-buffered_grid["geometry"] = buffered_grid.apply(
-    lambda row: fix_winding(row.geometry), axis=1
-)
+buffered_grid["geometry"] = buffered_grid.geometry.apply(fix_winding)
 
 test_tiles = [
     (123, 11),
