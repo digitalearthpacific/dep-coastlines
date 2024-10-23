@@ -31,6 +31,17 @@ from dep_coastlines.water_indices import twndwi
 
 DATASET_ID = "coastlines/interim/mosaic"
 
+from urllib3 import Retry
+
+from pystac_client import Client
+from pystac_client.stac_api_io import StacApiIO
+
+retry = Retry(
+    total=20, backoff_factor=1, status_forcelist=[502, 503, 504], allowed_methods=None
+)
+stac_api_io = StacApiIO(max_retries=retry)
+client = Client.open("https://earth-search.aws.element84.com/v1", stac_io=stac_api_io)
+
 
 class MultiYearTask:
     def __init__(self, all_time: str, itempath, searcher, **kwargs):
@@ -53,6 +64,7 @@ class MultiYearTask:
                 catalog="https://earth-search.aws.element84.com/v1",
                 datetime=year,
             )
+            year_searcher._client = client
             try:
                 paths += self._task_class(
                     itempath=self._itempath,
@@ -164,6 +176,7 @@ def process_id(
         catalog="https://earth-search.aws.element84.com/v1",
         datetime=datetime,
     )
+    searcher._client = client
     loader = ProjOdcLoader(
         chunks=dict(band=1, time=1, x=8192, y=8192),
         resampling={"qa_pixel": "nearest", "*": "cubic"},
@@ -190,18 +203,24 @@ def process_id(
         itempath=namer, overwrite=False, load_before_write=load_before_write
     )
 
-    MultiYearTask(
-        all_time=datetime,
-        itempath=namer,
-        searcher=searcher,
-        post_processor=post_processor,
-        id=task_id,
-        area=area,
-        loader=loader,
-        processor=processor,
-        writer=writer,
-        logger=logger,
-    ).run()
+    try:
+        paths = MultiYearTask(
+            all_time=datetime,
+            itempath=namer,
+            searcher=searcher,
+            post_processor=post_processor,
+            id=task_id,
+            area=area,
+            loader=loader,
+            processor=processor,
+            writer=writer,
+            logger=logger,
+        ).run()
+    except Exception as e:
+        logger.error([task_id, "error", e])
+        raise e
+
+    logger.info([task_id, "complete", paths])
 
 
 def main(
