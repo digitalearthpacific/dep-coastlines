@@ -5,6 +5,7 @@ from shapely import make_valid
 from s3fs import S3FileSystem
 
 from dep_grid.grid import grid, PACIFIC_EPSG
+from dep_tools.utils import fix_winding
 
 import dep_coastlines.config as config
 
