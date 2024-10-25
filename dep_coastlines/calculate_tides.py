@@ -37,9 +37,15 @@ from dep_tools.searchers import LandsatPystacSearcher
 from dep_tools.processors import Processor
 from dep_tools.task import MultiAreaTask, StacTask
 
-from dep_coastlines.common import coastlineLogger, coastlineItemPath
+from dep_coastlines.config import (
+    TIDES_DATETIME,
+    TIDES_DATASET_ID,
+    TIDES_NAMER,
+    TIDES_VERSION,
+)
+from dep_coastlines.common import coastlineLogger
 from dep_coastlines.io import ProjOdcLoader, CompositeWriter
-from dep_coastlines.grid import grid
+from dep_coastlines.grid import buffered_grid as grid
 from dep_coastlines.task_utils import get_ids
 
 
@@ -76,9 +82,8 @@ class TideProcessor(Processor):
 
 def run(
     task_id: str | list[str],
-    datetime: str,
-    version: str,
-    dataset_id: str,
+    datetime: str = TIDES_DATETIME,
+    dataset_id: str = TIDES_DATASET_ID,
 ) -> None:
     searcher = LandsatPystacSearcher(
         search_intersecting_pathrows=True,
@@ -94,11 +99,10 @@ def run(
     processor = TideProcessor(
         send_area_to_processor=True, tide_directory="data/raw/tidal_models"
     )
-    namer = coastlineItemPath(dataset_id, version, datetime)
 
-    writer = CompositeWriter(itempath=namer, driver="COG", blocksize=16)
+    writer = CompositeWriter(itempath=TIDES_NAMER, driver="COG", blocksize=16)
 
-    logger = coastlineLogger(namer, dataset_id=dataset_id)
+    logger = coastlineLogger(TIDES_NAMER, dataset_id=dataset_id)
 
     if isinstance(task_id, list):
         MultiAreaTask(
@@ -113,8 +117,9 @@ def run(
         ).run()
     else:
         StacTask(
-            task_id,
-            grid.loc[[task_id]],
+            itempath=TIDES_NAMER,
+            id=task_id,
+            area=grid.loc[[task_id]],
             searcher=searcher,
             loader=loader,
             processor=processor,
@@ -125,12 +130,9 @@ def run(
 
 def main():
     boto3.setup_default_session()
-    datetime = "1984/2023"
-    version = "0.8.0"
-    dataset_id = "coastlines/interim/fes2022b-test-3"
-    task_ids = get_ids(datetime, version, dataset_id)
+    task_ids = get_ids(TIDES_DATETIME, TIDES_VERSION, TIDES_DATASET_ID)
     with Client():
-        run(task_ids, datetime, version, dataset_id)
+        run(task_ids)
 
 
 if __name__ == "__main__":

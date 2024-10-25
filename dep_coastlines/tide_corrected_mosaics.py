@@ -30,31 +30,13 @@ from dep_coastlines.water_indices import twndwi
 DATASET_ID = "coastlines/interim/mosaic"
 
 
-def load_tides(area, full_time="1984/2023"):
-    items = LandsatPystacSearcher(
-        search_intersecting_pathrows=True,
-        catalog="https://earth-search.aws.element84.com/v1",
-        datetime=full_time,
-    ).search(area)
-
-    ds = ProjOdcLoader(
-        fail_on_error=False,
-        chunks=dict(band=1, time=1, x=1024, y=1024),
-        bands=["red"],
-    ).load(items, area)
-
-    return TideProcessor(
-        send_area_to_processor=True, tide_directory="data/raw/tidal_models"
-    ).process(ds, area)
-
-
 class MosaicProcessor(LandsatProcessor):
     def process(self, xr: Dataset, area) -> Dataset | None:
         # Do the cloud mask first before scale and offset are done
         # When masking by day is stable, move to LandsatProcessor
         xr = super().process(mask_clouds_by_day(xr)).drop_duplicates(...)
 
-        tides = load_tides(area)
+        tides = TideLoader().load(area.index[0])
         tides["time"] = tides.time.astype(xr.time.dtype)
 
         xr = filter_by_tides(xr, tides)
@@ -171,15 +153,15 @@ def process_id(
 def main(
     datetime: Annotated[str, Option()],
     version: Annotated[str, Option()],
-    row: Annotated[str, Option()],
     column: Annotated[str, Option()],
-    load_before_write: Annotated[str, Option(parser=bool_parser)] = "False",
+    row: Annotated[str, Option()],
+    load_before_write: Annotated[str, Option(parser=bool_parser)] = "True",
 ):
     configure_s3_access(cloud_defaults=True, requester_pays=True)
     boto3.setup_default_session()
     with Client(memory_limit="16GiB"):
         process_id(
-            (int(row), int(column)),
+            (int(column), int(row)),
             datetime,
             version,
             load_before_write=load_before_write,

@@ -46,6 +46,21 @@ stac_api_io = StacApiIO(max_retries=retry)
 client = PSClient.open("https://earth-search.aws.element84.com/v1", stac_io=stac_api_io)
 
 
+# class ItemFilterer(Searcher):
+#    def __init__(self, items: ItemCollection):
+#        self._items = items
+#
+#    def search(self):
+#        breakpoint()
+class DatasetFilterer:
+    def __init__(self, ds: Dataset, year: int):
+        self._ds = ds
+        self._year = year
+
+    def search(self, _):
+        return self._ds.sel(time=self._ds.time.dt.year == self._year)
+
+
 class MultiYearTask:
     def __init__(self, all_time: str, itempath, searcher, **kwargs):
         self._years = composite_from_years(
@@ -62,11 +77,7 @@ class MultiYearTask:
             self._itempath.time = year.replace("/", "_")
             # Re-search instead of filtering the dates. We could do the
             # latter if the searches take too much time
-            year_searcher = LandsatPystacSearcher(
-                search_intersecting_pathrows=True,
-                client=client,
-                datetime=year,
-            )
+            year_searcher = DatasetFilterer(ds, year)
             try:
                 paths += self._task_class(
                     itempath=self._itempath,
@@ -84,9 +95,13 @@ def load_tides(area, full_time="1984/2023"):
     ).search(area)
 
     ds = ProjOdcLoader(
+        chunks=dict(band=1, time=1, x=8192, y=8192),
+        resampling={"qa_pixel": "nearest", "*": "cubic"},
         fail_on_error=False,
-        chunks=dict(band=1, time=1, x=1024, y=1024),
-        bands=["red"],
+        bands=["qa_pixel", "nir08", "swir16", "swir22", "red", "blue", "green"],
+        clip_to_area=True,
+        dtype="float32",
+        anchor=AnchorEnum.CENTER,  # see relevant issue for why this is needed
     ).load(items, area)
 
     return TideProcessor(

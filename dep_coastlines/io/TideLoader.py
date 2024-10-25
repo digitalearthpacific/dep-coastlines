@@ -5,21 +5,19 @@ from xarray import DataArray
 from dep_tools.loaders import Loader
 from dep_tools.namers import DepItemPath
 
+from dep_coastlines.config import TIDES_NAMER, HTTPS_PREFIX
+
 
 class TideLoader(Loader):
     def __init__(
-        self,
-        itempath: DepItemPath,
-        storage_account: str = "deppcpublicstorage",
-        container_name: str = "output",
+        self, itempath: DepItemPath = TIDES_NAMER, https_prefix: str = HTTPS_PREFIX
     ):
         self._itempath = itempath
-        self._storage_account = storage_account
-        self._container_name = container_name
+        self._https_prefix = https_prefix
 
     def load(self, item_id) -> DataArray:
         da = rx.open_rasterio(
-            f"https://{self._storage_account}.blob.core.windows.net/{self._container_name}/{self._itempath.path(item_id)}",
+            f"{self._https_prefix}/{self._itempath.path(item_id)}",
             chunks={"x": 1, "y": 1},
         )
         time_strings = da.attrs["long_name"]
