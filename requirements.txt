@@ -1,5 +1,5 @@
 cloud-logger @ git+https://github.com/jessjaco/cloud-logger.git
-dep-tools @ git+https://github.com/digitalearthpacific/dep-tools.git@8c88a35
+dep-tools @ git+https://github.com/digitalearthpacific/dep-tools.git@b850551
 dep-grid @ git+https://github.com/digitalearthpacific/dep-grid.git@cleanup
 pyTMD==2.1.4
 deafrica_coastlines @ git+https://github.com/digitalearthpacific/deafrica-coastlines.git@5a393e2
