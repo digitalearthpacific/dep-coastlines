@@ -1,28 +1,15 @@
 from pathlib import Path
 
 import geopandas as gpd
+import pandas as pd
 from shapely import make_valid
 from s3fs import S3FileSystem
 
-from dep_grid.grid import grid, PACIFIC_EPSG
-from dep_tools.utils import fix_winding
+from dep_tools.grids import grid, PACIFIC_EPSG, gadm
+
+# from dep_tools.utils import fix_winding
 
 import dep_coastlines.config as config
-
-remote_fs = S3FileSystem(anon=True)
-
-grid_name = "coastline_grid.gpkg"
-local_grid_blob_path = Path(__file__).parent / f"../data/raw/{grid_name}"
-grid_bucket_path = f"{config.BUCKET}/dep_ls_coastlines/raw/{grid_name}"
-
-buffered_grid_name = "buffered_coastline_grid.gpkg"
-local_buffered_grid_blob_path = (
-    Path(__file__).parent / f"../data/raw/{buffered_grid_name}"
-)
-buffered_grid_bucket_path = (
-    f"{config.BUCKET}/dep_ls_coastlines/raw/{buffered_grid_name}"
-)
-
 
 OVERWRITE = False
 
@@ -84,8 +71,15 @@ def remove_inland_borders(aoi):
     return gpd.GeoDataFrame(geometry=aoi).overlay(indonesia, how="difference")
 
 
-def make_grid(grid_buffer=None) -> gpd.GeoDataFrame:
-    aoi = gpd.read_file(config.AOI_URL)
+def make_grid(grid_buffer=250) -> gpd.GeoDataFrame:
+    padm = gadm()
+    hawaii = (
+        gpd.read_file("~/Downloads/gadm41_USA.gpkg", layer="ADM_ADM_1")
+        .set_index("ISO_1")
+        .loc[["US-HI"]]
+        .reset_index()
+    )
+    aoi = pd.concat([padm, hawaii]).dissolve()[["geometry"]]
     aoi = remove_inland_borders(aoi)
 
     # Buffer the country boundaries enough to be sure to capture the coastline.
@@ -112,39 +106,43 @@ def make_grid(grid_buffer=None) -> gpd.GeoDataFrame:
         geometry=coastline_grid[~coastline_grid.geometry.is_empty]
     ).reset_index(names=["column", "row"])
     coastline_grid["id"] = coastline_grid.apply(
-        lambda r: f"{str(r.row).zfill(3)}{str(r.column).zfill(3)}", axis=1
+        lambda r: f"{str(r.column).zfill(3)}{str(r.row).zfill(3)}", axis=1
     )
     coastline_grid["tile_id"] = coastline_grid.apply(
-        lambda r: f"{str(r.row)},{str(r.column)}", axis=1
+        lambda r: f"{str(r.column)},{str(r.row)}", axis=1
     )
+    #    coastline_grid["geometry"] = coastline_grid.geometry.apply(fix_winding)
     return assign_crs(coastline_grid)
+
+
+remote_fs = S3FileSystem(anon=True)
+
+buffered_grid_name = "buffered_coastline_grid.gpkg"
+local_buffered_grid_blob_path = (
+    Path(__file__).parent / f"../data/raw/{buffered_grid_name}"
+)
+buffered_grid_bucket_path = (
+    f"{config.BUCKET}/dep_ls_coastlines/raw/{buffered_grid_name}"
+)
 
 
 if not remote_fs.exists(buffered_grid_bucket_path) or OVERWRITE:
     rw_fs = S3FileSystem(anon=False)
-    rw_fs.put_file(local_grid_blob_path, grid_bucket_path)
-    rw_fs.put_file(local_buffered_grid_blob_path, buffered_grid_bucket_path)
-    coastline_grid = make_grid()
-    coastline_grid.to_file(local_grid_blob_path, layer_name="coastline_grid")
     coastline_grid = make_grid(250)
     coastline_grid.to_file(local_buffered_grid_blob_path)
+    rw_fs.put_file(local_buffered_grid_blob_path, buffered_grid_bucket_path)
 
-
-grid = gpd.read_file(remote_fs.open(f"s3://{grid_bucket_path}")).set_index(
-    ["column", "row"]
-)
 
 buffered_grid = (
     gpd.read_file(remote_fs.open(f"s3://{buffered_grid_bucket_path}")).set_index(
         ["column", "row"]
     )
     # Only filter to those ids in grid...we don't want just buffer
-    .loc[grid.index]
+    # .loc[grid.index]
 )
 
-buffered_grid["geometry"] = buffered_grid.geometry.apply(fix_winding)
 
-test_tiles = [
+_test_tiles = [
     (123, 11),
     (50, 14),
     (50, 15),
@@ -228,5 +226,4 @@ test_tiles = [
     (90, 46),
     (88, 47),
 ]
-test_grid = grid.loc[test_tiles]
-test_buffered_grid = buffered_grid.loc[test_tiles]
+test_buffered_grid = buffered_grid.loc[_test_tiles]

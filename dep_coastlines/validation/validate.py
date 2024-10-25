@@ -71,13 +71,14 @@ def validate(validation_lines, transects):
     )
 
     results_df["error_m"] = results_df.val_dist - results_df.depcl_dist
-    stats = deacl_val_stats(results_df.val_dist, results_df, depcl_dist)
+    stats = deacl_val_stats(results_df.val_dist, results_df.depcl_dist)
     breakpoint()
 
 
 if __name__ == "__main__":
-    validation_lines = gpd.read_file("data/validation/validation_test.gpkg").assign(
-        year=2003
-    )
+
+    validation_lines = gpd.read_file(
+        "data/validation/validation_lines/WV12DEC13015047.gpkg"
+    ).assign(year=2003)
     transects = gpd.read_file("data/src/validation_transects.gpkg")
     validate(validation_lines, transects)

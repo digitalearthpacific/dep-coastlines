@@ -64,10 +64,9 @@ class MultiYearTask:
             # latter if the searches take too much time
             year_searcher = LandsatPystacSearcher(
                 search_intersecting_pathrows=True,
-                catalog="https://earth-search.aws.element84.com/v1",
+                client=client,
                 datetime=year,
             )
-            year_searcher._client = client
             try:
                 paths += self._task_class(
                     itempath=self._itempath,
@@ -81,9 +80,7 @@ class MultiYearTask:
 
 def load_tides(area, full_time="1984/2023"):
     items = LandsatPystacSearcher(
-        search_intersecting_pathrows=True,
-        catalog="https://earth-search.aws.element84.com/v1",
-        datetime=full_time,
+        search_intersecting_pathrows=True, datetime=full_time, client=client
     ).search(area)
 
     ds = ProjOdcLoader(
@@ -175,11 +172,8 @@ def process_id(
     load_before_write: bool = False,
 ) -> None:
     searcher = LandsatPystacSearcher(
-        search_intersecting_pathrows=True,
-        catalog="https://earth-search.aws.element84.com/v1",
-        datetime=datetime,
+        search_intersecting_pathrows=True, datetime=datetime, client=client
     )
-    searcher._client = client
     loader = ProjOdcLoader(
         chunks=dict(band=1, time=1, x=8192, y=8192),
         resampling={"qa_pixel": "nearest", "*": "cubic"},
