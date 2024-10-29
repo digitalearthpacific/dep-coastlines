@@ -7,6 +7,8 @@ import boto3
 from dask.distributed import Client
 from odc.geo.geobox import AnchorEnum
 from odc.stac import configure_s3_access
+import pystac
+import pystac_client
 from typer import Option, run
 from xarray import Dataset, DataArray
 
@@ -99,6 +101,25 @@ def mad(da, median_da):
     return abs(da - median_da).median(dim="time")
 
 
+def use_alternate_s3_href(modifiable: pystac_client.Modifiable) -> None:
+    if isinstance(modifiable, dict):
+        if modifiable["type"] == "FeatureCollection":
+            new_features = list()
+            for item_dict in modifiable["features"]:
+                use_alternate_s3_href(item_dict)
+                new_features.append(item_dict)
+            modifiable["features"] = new_features
+        else:
+            stac_object = pystac.read_dict(modifiable)
+            use_alternate_s3_href(stac_object)
+            modifiable.update(stac_object.to_dict())
+    else:
+        for _, asset in modifiable.assets.items():
+            asset_dict = asset.to_dict()
+            if "alternate" in asset_dict.keys():
+                asset.href = asset.to_dict()["alternate"]["s3"]["href"]
+
+
 def process_id(
     task_id: Tuple | list[Tuple] | None,
     datetime: str,
@@ -106,9 +127,13 @@ def process_id(
     dataset_id: str = DATASET_ID,
     load_before_write: bool = False,
 ) -> None:
+    client = pystac_client.Client.open(
+        "https://earth-search.aws.element84.com/v1", modifier=use_alternate_s3_href
+    )
     searcher = LandsatPystacSearcher(
         search_intersecting_pathrows=True,
-        catalog="https://earth-search.aws.element84.com/v1",
+        client=client,
+        # catalog="https://earth-search.aws.element84.com/v1",
         datetime=datetime,
     )
     loader = ProjOdcLoader(
