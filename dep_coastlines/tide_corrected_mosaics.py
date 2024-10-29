@@ -128,12 +128,14 @@ def process_id(
     load_before_write: bool = False,
 ) -> None:
     client = pystac_client.Client.open(
-        "https://earth-search.aws.element84.com/v1", modifier=use_alternate_s3_href
+        "https://landsatlook.usgs.gov/stac-server",
+        modifier=use_alternate_s3_href,
     )
     searcher = LandsatPystacSearcher(
         search_intersecting_pathrows=True,
         client=client,
         # catalog="https://earth-search.aws.element84.com/v1",
+        collections=["landsat-c2l2-sr"],
         datetime=datetime,
     )
     loader = ProjOdcLoader(
