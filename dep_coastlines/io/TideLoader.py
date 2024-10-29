@@ -1,5 +1,6 @@
 from pandas import Timestamp
 import rioxarray as rx
+from typing import Tuple
 from xarray import DataArray
 
 from dep_tools.loaders import Loader
