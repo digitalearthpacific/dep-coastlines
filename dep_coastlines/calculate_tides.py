@@ -77,7 +77,7 @@ class TideProcessor(Processor):
         ).transpose("time", "y", "x")
 
         tides_lowres.coords["time"] = tides_lowres.coords["time"].astype("str")
-        return tides_lowres  # .to_dataset("time")
+        return tides_lowres.to_dataset("time")
 
 
 def run(
@@ -100,7 +100,13 @@ def run(
         send_area_to_processor=True, tide_directory="data/raw/tidal_models"
     )
 
-    writer = CompositeWriter(itempath=TIDES_NAMER, driver="COG", blocksize=16)
+    writer = CompositeWriter(
+        itempath=TIDES_NAMER,
+        blocksize=16,
+        # Not using odc writer here because it doesn't save timestamps as attributes
+        # by default, and rioxarray does
+        use_odc_writer=False,
+    )
 
     logger = coastlineLogger(TIDES_NAMER, dataset_id=dataset_id)
 
