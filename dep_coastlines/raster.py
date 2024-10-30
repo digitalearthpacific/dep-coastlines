@@ -233,7 +233,7 @@ def main(
 ):
     configure_s3_access(cloud_defaults=True, requester_pays=True)
     boto3.setup_default_session()
-    with Client(memory_limit="16GiB"):
+    with Client():
         process_id(
             (int(column), int(row)),
             version,
