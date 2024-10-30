@@ -7,6 +7,7 @@ import boto3
 from dask.distributed import Client
 from odc.geo.geobox import AnchorEnum
 from odc.stac import configure_s3_access
+from pystac_client import Client as PystacClient
 from typer import Option, run
 from xarray import Dataset, DataArray
 
@@ -20,7 +21,11 @@ from dep_tools.task import MultiAreaTask, AwsStacTask
 from dep_tools.utils import scale_to_int16
 from dep_tools.writers import AwsDsCogWriter
 
-from dep_coastlines.common import coastlineItemPath, coastlineLogger
+from dep_coastlines.common import (
+    coastlineItemPath,
+    coastlineLogger,
+    use_alternate_s3_href,
+)
 from dep_coastlines.grid import buffered_grid as grid
 from dep_coastlines.io import ProjOdcLoader, TideLoader
 from dep_coastlines.calculate_tides import TideProcessor
@@ -31,34 +36,10 @@ from dep_coastlines.water_indices import twndwi
 
 DATASET_ID = "coastlines/interim/mosaic"
 
-from urllib3 import Retry
-
-from pystac_client import Client as PSClient
-from pystac_client.stac_api_io import StacApiIO
-
-retry = Retry(
-    total=20,
-    backoff_factor=1,
-    status_forcelist=[403, 502, 503, 504],
-    allowed_methods=None,
+client = PystacClient.open(
+    "https://landsatlook.usgs.gov/stac-server",
+    modifier=use_alternate_s3_href,
 )
-stac_api_io = StacApiIO(max_retries=retry)
-client = PSClient.open("https://earth-search.aws.element84.com/v1", stac_io=stac_api_io)
-
-
-# class ItemFilterer(Searcher):
-#    def __init__(self, items: ItemCollection):
-#        self._items = items
-#
-#    def search(self):
-#        breakpoint()
-class DatasetFilterer:
-    def __init__(self, ds: Dataset, year: int):
-        self._ds = ds
-        self._year = year
-
-    def search(self, _):
-        return self._ds.sel(time=self._ds.time.dt.year == self._year)
 
 
 class MultiYearTask:
@@ -75,9 +56,12 @@ class MultiYearTask:
         paths = []
         for year in self._years:
             self._itempath.time = year.replace("/", "_")
-            # Re-search instead of filtering the dates. We could do the
-            # latter if the searches take too much time
-            year_searcher = DatasetFilterer(ds, year)
+            year_searcher = LandsatPystacSearcher(
+                search_intersecting_pathrows=True,
+                datetime=year,
+                client=client,
+                collections=["landsat-c2l2-sr"],
+            )
             try:
                 paths += self._task_class(
                     itempath=self._itempath,
@@ -89,9 +73,12 @@ class MultiYearTask:
         return paths
 
 
-def load_tides(area, full_time="1984/2023"):
+def load_tides(area, full_time="1984/2024"):
     items = LandsatPystacSearcher(
-        search_intersecting_pathrows=True, datetime=full_time, client=client
+        search_intersecting_pathrows=True,
+        datetime=full_time,
+        client=client,
+        collections=["landsat-c2l2-sr"],
     ).search(area)
 
     ds = ProjOdcLoader(
@@ -110,7 +97,7 @@ def load_tides(area, full_time="1984/2023"):
 
 
 class MosaicProcessor(LandsatProcessor):
-    def __init__(self, area, full_time="1984/2023", **kwargs):
+    def __init__(self, area, full_time="1984/2024", **kwargs):
         super().__init__(**kwargs)
         self._tides = load_tides(area, full_time)
 
@@ -182,12 +169,15 @@ def mad(da, median_da):
 def process_id(
     task_id: Tuple | list[Tuple] | None,
     version: str,
-    datetime: str = "1984/2023",
+    datetime: str = "1984/2024",
     dataset_id: str = DATASET_ID,
     load_before_write: bool = False,
 ) -> None:
     searcher = LandsatPystacSearcher(
-        search_intersecting_pathrows=True, datetime=datetime, client=client
+        search_intersecting_pathrows=True,
+        datetime=datetime,
+        client=client,
+        collections=["landsat-c2l2-sr"],
     )
     loader = ProjOdcLoader(
         chunks=dict(band=1, time=1, x=8192, y=8192),

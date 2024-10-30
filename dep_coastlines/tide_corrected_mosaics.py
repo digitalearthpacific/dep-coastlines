@@ -21,7 +21,11 @@ from dep_tools.task import MultiAreaTask, AwsStacTask
 from dep_tools.utils import scale_to_int16
 from dep_tools.writers import AwsDsCogWriter
 
-from dep_coastlines.common import coastlineItemPath, coastlineLogger
+from dep_coastlines.common import (
+    coastlineItemPath,
+    coastlineLogger,
+    use_alternate_s3_href,
+)
 from dep_coastlines.grid import buffered_grid as grid
 from dep_coastlines.io import ProjOdcLoader, TideLoader
 from dep_coastlines.calculate_tides import TideProcessor
@@ -101,25 +105,6 @@ def mad(da, median_da):
     return abs(da - median_da).median(dim="time")
 
 
-def use_alternate_s3_href(modifiable: pystac_client.Modifiable) -> None:
-    if isinstance(modifiable, dict):
-        if modifiable["type"] == "FeatureCollection":
-            new_features = list()
-            for item_dict in modifiable["features"]:
-                use_alternate_s3_href(item_dict)
-                new_features.append(item_dict)
-            modifiable["features"] = new_features
-        else:
-            stac_object = pystac.read_dict(modifiable)
-            use_alternate_s3_href(stac_object)
-            modifiable.update(stac_object.to_dict())
-    else:
-        for _, asset in modifiable.assets.items():
-            asset_dict = asset.to_dict()
-            if "alternate" in asset_dict.keys():
-                asset.href = asset.to_dict()["alternate"]["s3"]["href"]
-
-
 def process_id(
     task_id: Tuple | list[Tuple] | None,
     datetime: str,
@@ -134,7 +119,6 @@ def process_id(
     searcher = LandsatPystacSearcher(
         search_intersecting_pathrows=True,
         client=client,
-        # catalog="https://earth-search.aws.element84.com/v1",
         collections=["landsat-c2l2-sr"],
         datetime=datetime,
     )

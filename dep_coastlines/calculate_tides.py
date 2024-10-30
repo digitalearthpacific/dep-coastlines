@@ -77,7 +77,7 @@ class TideProcessor(Processor):
         ).transpose("time", "y", "x")
 
         tides_lowres.coords["time"] = tides_lowres.coords["time"].astype("str")
-        return tides_lowres.to_dataset("time")
+        return tides_lowres  # .to_dataset("time")
 
 
 def run(
