@@ -15,6 +15,6 @@ ADD . /tmp/dep-coastlines
 WORKDIR /tmp
 RUN pip install --no-cache-dir --upgrade pip && pip install ./dep-coastlines
 
-ADD . /code
-WORKDIR /code
-RUN wget -nH -r --cut-dirs=1 -P data -i data/tide_data_urls.txt
+#ADD . /code
+#WORKDIR /code
+#RUN wget -nH -r --cut-dirs=1 -P data -i data/tide_data_urls.txt
