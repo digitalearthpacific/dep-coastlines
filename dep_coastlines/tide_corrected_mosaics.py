@@ -148,17 +148,23 @@ def process_id(
         itempath=namer, overwrite=False, load_before_write=load_before_write
     )
 
-    AwsStacTask(
-        itempath=namer,
-        id=task_id,
-        area=grid.loc[[task_id]],
-        searcher=searcher,
-        loader=loader,
-        processor=processor,
-        post_processor=post_processor,
-        writer=writer,
-        logger=logger,
-    ).run()
+    try:
+        paths = AwsStacTask(
+            itempath=namer,
+            id=task_id,
+            area=grid.loc[[task_id]],
+            searcher=searcher,
+            loader=loader,
+            processor=processor,
+            post_processor=post_processor,
+            writer=writer,
+            logger=logger,
+        ).run()
+    except Exception as e:
+        logger.error([task_id, "error", e])
+        raise e
+
+    logger.info([task_id, "complete", paths])
 
 
 def main(

@@ -1,4 +1,4 @@
-from common import coastlineItemPath
+from dep_coastlines.common import coastlineItemPath
 
 BUCKET = "dep-public-staging"
 OUTPUT_CRS = 3832
