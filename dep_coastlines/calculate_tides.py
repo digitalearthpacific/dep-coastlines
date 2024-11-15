@@ -40,10 +40,9 @@ from dep_tools.task import MultiAreaTask, StacTask
 from dep_coastlines.config import (
     TIDES_DATETIME,
     TIDES_DATASET_ID,
-    TIDES_NAMER,
     TIDES_VERSION,
 )
-from dep_coastlines.common import coastlineLogger
+from dep_coastlines.common import coastlineLogger, TIDES_NAMER
 from dep_coastlines.io import ProjOdcLoader, CompositeWriter
 from dep_coastlines.grid import buffered_grid as grid
 from dep_coastlines.task_utils import get_ids

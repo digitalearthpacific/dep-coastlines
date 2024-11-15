@@ -7,7 +7,7 @@ from odc.geo.xr import xr_zeros
 from xarray import concat
 
 from dep_coastlines.tide_utils import tide_cutoffs_lr
-from dep_coastlines.config import TIDES_NAMER
+from dep_coastlines.common import TIDES_NAMER
 from dep_coastlines.io import TideLoader
 
 

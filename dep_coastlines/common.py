@@ -22,6 +22,11 @@ def coastlineItemPath(dataset_id: str, version: str, time: str) -> S3ItemPath:
     return namer
 
 
+TIDES_NAMER = coastlineItemPath(
+    config.TIDES_DATASET_ID, config.TIDES_VERSION, config.TIDES_DATETIME
+)
+
+
 def coastlineLogger(
     itempath: S3ItemPath,
     dataset_id,

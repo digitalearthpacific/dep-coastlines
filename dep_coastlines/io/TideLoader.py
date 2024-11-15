@@ -6,7 +6,8 @@ from xarray import DataArray
 from dep_tools.loaders import Loader
 from dep_tools.namers import DepItemPath
 
-from dep_coastlines.config import TIDES_NAMER, HTTPS_PREFIX
+from dep_coastlines.common import TIDES_NAMER
+from dep_coastlines.config import HTTPS_PREFIX
 
 
 class TideLoader(Loader):
