@@ -82,7 +82,7 @@ class MosaicProcessor(LandsatProcessor):
             output[scalers], output_multiplier=10_000, output_nodata=-32767
         )
 
-        return output.chunk(dict(x=2048, y=2048))
+        return output.chunk(dict(x=4096, y=4096))
 
 
 def mask_clouds_by_day(
@@ -124,7 +124,7 @@ def process_id(
     )
     loader = ProjOdcLoader(
         datetime=datetime,
-        chunks=dict(band=1, time=1, x=8192, y=8192),
+        chunks=dict(band=1, time=1, x=4096, y=4096),
         resampling={"qa_pixel": "nearest", "*": "cubic"},
         fail_on_error=False,
         bands=["qa_pixel", "nir08", "swir16", "swir22", "red", "blue", "green"],
@@ -172,11 +172,11 @@ def main(
     version: Annotated[str, Option()],
     column: Annotated[str, Option()],
     row: Annotated[str, Option()],
-    load_before_write: Annotated[str, Option(parser=bool_parser)] = "True",
+    load_before_write: Annotated[str, Option(parser=bool_parser)] = "False",
 ):
     configure_s3_access(cloud_defaults=True, requester_pays=True)
     boto3.setup_default_session()
-    with Client(memory_limit="16GiB"):
+    with Client(memory_limit="8GiB", n_workers=4, threads_per_worker=1):
         process_id(
             (int(column), int(row)),
             datetime,
