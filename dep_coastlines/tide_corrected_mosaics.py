@@ -176,7 +176,7 @@ def main(
 ):
     configure_s3_access(cloud_defaults=True, requester_pays=True)
     boto3.setup_default_session()
-    with Client(memory_limit="8GiB", n_workers=4, threads_per_worker=1):
+    with Client(memory_limit="16GiB", n_workers=4, threads_per_worker=1):
         process_id(
             (int(column), int(row)),
             datetime,
