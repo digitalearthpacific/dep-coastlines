@@ -82,7 +82,7 @@ class MosaicProcessor(LandsatProcessor):
             output[scalers], output_multiplier=10_000, output_nodata=-32767
         )
 
-        return output.chunk(dict(x=4096, y=4096))
+        return output  # .chunk(dict(x=4096, y=4096))
 
 
 def mask_clouds_by_day(
