@@ -82,7 +82,7 @@ class MosaicProcessor(LandsatProcessor):
             output[scalers], output_multiplier=10_000, output_nodata=-32767
         )
 
-        return output  # .chunk(dict(x=4096, y=4096))
+        return output.chunk(dict(x=4096, y=4096)).persist()
 
 
 def mask_clouds_by_day(
@@ -176,7 +176,8 @@ def main(
 ):
     configure_s3_access(cloud_defaults=True, requester_pays=True)
     boto3.setup_default_session()
-    with Client(memory_limit="16GiB", n_workers=4, threads_per_worker=1):
+    # with Client(memory_limit="16GiB", n_workers=4, threads_per_worker=1):
+    with Client():
         process_id(
             (int(column), int(row)),
             datetime,
