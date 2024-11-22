@@ -38,6 +38,12 @@ DATASET_ID = "coastlines/interim/mosaic"
 
 class MosaicProcessor(LandsatProcessor):
     def process(self, xr: Dataset, area) -> Dataset | None:
+        xr = xr.rio.clip(
+            area.to_crs(xr.rio.crs).geometry,
+            all_touched=True,
+            from_disk=True,
+            drop=True,
+        )
         # Do the cloud mask first before scale and offset are done
         # When masking by day is stable, move to LandsatProcessor
         xr = super().process(mask_clouds_by_day(xr)).drop_duplicates(...)
@@ -82,7 +88,7 @@ class MosaicProcessor(LandsatProcessor):
             output[scalers], output_multiplier=10_000, output_nodata=-32767
         )
 
-        return output.chunk(dict(x=4096, y=4096)).persist()
+        return output
 
 
 def mask_clouds_by_day(
@@ -126,9 +132,9 @@ def process_id(
         datetime=datetime,
         chunks=dict(band=1, time=1, x=4096, y=4096),
         resampling={"qa_pixel": "nearest", "*": "cubic"},
-        fail_on_error=False,
+        fail_on_error=True,
         bands=["qa_pixel", "nir08", "swir16", "swir22", "red", "blue", "green"],
-        clip_to_area=True,
+        clip_to_area=False,
         dtype="float32",
         anchor=AnchorEnum.CENTER,  # see relevant issue for why this is needed
     )
@@ -176,8 +182,7 @@ def main(
 ):
     configure_s3_access(cloud_defaults=True, requester_pays=True)
     boto3.setup_default_session()
-    # with Client(memory_limit="16GiB", n_workers=4, threads_per_worker=1):
-    with Client():
+    with Client(memory_limit="16GiB"):  # , n_workers=4, threads_per_worker=1):
         process_id(
             (int(column), int(row)),
             datetime,
