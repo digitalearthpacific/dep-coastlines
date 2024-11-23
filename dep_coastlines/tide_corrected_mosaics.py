@@ -12,6 +12,7 @@ import pystac_client
 from typer import Option, run
 from xarray import Dataset, DataArray
 
+from dep_tools.exceptions import NoOutputError
 from dep_tools.landsat_utils import cloud_mask
 from dep_tools.namers import DepItemPath
 from dep_tools.searchers import LandsatPystacSearcher
@@ -55,7 +56,7 @@ class MosaicProcessor(LandsatProcessor):
 
         # In case we filtered out all the data
         if not "time" in xr.coords or len(xr.time) == 0:
-            return None
+            raise NoOutputError()
 
         # Limit to one reading per day. This can be accomplished by
         # using groupby="solarday" when loading, but I discovered that landsat
@@ -166,11 +167,14 @@ def process_id(
             writer=writer,
             logger=logger,
         ).run()
+    except NoOutputError as e:
+        logger.error([task_id, "no output", e])
+        pass
     except Exception as e:
         logger.error([task_id, "error", e])
         raise e
-
-    logger.info([task_id, "complete", paths])
+    else:
+        logger.info([task_id, "complete", paths])
 
 
 def main(
