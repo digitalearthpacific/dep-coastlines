@@ -1,6 +1,7 @@
 """Calculates water indices for the given areas and times and saves to blob storage.
 """
 
+from datetime import datetime
 from typing import Iterable, Tuple, Annotated
 
 import boto3
@@ -8,6 +9,7 @@ from dask.distributed import Client
 from odc.geo.geobox import AnchorEnum
 from odc.stac import configure_s3_access
 from pystac_client import Client as PystacClient
+from rasterio.errors import RasterioIOError
 from typer import Option, run
 from xarray import Dataset, DataArray
 
@@ -30,7 +32,11 @@ from dep_coastlines.grid import buffered_grid as grid
 from dep_coastlines.io import ProjOdcLoader, TideLoader
 from dep_coastlines.calculate_tides import TideProcessor
 from dep_coastlines.tide_utils import filter_by_tides
-from dep_coastlines.time_utils import composite_from_years, parse_datetime
+from dep_coastlines.time_utils import (
+    composite_from_years,
+    parse_datetime,
+    years_from_yearstring,
+)
 from dep_coastlines.task_utils import bool_parser
 from dep_coastlines.water_indices import twndwi
 
@@ -42,45 +48,68 @@ client = PystacClient.open(
 )
 
 
+class ItemFilterer:
+    def __init__(self, items, year):
+        self._items = [
+            item
+            for item in items
+            if str(
+                datetime.strptime(
+                    item.properties["datetime"], "%Y-%m-%dT%H:%M:%S.%fZ"
+                ).year
+            )
+            in years_from_yearstring(year, "/")
+        ]
+        if len(self._items) == 0:
+            raise EmptyCollectionError
+
+    def search(self, *_):
+        return self._items
+
+
 class MultiYearTask:
-    def __init__(self, all_time: str, itempath, searcher, **kwargs):
+    def __init__(self, area, all_time: str, itempath, **kwargs):
         self._years = composite_from_years(
             parse_datetime(all_time.replace("/", "_")), [1, 3]
         )
+        self._area = area
+        self._all_time = all_time
         self._itempath = itempath
-        self._searcher = searcher
         self._kwargs = kwargs
         self._task_class = AwsStacTask
+        self._items = LandsatPystacSearcher(
+            search_intersecting_pathrows=True,
+            datetime=self._all_time,
+            client=client,
+            collections=["landsat-c2l2-sr"],
+        ).search(self._area)
+        self._tides = load_tides(self._items, self._area)
 
     def run(self):
         paths = []
         for year in self._years:
+            print(year)
             self._itempath.time = year.replace("/", "_")
-            year_searcher = LandsatPystacSearcher(
-                search_intersecting_pathrows=True,
-                datetime=year,
-                client=client,
-                collections=["landsat-c2l2-sr"],
+            processor = MosaicProcessor(
+                self._tides,
+                mask_clouds=True,
+                scale_and_offset=True,
+                send_area_to_processor=True,
             )
             try:
                 paths += self._task_class(
                     itempath=self._itempath,
-                    searcher=year_searcher,
+                    processor=processor,
+                    searcher=ItemFilterer(self._items, year),
+                    area=self._area,
                     **self._kwargs,
                 ).run()
-            except (EmptyCollectionError, NoOutputError):
+            except (EmptyCollectionError, NoOutputError, RasterioIOError):
                 continue
         return paths
 
 
-def load_tides(area, full_time="1984/2024"):
-    items = LandsatPystacSearcher(
-        search_intersecting_pathrows=True,
-        datetime=full_time,
-        client=client,
-        collections=["landsat-c2l2-sr"],
-    ).search(area)
-
+def load_tides(items, area):
     ds = ProjOdcLoader(
         chunks=dict(band=1, time=1, x=8192, y=8192),
         resampling={"qa_pixel": "nearest", "*": "cubic"},
@@ -97,11 +126,17 @@ def load_tides(area, full_time="1984/2024"):
 
 
 class MosaicProcessor(LandsatProcessor):
-    def __init__(self, area, full_time="1984/2024", **kwargs):
+    def __init__(self, all_tides, **kwargs):
         super().__init__(**kwargs)
-        self._tides = load_tides(area, full_time)
+        self._tides = all_tides
 
     def process(self, xr: Dataset, area) -> Dataset | None:
+        xr = xr.rio.clip(
+            area.to_crs(xr.rio.crs).geometry,
+            all_touched=True,
+            from_disk=True,
+            drop=True,
+        )
         # Do the cloud mask first before scale and offset are done
         # When masking by day is stable, move to LandsatProcessor
         xr = super().process(mask_clouds_by_day(xr)).drop_duplicates(...)
@@ -143,7 +178,7 @@ class MosaicProcessor(LandsatProcessor):
             output[scalers], output_multiplier=10_000, output_nodata=-32767
         )
 
-        return output.chunk(dict(x=2048, y=2048))
+        return output
 
 
 def mask_clouds_by_day(
@@ -173,26 +208,17 @@ def process_id(
     dataset_id: str = DATASET_ID,
     load_before_write: bool = False,
 ) -> None:
-    searcher = LandsatPystacSearcher(
-        search_intersecting_pathrows=True,
-        datetime=datetime,
-        client=client,
-        collections=["landsat-c2l2-sr"],
-    )
     loader = ProjOdcLoader(
         chunks=dict(band=1, time=1, x=8192, y=8192),
         resampling={"qa_pixel": "nearest", "*": "cubic"},
-        fail_on_error=False,
+        fail_on_error=True,
         bands=["qa_pixel", "nir08", "swir16", "swir22", "red", "blue", "green"],
-        clip_to_area=True,
+        clip_to_area=False,
         dtype="float32",
         anchor=AnchorEnum.CENTER,  # see relevant issue for why this is needed
     )
 
     area = grid.loc[[task_id]]
-    processor = MosaicProcessor(
-        mask_clouds=True, scale_and_offset=True, send_area_to_processor=True, area=area
-    )
 
     namer = coastlineItemPath(dataset_id, version, datetime)
     logger = coastlineLogger(namer, dataset_id=dataset_id)
@@ -208,13 +234,11 @@ def process_id(
     try:
         paths = MultiYearTask(
             all_time=datetime,
+            area=area,
             itempath=namer,
-            searcher=searcher,
             post_processor=post_processor,
             id=task_id,
-            area=area,
             loader=loader,
-            processor=processor,
             writer=writer,
             logger=logger,
         ).run()
@@ -233,7 +257,7 @@ def main(
 ):
     configure_s3_access(cloud_defaults=True, requester_pays=True)
     boto3.setup_default_session()
-    with Client():
+    with Client(memory_limit="16GiB"):
         process_id(
             (int(column), int(row)),
             version,
