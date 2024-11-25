@@ -10,6 +10,7 @@ from odc.geo.geobox import AnchorEnum
 from odc.stac import configure_s3_access
 from pystac_client import Client as PystacClient
 from rasterio.errors import RasterioIOError
+from retry import retry
 from typer import Option, run
 from xarray import Dataset, DataArray
 
@@ -85,6 +86,10 @@ class MultiYearTask:
         ).search(self._area)
         self._tides = load_tides(self._items, self._area)
 
+    @retry(RasterioIOError, delay=60, backoff=2, max_delay=480)
+    def _run_single_task(self, task) -> str | list[str]:
+        return task.run()
+
     def run(self):
         paths = []
         for year in self._years:
@@ -97,14 +102,16 @@ class MultiYearTask:
                 send_area_to_processor=True,
             )
             try:
-                paths += self._task_class(
-                    itempath=self._itempath,
-                    processor=processor,
-                    searcher=ItemFilterer(self._items, year),
-                    area=self._area,
-                    **self._kwargs,
-                ).run()
-            except (EmptyCollectionError, NoOutputError, RasterioIOError):
+                paths += self._run_single_task(
+                    self._task_class(
+                        itempath=self._itempath,
+                        processor=processor,
+                        searcher=ItemFilterer(self._items, year),
+                        area=self._area,
+                        **self._kwargs,
+                    )
+                )
+            except (EmptyCollectionError, NoOutputError):
                 continue
         return paths
 
@@ -257,7 +264,7 @@ def main(
 ):
     configure_s3_access(cloud_defaults=True, requester_pays=True)
     boto3.setup_default_session()
-    with Client(memory_limit="16GiB"):
+    with Client():
         process_id(
             (int(column), int(row)),
             version,
