@@ -51,16 +51,20 @@ client = PystacClient.open(
 
 class ItemFilterer:
     def __init__(self, items, year):
-        self._items = [
-            item
-            for item in items
-            if str(
-                datetime.strptime(
-                    item.properties["datetime"], "%Y-%m-%dT%H:%M:%S.%fZ"
-                ).year
+        self._items = []
+        for item in items:
+            format_string = (
+                "%Y-%m-%dT%H:%M:%S.%fZ"
+                if "." in item.properties["datetime"]
+                else "%Y-%m-%dT%H:%M:%SZ"
             )
-            in years_from_yearstring(year, "/")
-        ]
+            item_year = str(
+                datetime.strptime(item.properties["datetime"], format_string).year
+            )
+
+            if item_year in years_from_yearstring(year, "/"):
+                self._items.append(item)
+
         if len(self._items) == 0:
             raise EmptyCollectionError
 
@@ -94,6 +98,7 @@ class MultiYearTask:
         paths = []
         for year in self._years:
             print(year)
+            configure_s3_access(cloud_defaults=True, requester_pays=True)
             self._itempath.time = year.replace("/", "_")
             processor = MosaicProcessor(
                 self._tides,
@@ -113,6 +118,7 @@ class MultiYearTask:
                 )
             except (EmptyCollectionError, NoOutputError):
                 continue
+
         return paths
 
 
