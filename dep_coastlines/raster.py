@@ -9,7 +9,7 @@ from dask.distributed import Client
 from odc.geo.geobox import AnchorEnum
 from odc.stac import configure_s3_access
 from pystac_client import Client as PystacClient
-from rasterio.errors import RasterioIOError
+from rasterio.errors import RasterioIOError, WarpOperationError
 from retry import retry
 from typer import Option, run
 from xarray import Dataset, DataArray
@@ -90,7 +90,13 @@ class MultiYearTask:
         ).search(self._area)
         self._tides = load_tides(self._items, self._area)
 
-    @retry(RasterioIOError, delay=60, backoff=2, max_delay=480)
+    @retry(
+        (WarpOperationError, RasterioIOError),
+        tries=5,
+        delay=60,
+        backoff=2,
+        max_delay=480,
+    )
     def _run_single_task(self, task) -> str | list[str]:
         return task.run()
 
