@@ -225,12 +225,13 @@ def process_id(
     version: str,
     datetime: str = "1984/2024",
     dataset_id: str = DATASET_ID,
-    load_before_write: bool = False,
+    load_before_write: bool = True,
+    fail_on_read_error: bool = True,
 ) -> None:
     loader = ProjOdcLoader(
         chunks=dict(band=1, time=1, x=8192, y=8192),
         resampling={"qa_pixel": "nearest", "*": "cubic"},
-        fail_on_error=True,
+        fail_on_error=fail_on_read_error,
         bands=["qa_pixel", "nir08", "swir16", "swir22", "red", "blue", "green"],
         clip_to_area=False,
         dtype="float32",
@@ -273,6 +274,7 @@ def main(
     column: Annotated[str, Option()],
     version: Annotated[str, Option()],
     load_before_write: Annotated[str, Option(parser=bool_parser)] = "True",
+    fail_on_read_error: Annotated[str, Option(parser=bool_parser)] = "True",
 ):
     configure_s3_access(cloud_defaults=True, requester_pays=True)
     boto3.setup_default_session()
@@ -281,6 +283,7 @@ def main(
             (int(column), int(row)),
             version,
             load_before_write=load_before_write,
+            fail_on_read_error=fail_on_read_error,
         )
 
 
