@@ -449,7 +449,7 @@ def main(
     configure_s3_access(cloud_defaults=True, requester_pays=True)
     boto3.setup_default_session()
     with Client():
-        process_id((int(row), int(column)), version=version, water_index=water_index)
+        process_id((int(column), int(row)), version=version, water_index=water_index)
 
 
 if __name__ == "__main__":
