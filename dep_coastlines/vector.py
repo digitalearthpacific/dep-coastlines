@@ -251,7 +251,7 @@ class Cleaner(Processor):
             .where(analysis_zone | core_land)
             .where(~max_cap, obvious_water)
             .groupby("year")
-            .map(smooth_gaussian, sigma=0.4)
+            .map(smooth_gaussian)
             .rio.write_crs(output.rio.crs)
         )
 
