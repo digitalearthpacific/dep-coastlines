@@ -78,7 +78,7 @@ DaWriter = CompositeWriter
 class CoastlineWriter(Writer):
     def __init__(self, itempath, **kwargs):
         # **kwargs are for e.g. overwrite, which applies to both
-        self._rasterWriter = CompositeWriter(itempath, driver="COG", **kwargs)
+        self._rasterWriter = CompositeWriter(itempath, use_odc_writer=False, **kwargs)
         self._vectorWriter = CompositeWriter(itempath, driver="GPKG", **kwargs)
 
     def write(

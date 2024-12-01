@@ -68,16 +68,17 @@ def remove_disconnected_land(
     function.
     """
 
-    if candidate_land.year.size > 1:
+    if "year" in candidate_land.dims and candidate_land.year.size > 1:
         return candidate_land.groupby("year").map(
             lambda candidate_year: remove_disconnected_land(
-                certain_land, candidate_year
+                certain_land, candidate_year.squeeze(drop=True)
             )
         )
 
     zones = apply_ufunc(
         label, candidate_land, None, 0, dask="parallelized", kwargs=dict(connectivity=1)
     )
+
     connected_or_not = xs.zonal_stats(
         zones, certain_land.astype("int8"), stats_funcs=["max"]
     )
@@ -117,7 +118,9 @@ def find_inland_areas(water_bool_da, ocean_bool_da) -> DataArray:
 
     # Can't do this in chunks because the labels would be repeated across chunks.
     # but could parallelize across years I think
-    return water_bool_da.groupby("year").apply(_find_inland_2d)
+    return water_bool_da.groupby("year").apply(
+        lambda da: _find_inland_2d(da.squeeze(drop=True))
+    )
 
 
 def small_areas(bool_da: DataArray, min_size_in_pixels: int = 55) -> DataArray:
@@ -131,7 +134,7 @@ def small_areas(bool_da: DataArray, min_size_in_pixels: int = 55) -> DataArray:
         small_zones = size_by_zone["zone"][size_by_zone["sum"] < min_size_in_pixels]
         return bool_da_2d.where(zones.isin(small_zones) == 1, False)
 
-    return bool_da.groupby("year").apply(_remove_2d)
+    return bool_da.groupby("year").apply(lambda da: _remove_2d(da.squeeze(drop=True)))
 
 
 def ephemeral_areas(bool_da: DataArray) -> DataArray:
@@ -172,7 +175,9 @@ def ephemeral_areas(bool_da: DataArray) -> DataArray:
         stable_zones = location_by_zone["zone"][location_by_zone["max"] == 1]
         return zones.isin(stable_zones)
 
-    return ~bool_da.groupby("year").apply(_temporal_masking_2d)
+    return ~bool_da.groupby("year").apply(
+        lambda da: _temporal_masking_2d(da.squeeze(drop=True))
+    )
 
 
 def load_gadm_land(ds: Dataset) -> DataArray:

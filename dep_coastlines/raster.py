@@ -29,8 +29,9 @@ from dep_coastlines.common import (
     coastlineLogger,
     use_alternate_s3_href,
 )
+from dep_coastlines.config import MOSAIC_DATASET_ID
 from dep_coastlines.grid import buffered_grid as grid
-from dep_coastlines.io import ProjOdcLoader, TideLoader
+from dep_coastlines.io import ProjOdcLoader
 from dep_coastlines.calculate_tides import TideProcessor
 from dep_coastlines.tide_utils import filter_by_tides
 from dep_coastlines.time_utils import (
@@ -40,8 +41,6 @@ from dep_coastlines.time_utils import (
 )
 from dep_coastlines.task_utils import bool_parser
 from dep_coastlines.water_indices import twndwi
-
-DATASET_ID = "coastlines/interim/mosaic"
 
 client = PystacClient.open(
     "https://landsatlook.usgs.gov/stac-server",
@@ -224,7 +223,7 @@ def process_id(
     task_id: Tuple | list[Tuple] | None,
     version: str,
     datetime: str = "1984/2024",
-    dataset_id: str = DATASET_ID,
+    dataset_id: str = MOSAIC_DATASET_ID,
     load_before_write: bool = True,
     fail_on_read_error: bool = True,
 ) -> None:
