@@ -13,7 +13,7 @@ from dep_tools.loaders import Loader
 from dep_tools.namers import DepItemPath
 
 from dep_coastlines.common import coastlineItemPath
-from dep_coastlines.config import MOSAIC_DATASET_ID, MOSAIC_VERSION
+from dep_coastlines.config import MOSAIC_DATASET_ID, MOSAIC_VERSION, HTTPS_PREFIX
 from dep_coastlines.water_indices import twndwi, mndwi, ndwi, nirwi
 
 
@@ -162,7 +162,10 @@ def _add_deviations(xr, all_time=None):
 
 def _load_single_path(path, name) -> xr.Dataset:
     return (
-        rx.open_rasterio(f"s3://{path}", chunks=True, masked=True)
+        #        rx.open_rasterio(f"s3://{path}", chunks=True, masked=True)
+        rx.open_rasterio(
+            f"{HTTPS_PREFIX}/{path.split('/', 1)[1]}", chunks=True, masked=True
+        )
         .squeeze()
         .to_dataset(name=name)
     )
