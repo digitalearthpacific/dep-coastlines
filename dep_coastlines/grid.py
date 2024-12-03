@@ -1,13 +1,13 @@
 from pathlib import Path
 
 import geopandas as gpd
+from osgeo import gdal, gdalconst
 import pandas as pd
 from shapely import make_valid
 from s3fs import S3FileSystem
 
 from dep_tools.grids import grid, PACIFIC_EPSG, gadm
-
-# from dep_tools.utils import fix_winding
+from dep_tools.utils import fix_winding
 
 import dep_coastlines.config as config
 
@@ -71,15 +71,23 @@ def remove_inland_borders(aoi):
     return gpd.GeoDataFrame(geometry=aoi).overlay(indonesia, how="difference")
 
 
-def make_grid(grid_buffer=250) -> gpd.GeoDataFrame:
+def full_aoi() -> gpd.GeoDataFrame:
     padm = gadm()
     hawaii = (
-        gpd.read_file("~/Downloads/gadm41_USA.gpkg", layer="ADM_ADM_1")
+        gpd.read_file(
+            "https://geodata.ucdavis.edu/gadm/gadm4.1/gpkg/gadm41_USA.gpkg",
+            layer="ADM_ADM_1",
+        )
         .set_index("ISO_1")
         .loc[["US-HI"]]
         .reset_index()
     )
-    aoi = pd.concat([padm, hawaii]).dissolve()[["geometry"]]
+    return pd.concat([padm, hawaii]).dissolve()[["geometry"]]
+
+
+def make_grid(grid_buffer=250) -> gpd.GeoDataFrame:
+    aoi = full_aoi()
+
     aoi = remove_inland_borders(aoi)
 
     # Buffer the country boundaries enough to be sure to capture the coastline.
@@ -94,6 +102,13 @@ def make_grid(grid_buffer=250) -> gpd.GeoDataFrame:
     )
 
     full_grid = grid(return_type="GeoSeries")
+    # limit to cells which overlap the aoi (this prevents including cells
+    # that are just buffer)
+    full_grid = full_grid.iloc[
+        full_grid.to_crs(4326).sindex.query(
+            aoi.geometry.iloc[0], predicate="intersects"
+        )
+    ]
 
     # This buffer is for grid cells. Adding overlap prevents disjoint edges
     # between tiles.
@@ -111,7 +126,7 @@ def make_grid(grid_buffer=250) -> gpd.GeoDataFrame:
     coastline_grid["tile_id"] = coastline_grid.apply(
         lambda r: f"{str(r.column)},{str(r.row)}", axis=1
     )
-    #    coastline_grid["geometry"] = coastline_grid.geometry.apply(fix_winding)
+    coastline_grid["geometry"] = coastline_grid.geometry.apply(fix_winding)
     return assign_crs(coastline_grid)
 
 
@@ -125,6 +140,28 @@ buffered_grid_bucket_path = (
     f"{config.BUCKET}/dep_ls_coastlines/raw/{buffered_grid_name}"
 )
 
+aoi_raster_name = "coastlines_aoi.tif"
+local_aoi_raster_path = Path(__file__).parent / f"../data/raw/{aoi_raster_name}"
+remote_aoi_raster_path = f"{config.BUCKET}/dep_ls_coastlines/raw/{aoi_raster_name}"
+
+if not remote_fs.exists(buffered_grid_bucket_path) or OVERWRITE:
+    aoi = full_aoi()
+
+    opts = gdal.RasterizeOptions(
+        creationOptions=dict(
+            COMPRESS="CCITTFAX4", TILED="YES", NBITS=1, SPARSE_OK="TRUE"
+        ),
+        outputType=gdalconst.GDT_Byte,
+        xRes=30,
+        yRes=30,
+        burnValues=[1],
+    )
+    gdal.Rasterize(
+        local_aoi_path, gdal.OpenEx(aoi.to_crs(PACIFIC_EPSG).to_json()), options=opts
+    )
+    rw_fs = S3FileSystem(anon=False)
+    rw_fs.put_file(local_aoi_path, remote_aoi_path)
+
 
 if not remote_fs.exists(buffered_grid_bucket_path) or OVERWRITE:
     rw_fs = S3FileSystem(anon=False)
@@ -133,13 +170,9 @@ if not remote_fs.exists(buffered_grid_bucket_path) or OVERWRITE:
     rw_fs.put_file(local_buffered_grid_blob_path, buffered_grid_bucket_path)
 
 
-buffered_grid = (
-    gpd.read_file(remote_fs.open(f"s3://{buffered_grid_bucket_path}")).set_index(
-        ["column", "row"]
-    )
-    # Only filter to those ids in grid...we don't want just buffer
-    # .loc[grid.index]
-)
+buffered_grid = gpd.read_file(
+    remote_fs.open(f"s3://{buffered_grid_bucket_path}")
+).set_index(["column", "row"])
 
 
 _test_tiles = [

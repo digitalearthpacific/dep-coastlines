@@ -20,6 +20,8 @@ import xarray as xr
 import xrspatial as xs
 from xarray import apply_ufunc, DataArray, Dataset
 
+from dep_coastlines.grid import remote_aoi_raster_path
+
 BooleanDataArray = DataArray
 
 
@@ -183,7 +185,6 @@ def ephemeral_areas(bool_da: DataArray) -> DataArray:
 def load_gadm_land(ds: Dataset) -> DataArray:
     # This is a rasterized version of gadm. It seems better than any ESA product
     # at defining land (see for instance Vanuatu).
-    input_path = "https://deppcpublicstorage.blob.core.windows.net/output/aoi/aoi.tif"
-    land = rx.open_rasterio(input_path, chunks=True).rio.write_crs(8859)
+    land = rx.open_rasterio(f"s3://{remote_aoi_raster_path}", chunks=True)
     bounds = list(transform_bounds(ds.rio.crs, land.rio.crs, *ds.rio.bounds()))
     return land.rio.clip_box(*bounds).squeeze().rio.reproject_match(ds).astype(bool)
