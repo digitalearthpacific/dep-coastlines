@@ -37,8 +37,6 @@ import xrspatial as xs
 from dep_tools.processors import Processor
 from dep_tools.task import (
     ErrorCategoryAreaTask,
-    AwsStacTask,
-    EmptyCollectionError,
     NoOutputError,
 )
 
@@ -230,7 +228,10 @@ class Cleaner(Processor):
         # 1 cell of consensus land
         disconnected_areas = self.land(output.where(analysis_zone)) & ~connected_areas
         analysis_zone = analysis_zone & ~disconnected_areas
-        obvious_water = 0.5
+        if not analysis_zone.any():
+            raise NoOutputError(
+                "Analysis zone is empty, there may be no land detected in this area"
+            )
 
         gadm_land = load_gadm_land(output)
         # consensus land may have inland water, but gadm doesn't.
@@ -246,6 +247,7 @@ class Cleaner(Processor):
         # The amount here is linked to the buffer value in the grid
         core_land = mask_cleanup(gadm_land, mask_filters=[("erosion", 60)])
 
+        obvious_water = 0.5
         self.water_index = (
             output[self.water_index_name]
             .where(analysis_zone | core_land)
