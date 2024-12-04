@@ -59,7 +59,7 @@ def main(
     output_dir: Path = Path("data/raw/tidal_models/fes2022b"),
     copy_to_s3: bool = True,
     write_urls_to_file: bool = True,
-    url_file_path="data/interim/tide_data_urls.txt",
+    url_file_path="data/tide_data_urls.txt",
 ):
     # clip_tide_data(input_dir=input_dir, output_dir=output_dir, copy_to_s3=copy_to_s3)
     if write_urls_to_file:

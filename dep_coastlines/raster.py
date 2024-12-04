@@ -149,7 +149,6 @@ class MosaicProcessor(LandsatProcessor):
         self._tides = all_tides
 
     def process(self, xr: Dataset, area) -> Dataset | None:
-        breakpoint()
         xr = xr.rio.clip(
             area.to_crs(xr.rio.crs).geometry,
             all_touched=True,
