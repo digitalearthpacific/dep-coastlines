@@ -9,6 +9,11 @@
 #     * Aggregates this data to produce moving window hotspot datasets
 #       that summarise coastal change at regional and continental scale.
 #     * Writes outputs to GeoPackage and zipped shapefiles
+#
+# Code adapted from
+# https://github.com/digitalearthafrica/deafrica-coastlines/blob/main/coastlines/continental.py
+# by Jesse Anderson for Digital Earth Pacific.
+# Original authors: Robbi Bishop-Taylor, Alex Leith, Indiphile Ngqambuza
 
 
 import os
@@ -16,13 +21,18 @@ from pathlib import Path
 import sys
 
 import click
-from coastlines.utils import configure_logging, STYLES_FILE
+from coastlines.utils import configure_logging
 from coastlines.vector import points_on_line, change_regress, vector_schema
 from dep_tools.utils import shift_negative_longitudes
 import fiona
 import geohash as gh
 import geopandas as gpd
 import pandas as pd
+from shapely.geometry.point import Point
+
+from dep_coastlines.config import COASTLINES_VERSION
+
+STYLES_FILE = "dep_coastlines/styles.csv"
 
 
 def wms_fields(gdf):
@@ -58,6 +68,7 @@ def wms_fields(gdf):
     "--vector_version",
     type=str,
     required=True,
+    default=COASTLINES_VERSION,
     help="A unique string proving a name that was used "
     "for output vector directories and files. This is used "
     "to identify the tiled annual shoreline and rates of "
@@ -297,9 +308,9 @@ def continental_cli(
             # hotspots radius by 30 m along-shore rates of change point distance)
             hotspots_gdf["n"] = hotspot_grouped.size()
             hotspots_gdf["n"] = hotspots_gdf["n"].fillna(0)
-            hotspots_gdf.loc[
-                hotspots_gdf.n < (radius / 30), "certainty"
-            ] = "insufficient points"
+            hotspots_gdf.loc[hotspots_gdf.n < (radius / 30), "certainty"] = (
+                "insufficient points"
+            )
 
             # Generate a geohash UID for each point and set as index
             uids = (
@@ -320,6 +331,7 @@ def continental_cli(
                         "properties": vector_schema(hotspots_gdf),
                         "geometry": "Point",
                     },
+                    engine="fiona",  # needed for schema to work
                 )
 
                 # Add additional WMS fields and add to shapefile
@@ -333,6 +345,7 @@ def continental_cli(
                         "properties": vector_schema(hotspots_gdf),
                         "geometry": "Point",
                     },
+                    engine="fiona",
                 )
 
             except ValueError as e:
@@ -362,6 +375,7 @@ def continental_cli(
                 "properties": vector_schema(ratesofchange_gdf),
                 "geometry": "Point",
             },
+            engine="fiona",
         )
 
         log.info("Writing rates of change points to zipped shapefiles complete")
@@ -375,6 +389,7 @@ def continental_cli(
                 "properties": vector_schema(shorelines_gdf),
                 "geometry": ["MultiLineString", "LineString"],
             },
+            engine="fiona",
         )
 
         log.info("Writing annual shorelines to zipped shapefiles complete")
@@ -385,7 +400,12 @@ def continental_cli(
 
     if include_styles:
         styles = gpd.read_file(STYLES_FILE)
-        styles.to_file(OUTPUT_GPKG, layer="layer_styles")
+        # Need to add fake geometry to write to a geopackage. This appears
+        # to be due to a recent change in geopandas.
+        styles_gpdf = gpd.GeoDataFrame(
+            styles, geometry=[Point(0, 0) for _ in range(len(styles))], crs=3832
+        )
+        styles_gpdf.to_file(OUTPUT_GPKG, layer="layer_styles")
         log.info("Writing styles to GeoPackage file complete")
 
     else:
@@ -406,14 +426,12 @@ def build_tiles(output_gpkg: Path, output_file: Path) -> None:
         for layer_name in fiona.listlayers(output_gpkg)
         if layer_name != "layer_styles"
     }
-    tippecanoe_layers = ""
     for name, gdf in layers.items():
         gdf = gdf.to_crs(4326)
         gdf["geometry"] = gdf.geometry.apply(shift_negative_longitudes)
         output_geojson_path = output_file.parent / f"{output_file.stem}_{name}.geojson"
         output_pmtile_path = output_file.parent / f"{output_file.stem}_{name}.pmtiles"
         gdf.to_file(output_geojson_path)
-        tippecanoe_layers += f"{output_pmtile_path} "
         roc_opts = " -y sig_time -y rate_time -y certainty"
         opts = dict(
             hotspots_zoom_1=f"-B 0 {roc_opts}",
@@ -425,9 +443,6 @@ def build_tiles(output_gpkg: Path, output_file: Path) -> None:
         os.system(
             f"tippecanoe {opts} -pi -z13 -f -o {output_pmtile_path} -L {name}:{output_geojson_path}"
         )
-
-    os.system(f"tile-join -f -pk -o {output_file} {tippecanoe_layers}")
-    os.system(f"tile-join -f -pk -e data/tiles/{output_file.stem} {tippecanoe_layers}")
 
 
 if __name__ == "__main__":

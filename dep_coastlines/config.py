@@ -11,3 +11,5 @@ TIDES_DATETIME = "1984/2024"
 
 MOSAIC_VERSION = "0.8.0"
 MOSAIC_DATASET_ID = "coastlines/interim/mosaic"
+
+COASTLINES_VERSION = "0-8-0"

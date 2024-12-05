@@ -61,7 +61,7 @@ def main(
     write_urls_to_file: bool = True,
     url_file_path="data/tide_data_urls.txt",
 ):
-    # clip_tide_data(input_dir=input_dir, output_dir=output_dir, copy_to_s3=copy_to_s3)
+    clip_tide_data(input_dir=input_dir, output_dir=output_dir, copy_to_s3=copy_to_s3)
     if write_urls_to_file:
         if not copy_to_s3:
             warnings.warn("writing urls to file, but copy_to_s3 not specified!")
