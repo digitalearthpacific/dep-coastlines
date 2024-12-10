@@ -420,7 +420,7 @@ def process_id(
     version: str = "0.8.0",
     water_index="twndwi",
 ) -> None:
-    start_year = 1999
+    start_year = 1998
     end_year = 2023
     namer = coastlineItemPath(dataset_id, version, time=f"{start_year}_{end_year}")
     logger = coastlineLogger(namer, dataset_id=dataset_id)

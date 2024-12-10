@@ -1,12 +1,10 @@
-import re
 import warnings
 
-from azure.storage.blob import ContainerClient
 from numpy import mean
 from numpy.lib.stride_tricks import sliding_window_view
 import odc.geo.xr
-import rioxarray as rx
-from s3fs import S3FileSystem
+import odc.stac
+from pystac import Item
 import xarray as xr
 
 from dep_tools.loaders import Loader
@@ -112,33 +110,24 @@ class MosaicLoader(Loader):
             )
 
         item_id = area.index.to_numpy()[0]
-        fs = S3FileSystem(anon=False)
-        # previously the name was stored as an attribute but to_cog doesn't appear
-        # to do that (or I need to set it up). For now, extract it from the path
-        paths_and_names = [
-            (path, re.sub(".*[0-9]{4}_(.*)\.tif", "\\1", path))
-            for path in fs.glob(
-                f"{self._itempath.bucket}/{self._itempath._folder(item_id)}/*.tif"
-            )
-        ]
-
-        if len(paths_and_names) > 0:
-            output = xr.merge(
-                [_load_single_path(path, name) for path, name in paths_and_names]
-            )
-            output[
-                [
-                    k
-                    for k in output.keys()
-                    if not (k.endswith("mad") or k.endswith("stdev") or k == "count")
-                ]
-            ] /= 10_000
-
-            return _add_deviations(output, all_time) if self._add_deviations else output
-        else:
-            message = "No items in folder " + self._itempath._folder(item_id)
-            warnings.warn(message)
+        stac_path = self._itempath.stac_path(item_id)
+        try:
+            stac_item = Item.from_file(f"{HTTPS_PREFIX}/{stac_path}")
+        except Exception as e:
+            warnings.warn("error from when loading stac item: {}".format(e))
             return None
+
+        output = odc.stac.load([stac_item], chunks=dict(x=2048, y=2048)).squeeze()
+
+        output[
+            [
+                k
+                for k in output.keys()
+                if not (k.endswith("mad") or k.endswith("stdev") or k == "count")
+            ]
+        ] /= 10_000
+
+        return _add_deviations(output, all_time) if self._add_deviations else output
 
 
 def _set_year_to_middle_year(ds: xr.Dataset) -> xr.Dataset:
@@ -158,14 +147,3 @@ def _add_deviations(xr, all_time=None):
     deviation = deviation.rename({k: k + "_dev" for k in list(deviation.keys())})
     all_time = all_time.rename({k: k + "_all" for k in list(all_time.keys())})
     return xr.merge(deviation).merge(all_time).chunk(xr.chunks)
-
-
-def _load_single_path(path, name) -> xr.Dataset:
-    return (
-        #        rx.open_rasterio(f"s3://{path}", chunks=True, masked=True)
-        rx.open_rasterio(
-            f"{HTTPS_PREFIX}/{path.split('/', 1)[1]}", chunks=True, masked=True
-        )
-        .squeeze()
-        .to_dataset(name=name)
-    )
