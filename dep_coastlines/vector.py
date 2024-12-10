@@ -41,7 +41,7 @@ from dep_tools.task import (
 )
 
 from dep_coastlines.common import coastlineItemPath, coastlineLogger
-from dep_coastlines.config import MOSAIC_VERSION
+from dep_coastlines.config import CLOUD_MODEL_FILE, MOSAIC_VERSION
 from dep_coastlines.cloud_model.fit_model import SavedModel  # needed for load
 from dep_coastlines.cloud_model.predictor import ModelPredictor
 from dep_coastlines.io import CoastlineWriter, MultiyearMosaicLoader
@@ -75,7 +75,7 @@ class Cleaner(Processor):
         comparison: Callable = operator.lt,
         number_of_expansions: int = 8,
         baseline_year: str = "2023",
-        model_file=Path(__file__).parent / "cloud_model/full_model_0-7-0-4.joblib",
+        model_file=CLOUD_MODEL_FILE,
         **kwargs,
     ):
         super().__init__(**kwargs)

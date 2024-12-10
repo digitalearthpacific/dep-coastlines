@@ -12,4 +12,9 @@ TIDES_DATETIME = "1984/2024"
 MOSAIC_VERSION = "0.8.0"
 MOSAIC_DATASET_ID = "coastlines/interim/mosaic"
 
+CLOUD_MODEL_VERSION = "0.8.0"
+CLOUD_MODEL_FILE = (
+    f"dep_coastlines/cloud_model/cloud_model_{CLOUD_MODEL_VERSION}.joblib"
+)
+
 COASTLINES_VERSION = "0-8-0"
