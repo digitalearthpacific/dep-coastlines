@@ -1,6 +1,6 @@
 kind: Workflow
 metadata:
-  name: clean-rasters-0707-test
+  name: clean-rasters-07057
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
@@ -8,7 +8,7 @@ spec:
   podGC:
     strategy: OnWorkflowSuccess
     deleteDelayDuration: 600s
-  parallelism: 50
+  parallelism: 600
   nodeSelector:
     digitalearthpacific.org/node-size: argo-d64
   tolerations:
@@ -28,9 +28,9 @@ spec:
     - name: code-file
       value: "dep_coastlines/clean_rasters.py"
     - name: version
-      value: "0.7.0.7"
+      value: "0.7.0.57"
     - name: image-tag
-      value: "v0.6.0.146-20-g84fa5d3"
+      value: "cr.0.7.0.57d"
     - name: dataset-id
       value: "coastlines/coastlines"
   templates:
@@ -45,6 +45,8 @@ spec:
                 value: "1999/2023" 
               - name: version
                 value: "{{ workflow.parameters.version }}"
+              - name: limit
+                value: 10000
               - name: overwrite-logs
                 value: "False"
               - name: filter-using-log
@@ -63,7 +65,7 @@ spec:
             - name: version
               value: "{{ workflow.parameters.version }}"
             - name: water-index
-              value: "wndwi"
+              value: "twndwi"
           withParam: "{{ tasks.generate-ids.outputs.result }}"
   - name: generate
     inputs:
@@ -73,6 +75,7 @@ spec:
       - name: overwrite-logs
       - name: filter-using-log
       - name: filter-existing-stac-items
+      - name: limit
     container:
       image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
@@ -87,6 +90,8 @@ spec:
         - "{{ workflow.parameters.dataset-id }}"
         - --datetime
         - "{{ inputs.parameters.datetime }}"
+        - --limit
+        - "{{ inputs.parameters.limit }}"
         - --version
         - "{{ inputs.parameters.version }}"
         - --overwrite-logs

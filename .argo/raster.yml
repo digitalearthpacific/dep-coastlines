@@ -1,48 +1,56 @@
 kind: Workflow
 metadata:
-  name: clean-rasters-0709-test
+  name: raster
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
-  serviceAccountName: argo-workflow-sa
+  serviceAccountName: public-bucket-writer
   podGC:
     strategy: OnWorkflowSuccess
     deleteDelayDuration: 600s
-  parallelism: 50
-  nodeSelector:
-    digitalearthpacific.org/node-size: argo-d64
-  tolerations:
-  - key: digitalearthpacific.org/node-purpose
-    operator: Equal
-    value: argo
-    effect: NoSchedule
-  - key: kubernetes.azure.com/scalesetpriority
-    operator: Equal
-    value: spot
-    effect: NoSchedule
-  workflowMetadata:
+  parallelism: 250
+  podMetadata:
     labels:
-      app: dep_ls_coastlines
+      app: coastlines
+    annotations:
+      karpenter.sh/do-not-disrupt: "true"
+  nodeSelector:
+    karpenter.sh/capacity-type: "spot"
+  hostAliases:
+    - ip: "13.227.74.109"
+      hostnames:
+        - "landsatlook.usgs.gov"
   arguments:
     parameters:
     - name: code-file
-      value: "dep_coastlines/clean_rasters.py"
+      value: "dep_coastlines/raster.py"
     - name: version
-      value: "0.7.0.9"
+      value: "0.8.0"
     - name: image-tag
-      value: "v0.6.0.146-21-g2ce4adb"
+      value: "v0.8.0dev61"
     - name: dataset-id
-      value: "coastlines/coastlines"
+      value: "coastlines/interim/mosaic"
+    - name: datetime
+      value: "1984/2024"
   templates:
   - name: workflow-entrypoint
+    retryStrategy:
+      limit: "3"
+      retryPolicy: "Always"
+    podSpecPatch: |
+      containers:
+        - name: main
+          resources:
+            limits:
+              memory: "{{=(sprig.int(retries) + 1) * 32}}Gi"
     dag:
       tasks:
         - name: generate-ids
           template: generate
           arguments:
             parameters:
-              - name: datetime
-                value: "1999/2023" 
+              - name: limit
+                value: "None"
               - name: version
                 value: "{{ workflow.parameters.version }}"
               - name: overwrite-logs
@@ -56,20 +64,22 @@ spec:
           template: process
           arguments:
             parameters:
-            - name: row
-              value: "{{item.row}}"
             - name: column
               value: "{{item.column}}"
+            - name: row
+              value: "{{item.row}}"
             - name: version
               value: "{{ workflow.parameters.version }}"
-            - name: water-index
-              value: "meanwi"
+            - name: load-before-write
+              value: "True"
+            - name: fail-on-read-error
+              value: "False"
           withParam: "{{ tasks.generate-ids.outputs.result }}"
   - name: generate
     inputs:
       parameters:
-      - name: datetime
       - name: version
+      - name: limit
       - name: overwrite-logs
       - name: filter-using-log
       - name: filter-existing-stac-items
@@ -86,64 +96,49 @@ spec:
         - --dataset-id
         - "{{ workflow.parameters.dataset-id }}"
         - --datetime
-        - "{{ inputs.parameters.datetime }}"
+        - "{{ workflow.parameters.datetime }}"
         - --version
         - "{{ inputs.parameters.version }}"
+        - --limit
+        - "{{ inputs.parameters.limit }}"
         - --overwrite-logs
         - "{{ inputs.parameters.overwrite-logs }}"
         - --filter-using-log
         - "{{ inputs.parameters.filter-using-log }}"
         - --filter-existing-stac-items
         - "{{ inputs.parameters.filter-existing-stac-items }}"
-      env:
-        - name: AZURE_STORAGE_ACCOUNT
-          valueFrom:
-            secretKeyRef:
-              name: deppcpublicstorage-output-read-write
-              key: AZURE_STORAGE_ACCOUNT
-        - name: AZURE_STORAGE_SAS_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: deppcpublicstorage-output-read-write
-              key: AZURE_STORAGE_SAS_TOKEN
 
   - name: process
     inputs:
       parameters:
-      - name: version
-      - name: row
       - name: column
-      - name: water-index
+      - name: row
+      - name: version
+      - name: load-before-write
+      - name: fail-on-read-error
     container:
       image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
       resources:
         requests: 
+          memory: 32Gi
+          cpu: 4
+        limits:
           memory: 64Gi
           cpu: 8
-        limits:
-          cpu: 16
-          memory: 128Gi
       command: [ python ]
       args:
-        - "{{ workflow.parameters.code-file }}"
-        - process-id
-        - --version
-        - "{{ inputs.parameters.version }}"
-        - --row
-        - "{{ inputs.parameters.row }}"
+        - dep_coastlines/raster.py
         - --column
         - "{{ inputs.parameters.column }}"
-        - --water-index
-        - "{{ inputs.parameters.water-index }}"
+        - --row
+        - "{{ inputs.parameters.row }}"
+        - --version
+        - "{{ inputs.parameters.version }}"
+        - --load-before-write
+        - "{{ inputs.parameters.load-before-write }}"
+        - --fail-on-read-error
+        - "{{ inputs.parameters.fail-on-read-error }}"
       env:
-        - name: AZURE_STORAGE_ACCOUNT
-          valueFrom:
-            secretKeyRef:
-              name: deppcpublicstorage-output-read-write
-              key: AZURE_STORAGE_ACCOUNT
-        - name: AZURE_STORAGE_SAS_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: deppcpublicstorage-output-read-write
-              key: AZURE_STORAGE_SAS_TOKEN
+        - name: DASK_ARRAY__RECHUNK__METHOD
+          value: "tasks"

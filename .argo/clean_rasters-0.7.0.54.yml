@@ -1,6 +1,6 @@
 kind: Workflow
 metadata:
-  name: mosaics-corrected-061
+  name: clean-rasters-07054
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
@@ -8,7 +8,7 @@ spec:
   podGC:
     strategy: OnWorkflowSuccess
     deleteDelayDuration: 600s
-  parallelism: 10
+  parallelism: 600
   nodeSelector:
     digitalearthpacific.org/node-size: argo-d64
   tolerations:
@@ -26,13 +26,13 @@ spec:
   arguments:
     parameters:
     - name: code-file
-      value: "dep_coastlines/tide_corrected_mosaics.py"
+      value: "dep_coastlines/clean_rasters.py"
     - name: version
-      value: "0.6.1"
+      value: "0.7.0.54"
     - name: image-tag
-      value: "v0.6.0.100-1-g0aa408a"
+      value: "cr.0.7.0.54c"
     - name: dataset-id
-      value: "coastlines/mosaics-corrected"
+      value: "coastlines/coastlines"
   templates:
   - name: workflow-entrypoint
     dag:
@@ -41,15 +41,17 @@ spec:
           template: generate
           arguments:
             parameters:
-              - name: limit
-                value: "None"
               - name: datetime
-                value: "1999_2023" 
-              - name: years-per-composite
-                value: "1,3"
+                value: "1999/2023" 
               - name: version
                 value: "{{ workflow.parameters.version }}"
+              - name: limit
+                value: 10000
               - name: overwrite-logs
+                value: "False"
+              - name: filter-using-log
+                value: "True"
+              - name: filter-existing-stac-items
                 value: "False"
         - name: process-id
           depends: generate-ids.Succeeded
@@ -60,21 +62,20 @@ spec:
               value: "{{item.row}}"
             - name: column
               value: "{{item.column}}"
-            - name: datetime
-              value: "{{item.datetime}}"
             - name: version
               value: "{{ workflow.parameters.version }}"
-            - name: load-before-write
-              value: "False"
+            - name: water-index
+              value: "twndwi"
           withParam: "{{ tasks.generate-ids.outputs.result }}"
   - name: generate
     inputs:
       parameters:
       - name: datetime
       - name: version
-      - name: limit
-      - name: years-per-composite
       - name: overwrite-logs
+      - name: filter-using-log
+      - name: filter-existing-stac-items
+      - name: limit
     container:
       image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
@@ -89,14 +90,16 @@ spec:
         - "{{ workflow.parameters.dataset-id }}"
         - --datetime
         - "{{ inputs.parameters.datetime }}"
-        - --version
-        - "{{ inputs.parameters.version }}"
         - --limit
         - "{{ inputs.parameters.limit }}"
-        - --years-per-composite
-        - "{{ inputs.parameters.years-per-composite }}"
+        - --version
+        - "{{ inputs.parameters.version }}"
         - --overwrite-logs
         - "{{ inputs.parameters.overwrite-logs }}"
+        - --filter-using-log
+        - "{{ inputs.parameters.filter-using-log }}"
+        - --filter-existing-stac-items
+        - "{{ inputs.parameters.filter-existing-stac-items }}"
       env:
         - name: AZURE_STORAGE_ACCOUNT
           valueFrom:
@@ -112,34 +115,32 @@ spec:
   - name: process
     inputs:
       parameters:
-      - name: datetime
       - name: version
       - name: row
       - name: column
+      - name: water-index
     container:
       image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
       resources:
         requests: 
-          memory: 128Gi
+          memory: 64Gi
           cpu: 8
         limits:
           cpu: 16
-          memory: 256Gi
+          memory: 128Gi
       command: [ python ]
       args:
         - "{{ workflow.parameters.code-file }}"
         - process-id
-        - --datetime
-        - "{{ inputs.parameters.datetime }}"
         - --version
         - "{{ inputs.parameters.version }}"
         - --row
         - "{{ inputs.parameters.row }}"
         - --column
         - "{{ inputs.parameters.column }}"
-        - --load-before-write
-        - "{{ inputs.parameters.load-before-write }}"
+        - --water-index
+        - "{{ inputs.parameters.water-index }}"
       env:
         - name: AZURE_STORAGE_ACCOUNT
           valueFrom:

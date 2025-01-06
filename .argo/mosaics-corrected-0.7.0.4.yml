@@ -1,16 +1,14 @@
 kind: Workflow
 metadata:
-  name: mosaics-corrected-0704
+  name: mosaics-080
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
-  serviceAccountName: argo-workflow-sa
+  serviceAccountName: public-bucket-writer
   podGC:
     strategy: OnWorkflowSuccess
     deleteDelayDuration: 600s
-  parallelism: 1000
-  nodeSelector:
-    digitalearthpacific.org/node-size: argo-d64
+  parallelism: 100
   tolerations:
   - key: digitalearthpacific.org/node-purpose
     operator: Equal
@@ -28,11 +26,11 @@ spec:
     - name: code-file
       value: "dep_coastlines/tide_corrected_mosaics.py"
     - name: version
-      value: "0.7.0.4"
+      value: "0.8.0dev24"
     - name: image-tag
-      value: "cr.0.7.0.42e"
+      value: "v0.8.0dev24"
     - name: dataset-id
-      value: "coastlines/mosaics-corrected"
+      value: "coastlines/interim/mosaic"
   templates:
   - name: workflow-entrypoint
     dag:
@@ -41,8 +39,6 @@ spec:
           template: generate
           arguments:
             parameters:
-              - name: limit
-                value: "5000"
               - name: datetime
                 value: "1999_2023" 
               - name: years-per-composite
@@ -112,18 +108,6 @@ spec:
         - "{{ inputs.parameters.filter-using-log }}"
         - --filter-existing-stac-items
         - "{{ inputs.parameters.filter-existing-stac-items }}"
-      env:
-        - name: AZURE_STORAGE_ACCOUNT
-          valueFrom:
-            secretKeyRef:
-              name: deppcpublicstorage-output-read-write
-              key: AZURE_STORAGE_ACCOUNT
-        - name: AZURE_STORAGE_SAS_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: deppcpublicstorage-output-read-write
-              key: AZURE_STORAGE_SAS_TOKEN
-
   - name: process
     inputs:
       parameters:
@@ -131,6 +115,7 @@ spec:
       - name: version
       - name: row
       - name: column
+      - name: load-before-write
     container:
       image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
@@ -155,14 +140,3 @@ spec:
         - "{{ inputs.parameters.column }}"
         - --load-before-write
         - "{{ inputs.parameters.load-before-write }}"
-      env:
-        - name: AZURE_STORAGE_ACCOUNT
-          valueFrom:
-            secretKeyRef:
-              name: deppcpublicstorage-output-read-write
-              key: AZURE_STORAGE_ACCOUNT
-        - name: AZURE_STORAGE_SAS_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: deppcpublicstorage-output-read-write
-              key: AZURE_STORAGE_SAS_TOKEN

@@ -1,48 +1,56 @@
 kind: Workflow
 metadata:
-  name: clean-rasters-07019-test
+  name: vector
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
-  serviceAccountName: argo-workflow-sa
+  serviceAccountName: public-bucket-writer
   podGC:
     strategy: OnWorkflowSuccess
     deleteDelayDuration: 600s
-  parallelism: 50
-  nodeSelector:
-    digitalearthpacific.org/node-size: argo-d64
-  tolerations:
-  - key: digitalearthpacific.org/node-purpose
-    operator: Equal
-    value: argo
-    effect: NoSchedule
-  - key: kubernetes.azure.com/scalesetpriority
-    operator: Equal
-    value: spot
-    effect: NoSchedule
-  workflowMetadata:
+  parallelism: 600
+  podMetadata:
     labels:
-      app: dep_ls_coastlines
+      app: coastlines
+    annotations:
+      karpenter.sh/do-not-disrupt: "true"
+  nodeSelector:
+    karpenter.sh/capacity-type: "spot"
+  hostAliases:
+    - ip: "52.92.184.90"
+      hostnames:
+        - "dep-public-staging.s3.us-west-2.amazonaws.com"
   arguments:
     parameters:
     - name: code-file
-      value: "dep_coastlines/clean_rasters.py"
+      value: "dep_coastlines/vector.py"
     - name: version
-      value: "0.7.0.19"
+      value: "0.8.1"
     - name: image-tag
-      value: "v0.6.0.146-23-g308cfd5"
+      value: "cl0.8.1"
     - name: dataset-id
-      value: "coastlines/coastlines"
+      value: "coastlines/interim/coastlines"
+    - name: datetime
+      value: "1999/2023"
   templates:
   - name: workflow-entrypoint
+    retryStrategy:
+      limit: "3"
+      retryPolicy: "Always"
+    podSpecPatch: |
+      containers:
+        - name: main
+          resources:
+            limits:
+              memory: "{{=(sprig.int(retries) * 32) + 64}}Gi"
     dag:
       tasks:
         - name: generate-ids
           template: generate
           arguments:
             parameters:
-              - name: datetime
-                value: "1999/2023" 
+              - name: limit
+                value: "None"
               - name: version
                 value: "{{ workflow.parameters.version }}"
               - name: overwrite-logs
@@ -56,19 +64,16 @@ spec:
           template: process
           arguments:
             parameters:
-            - name: row
-              value: "{{item.row}}"
             - name: column
               value: "{{item.column}}"
+            - name: row
+              value: "{{item.row}}"
             - name: version
               value: "{{ workflow.parameters.version }}"
-            - name: water-index
-              value: "meanwi"
           withParam: "{{ tasks.generate-ids.outputs.result }}"
   - name: generate
     inputs:
       parameters:
-      - name: datetime
       - name: version
       - name: overwrite-logs
       - name: filter-using-log
@@ -86,7 +91,7 @@ spec:
         - --dataset-id
         - "{{ workflow.parameters.dataset-id }}"
         - --datetime
-        - "{{ inputs.parameters.datetime }}"
+        - "{{ workflow.parameters.datetime }}"
         - --version
         - "{{ inputs.parameters.version }}"
         - --overwrite-logs
@@ -95,55 +100,32 @@ spec:
         - "{{ inputs.parameters.filter-using-log }}"
         - --filter-existing-stac-items
         - "{{ inputs.parameters.filter-existing-stac-items }}"
-      env:
-        - name: AZURE_STORAGE_ACCOUNT
-          valueFrom:
-            secretKeyRef:
-              name: deppcpublicstorage-output-read-write
-              key: AZURE_STORAGE_ACCOUNT
-        - name: AZURE_STORAGE_SAS_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: deppcpublicstorage-output-read-write
-              key: AZURE_STORAGE_SAS_TOKEN
 
   - name: process
     inputs:
       parameters:
-      - name: version
-      - name: row
       - name: column
-      - name: water-index
+      - name: row
+      - name: version
     container:
       image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
       resources:
         requests: 
-          memory: 64Gi
-          cpu: 8
+          cpu: 4
+          memory: 32Gi
         limits:
-          cpu: 16
-          memory: 128Gi
+          cpu: 8
+          memory: 64Gi
       command: [ python ]
       args:
-        - "{{ workflow.parameters.code-file }}"
-        - process-id
-        - --version
-        - "{{ inputs.parameters.version }}"
-        - --row
-        - "{{ inputs.parameters.row }}"
+        - "{{ workflow.parameters.code-file  }}"
         - --column
         - "{{ inputs.parameters.column }}"
-        - --water-index
-        - "{{ inputs.parameters.water-index }}"
+        - --row
+        - "{{ inputs.parameters.row }}"
+        - --version
+        - "{{ inputs.parameters.version }}"
       env:
-        - name: AZURE_STORAGE_ACCOUNT
-          valueFrom:
-            secretKeyRef:
-              name: deppcpublicstorage-output-read-write
-              key: AZURE_STORAGE_ACCOUNT
-        - name: AZURE_STORAGE_SAS_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: deppcpublicstorage-output-read-write
-              key: AZURE_STORAGE_SAS_TOKEN
+        - name: DASK_ARRAY__RECHUNK__METHOD
+          value: "tasks"
