@@ -28,9 +28,16 @@ import fiona
 import geohash as gh
 import geopandas as gpd
 import pandas as pd
+from s3fs import S3FileSystem
 from shapely.geometry.point import Point
 
-from dep_coastlines.config import COASTLINES_VERSION
+from dep_coastlines.common import coastlineItemPath
+from dep_coastlines.config import (
+    HTTPS_PREFIX,
+    VECTOR_DATASET_ID,
+    VECTOR_DATETIME,
+    VECTOR_VERSION,
+)
 
 STYLES_FILE = "dep_coastlines/styles.csv"
 
@@ -68,7 +75,7 @@ def wms_fields(gdf):
     "--vector_version",
     type=str,
     required=True,
-    default=COASTLINES_VERSION,
+    default=VECTOR_VERSION,
     help="A unique string proving a name that was used "
     "for output vector directories and files. This is used "
     "to identify the tiled annual shoreline and rates of "
@@ -137,6 +144,12 @@ def wms_fields(gdf):
     default=True,
     help="Set this to indicate whether to include styles " "in output Geopackage file.",
 )
+@click.option(
+    "--include-tiles/--no-include-tiles",
+    is_flag=True,
+    default=True,
+    help="Set this to indicate whether to produce tiles.",
+)
 def continental_cli(
     vector_version,
     continental_version,
@@ -146,7 +159,7 @@ def continental_cli(
     hotspots_radius,
     baseline_year,
     include_styles,
-    tiles=True,
+    include_tiles,
 ):
     #################
     # Merge vectors #
@@ -162,11 +175,33 @@ def continental_cli(
     output_dir.mkdir(exist_ok=True, parents=True)
     log.info(f"Writing data to {output_dir}")
 
+    def input_paths(vector_version):
+        vectorItemPath = coastlineItemPath(
+            dataset_id=VECTOR_DATASET_ID, version=vector_version, time=VECTOR_DATETIME
+        )
+        fs = S3FileSystem(anon=False)
+        shoreline_paths = " ".join(
+            [
+                f"'/vsicurl?max_retry=3&url={HTTPS_PREFIX}/{path.split('/',1)[1]}'"
+                for path in fs.glob(
+                    f"{vectorItemPath.bucket}/{vectorItemPath._folder_prefix}/**/*{vectorItemPath.time}.gpkg"
+                )
+                if path.endswith("gpkg")
+            ]
+        )
+        ratesofchange_paths = " ".join(
+            [
+                f"'/vsicurl?max_retry=3&url={HTTPS_PREFIX}/{path.split('/',1)[1]}'"
+                for path in fs.glob(
+                    f"{vectorItemPath.bucket}/{vectorItemPath._folder_prefix}/**/*{vectorItemPath.time}_roc.gpkg"
+                )
+                if path.endswith("gpkg")
+            ]
+        )
+        return shoreline_paths, ratesofchange_paths
+
     # Setup input and output file paths
-    shoreline_paths = f"data/interim/vector/{vector_version}/*/*/1999_2023/*3.gpkg"
-    ratesofchange_paths = (
-        f"data/interim/vector/{vector_version}/*/*/1999_2023/*roc.gpkg"
-    )
+    shoreline_paths, ratesofchange_paths = input_paths(vector_version)
 
     # Output path for geopackage and zipped shapefiles
     OUTPUT_GPKG = output_dir / f"dep_ls_coastlines_{continental_version}.gpkg"
@@ -187,7 +222,6 @@ def continental_cli(
             f"-single -overwrite_ds -t_srs epsg:3832 "
             f"-nln shorelines_annual"
         )
-
         os.system(
             f"ogr2ogr {OUTPUT_GPKG} {TMP_GPKG} "
             f"-dialect sqlite -nln shorelines_annual "
@@ -411,7 +445,7 @@ def continental_cli(
     else:
         log.info("Not writing styles to GeoPackage")
 
-    if tiles:
+    if include_tiles:
         OUTPUT_TILES = (
             Path(output_dir) / f"dep_ls_coastlines_{continental_version}.pmtiles"
         )

@@ -17,4 +17,6 @@ CLOUD_MODEL_FILE = (
     f"dep_coastlines/cloud_model/cloud_model_{CLOUD_MODEL_VERSION}.joblib"
 )
 
-COASTLINES_VERSION = "0-8-0"
+VECTOR_VERSION = "0-8-0"
+VECTOR_DATASET_ID = "coastlines/interim/coastlines"
+VECTOR_DATETIME = "1998/2023"

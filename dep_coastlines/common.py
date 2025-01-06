@@ -1,10 +1,10 @@
 import re
 from typing import Optional
 
+from cloud_logger import CsvLogger
+from dep_tools.namers import S3ItemPath
 import pystac
 import pystac_client
-from dep_tools.namers import S3ItemPath
-from cloud_logger import CsvLogger
 
 import dep_coastlines.config as config
 
