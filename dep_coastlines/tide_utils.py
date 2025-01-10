@@ -1,6 +1,41 @@
+from pathlib import Path
 from typing import Tuple
 
+from dea_tools.coastal import pixel_tides
+from odc.geo.geobox import AnchorEnum
 from xarray import DataArray, Dataset
+
+from dep_coastlines.io import ProjOdcLoader
+
+
+def tides_for_items(items, area, **kwargs):
+    ds = ProjOdcLoader(
+        chunks=dict(band=1, time=1, x=8192, y=8192),
+        resampling={"qa_pixel": "nearest", "*": "cubic"},
+        fail_on_error=False,
+        bands=["red"],
+        clip_to_area=True,
+        dtype="float32",
+        anchor=AnchorEnum.CENTER,
+    ).load(items, area)
+
+    return tides_lowres(ds, **kwargs)
+
+
+def tides_lowres(xr: Dataset, tide_directory="data/raw/tidal_models") -> Dataset:
+    tides_lowres = pixel_tides(
+        xr,
+        resample=False,
+        model="FES2022",
+        directory=tide_directory,
+        resolution=3300,
+        parallel=False,  # not doing parallel since it seemed to be slower
+        extrapolate=True,  # we are likely using the fes2022 extrapolated tide
+        # data but there are still some areas which are mis-masked as lakes
+    ).transpose("time", "y", "x")
+
+    tides_lowres.coords["time"] = tides_lowres.coords["time"].astype("str")
+    return tides_lowres
 
 
 def filter_by_tides(ds: Dataset, tides_lr: DataArray) -> Dataset:

@@ -42,7 +42,7 @@ from dep_tools.task import (
 
 from dep_coastlines.common import coastlineItemPath, coastlineLogger
 from dep_coastlines.config import CLOUD_MODEL_FILE, MOSAIC_VERSION
-from dep_coastlines.cloud_model.fit_model import SavedModel  # needed for load
+from dep_coastlines.cloud_model.fit_model import SavedModel  # noqa needed for load
 from dep_coastlines.cloud_model.predictor import ModelPredictor
 from dep_coastlines.io import CoastlineWriter, MultiyearMosaicLoader
 from dep_coastlines.raster_cleaning import (
@@ -74,6 +74,7 @@ class Cleaner(Processor):
         index_threshold: float = 0,
         comparison: Callable = operator.lt,
         number_of_expansions: int = 8,
+        initial_year: str = "1999",
         baseline_year: str = "2023",
         model_file=CLOUD_MODEL_FILE,
         **kwargs,
@@ -81,7 +82,8 @@ class Cleaner(Processor):
         super().__init__(**kwargs)
         self.index_threshold = index_threshold
         self.water_index_name = water_index
-        self.baseline_year = baseline_year
+        self.initial_year = initial_year  # for points
+        self.baseline_year = baseline_year  #
 
         self.model = ModelPredictor(load(model_file))
         self.comparison = comparison
@@ -156,7 +158,7 @@ class Cleaner(Processor):
 
         stats_list = ["valid_obs", "valid_span", "sce", "nsm", "max_year", "min_year"]
         points_gdf[stats_list] = points_gdf.apply(
-            lambda x: all_time_stats(x, initial_year=1999), axis=1
+            lambda x: all_time_stats(x, initial_year=self.initial_year), axis=1
         )
 
         points_gdf["certainty"] = "good"
@@ -173,16 +175,16 @@ class Cleaner(Processor):
         # tidal flats
         # reefs
 
-        points_gdf.loc[points_gdf.rate_time.abs() > 200, "certainty"] = (
-            "extreme value (> 200 m)"
-        )
+        points_gdf.loc[
+            points_gdf.rate_time.abs() > 200, "certainty"
+        ] = "extreme value (> 200 m)"
 
-        points_gdf.loc[points_gdf.angle_std > 30, "certainty"] = (
-            "high angular variability"
-        )
-        points_gdf.loc[points_gdf.valid_obs < 15, "certainty"] = (
-            "insufficient observations"
-        )
+        points_gdf.loc[
+            points_gdf.angle_std > 30, "certainty"
+        ] = "high angular variability"
+        points_gdf.loc[
+            points_gdf.valid_obs < 15, "certainty"
+        ] = "insufficient observations"
 
         # Generate a geohash UID for each point and set as index
         uids = (
@@ -199,6 +201,7 @@ class Cleaner(Processor):
     def process(
         self, input: Dataset | list[Dataset], area
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
+        # Apply cloud mask
         output, mask = self.model.apply_mask(input)
         output = fill_with_nearby_dates(output)
 
@@ -226,7 +229,7 @@ class Cleaner(Processor):
         connected_areas = remove_disconnected_land(consensus_land, candidate_land)
         # don't remove suspicous areas because expanded land may not be within
         # 1 cell of consensus land
-        disconnected_areas = self.land(output.where(analysis_zone)) & ~connected_areas
+        disconnected_areas = candidate_land & ~connected_areas
         analysis_zone = analysis_zone & ~disconnected_areas
         if not analysis_zone.any():
             raise NoOutputError(
@@ -234,13 +237,6 @@ class Cleaner(Processor):
             )
 
         gadm_land = load_gadm_land(output)
-        # consensus land may have inland water, but gadm doesn't.
-        # Also, consensus land will have masked areas as False rather
-        # than nan. Neither of these should matter because gadm doesn't have
-        # these issues. I bring in consensus land basically to fix the areas
-        # near shoreline that gadm may miss.
-        land = gadm_land | consensus_land
-        ocean = mask_cleanup(~land, mask_filters=[("erosion", 2)])
 
         # basically to capture land outside the buffer that would otherwise
         # link inland water to perceived ocean
@@ -267,6 +263,13 @@ class Cleaner(Processor):
             ).to_dataset(name=self.water_index_name)
         )
 
+        # consensus land may have inland water, but gadm doesn't.
+        # Also, consensus land will have masked areas as False rather
+        # than nan. Neither of these should matter because gadm doesn't have
+        # these issues. I bring in consensus land basically to fix the areas
+        # near shoreline that gadm may miss.
+        land = gadm_land | consensus_land
+        ocean = mask_cleanup(~land, mask_filters=[("erosion", 2)])
         inland_water = find_inland_areas(water, ocean)
         water_index = self.water_index.where(~inland_water).where(
             lambda wi: isfinite(wi)
@@ -420,18 +423,21 @@ def process_id(
     version: str = "0.8.0",
     water_index="twndwi",
 ) -> None:
-    start_year = 1999
-    end_year = 2023
+    start_year = 1984
+    end_year = 2024
     namer = coastlineItemPath(dataset_id, version, time=f"{start_year}_{end_year}")
     logger = coastlineLogger(namer, dataset_id=dataset_id)
 
     loader = MultiyearMosaicLoader(
         start_year=start_year,
         end_year=end_year,
-        years_per_composite=[1, 3],
-        version=MOSAIC_VERSION,
+        version="test-6",  # MOSAIC_VERSION,
     )
-    processor = Cleaner(water_index=water_index, send_area_to_processor=True)
+    processor = Cleaner(
+        water_index=water_index,
+        send_area_to_processor=True,
+        initial_year=str(start_year),
+    )
     writer = CoastlineWriter(
         namer,
         extra_attrs=dict(dep_version=version),
@@ -443,8 +449,8 @@ def process_id(
 
 
 def main(
-    row: Annotated[str, Option()],
     column: Annotated[str, Option()],
+    row: Annotated[str, Option()],
     version: Annotated[str, Option()],
     water_index: str = "twndwi",
 ):

@@ -34,8 +34,8 @@ class MultiyearMosaicLoader(Loader):
         self,
         start_year,
         end_year,
-        years_per_composite: list[int] | int = 1,
-        version: str = "0.6.0",
+        years_per_composite: list[int] | int = [1, 3],
+        version: str = MOSAIC_VERSION,
     ):
         super().__init__()
         self._start_year = start_year
@@ -57,7 +57,7 @@ class MultiyearMosaicLoader(Loader):
         ):
             itempath = coastlineItemPath(
                 dataset_id=MOSAIC_DATASET_ID,
-                version=MOSAIC_VERSION,
+                version=self._version,
                 time=datetime.replace("/", "_"),
             )
             loader = MosaicLoader(itempath=itempath)

@@ -6,7 +6,6 @@ dea-tools>=0.3.5
 cloud-logger @ git+https://github.com/jessjaco/cloud-logger.git
 dep-tools @ git+https://github.com/digitalearthpacific/dep-tools.git@b850551
 dep-grid @ git+https://github.com/digitalearthpacific/dep-grid.git@cleanup
-pyTMD==2.1.4
 dea_coastlines @ git+https://github.com/GeoscienceAustralia/dea-coastlines
 joblib
 odc-geo>=0.4.2

@@ -1,4 +1,4 @@
-"""Calculates water indices for the given areas and times and saves to blob storage.
+"""Calculates water indices for the given areas and times and saves to s3.
 """
 
 from datetime import datetime
@@ -16,11 +16,9 @@ from xarray import Dataset, DataArray
 
 from dep_tools.exceptions import EmptyCollectionError, NoOutputError
 from dep_tools.landsat_utils import cloud_mask
-from dep_tools.namers import DepItemPath
 from dep_tools.processors import LandsatProcessor, XrPostProcessor
 from dep_tools.searchers import LandsatPystacSearcher
-from dep_tools.stac_utils import set_stac_properties
-from dep_tools.task import MultiAreaTask, AwsStacTask
+from dep_tools.task import AwsStacTask
 from dep_tools.utils import scale_to_int16
 from dep_tools.writers import AwsDsCogWriter
 
@@ -32,8 +30,7 @@ from dep_coastlines.common import (
 from dep_coastlines.config import MOSAIC_DATASET_ID
 from dep_coastlines.grid import buffered_grid as grid
 from dep_coastlines.io import ProjOdcLoader
-from dep_coastlines.calculate_tides import TideProcessor
-from dep_coastlines.tide_utils import filter_by_tides
+from dep_coastlines.tide_utils import filter_by_tides, tides_for_items
 from dep_coastlines.time_utils import (
     composite_from_years,
     parse_datetime,
@@ -48,7 +45,57 @@ client = PystacClient.open(
 )
 
 
+def process_all_years(area, all_time: str, itempath, **kwargs):
+    years = composite_from_years(parse_datetime(all_time.replace("/", "_")), [1, 3])
+    task_class = AwsStacTask
+    items = LandsatPystacSearcher(
+        search_intersecting_pathrows=True,
+        datetime=all_time,
+        client=client,
+        collections=["landsat-c2l2-sr"],
+    ).search(area)
+    tides = tides_for_items(items, area)
+    processor = MosaicProcessor(
+        tides,
+        mask_clouds=True,
+        scale_and_offset=True,
+        send_area_to_processor=True,
+    )
+
+    @retry(
+        (WarpOperationError, RasterioIOError),
+        tries=5,
+        delay=60,
+        backoff=2,
+        max_delay=480,
+    )
+    def _run_single_task(task) -> str | list[str]:
+        return task.run()
+
+    paths = []
+    for year in years:
+        print(year)
+        configure_s3_access(cloud_defaults=True, requester_pays=True)
+        itempath.time = year.replace("/", "_")
+        try:
+            paths += _run_single_task(
+                task_class(
+                    itempath=itempath,
+                    processor=processor,
+                    searcher=ItemFilterer(items, year),
+                    area=area,
+                    **kwargs,
+                )
+            )
+        except (EmptyCollectionError, NoOutputError):
+            continue
+
+    return paths
+
+
 class ItemFilterer:
+    """A "searcher" which filters a list of items by the given year."""
+
     def __init__(self, items, year):
         self._items = []
         for item in items:
@@ -69,78 +116,6 @@ class ItemFilterer:
 
     def search(self, *_):
         return self._items
-
-
-class MultiYearTask:
-    def __init__(self, area, all_time: str, itempath, **kwargs):
-        self._years = composite_from_years(
-            parse_datetime(all_time.replace("/", "_")), [1, 3]
-        )
-        self._area = area
-        self._all_time = all_time
-        self._itempath = itempath
-        self._kwargs = kwargs
-        self._task_class = AwsStacTask
-        self._items = LandsatPystacSearcher(
-            search_intersecting_pathrows=True,
-            datetime=self._all_time,
-            client=client,
-            collections=["landsat-c2l2-sr"],
-        ).search(self._area)
-        self._tides = load_tides(self._items, self._area)
-
-    @retry(
-        (WarpOperationError, RasterioIOError),
-        tries=5,
-        delay=60,
-        backoff=2,
-        max_delay=480,
-    )
-    def _run_single_task(self, task) -> str | list[str]:
-        return task.run()
-
-    def run(self):
-        paths = []
-        for year in self._years:
-            print(year)
-            configure_s3_access(cloud_defaults=True, requester_pays=True)
-            self._itempath.time = year.replace("/", "_")
-            processor = MosaicProcessor(
-                self._tides,
-                mask_clouds=True,
-                scale_and_offset=True,
-                send_area_to_processor=True,
-            )
-            try:
-                paths += self._run_single_task(
-                    self._task_class(
-                        itempath=self._itempath,
-                        processor=processor,
-                        searcher=ItemFilterer(self._items, year),
-                        area=self._area,
-                        **self._kwargs,
-                    )
-                )
-            except (EmptyCollectionError, NoOutputError):
-                continue
-
-        return paths
-
-
-def load_tides(items, area):
-    ds = ProjOdcLoader(
-        chunks=dict(band=1, time=1, x=8192, y=8192),
-        resampling={"qa_pixel": "nearest", "*": "cubic"},
-        fail_on_error=False,
-        bands=["qa_pixel", "nir08", "swir16", "swir22", "red", "blue", "green"],
-        clip_to_area=True,
-        dtype="float32",
-        anchor=AnchorEnum.CENTER,  # see relevant issue for why this is needed
-    ).load(items, area)
-
-    return TideProcessor(
-        send_area_to_processor=True, tide_directory="data/raw/tidal_models"
-    ).process(ds, area)
 
 
 class MosaicProcessor(LandsatProcessor):
@@ -234,7 +209,7 @@ def process_id(
         bands=["qa_pixel", "nir08", "swir16", "swir22", "red", "blue", "green"],
         clip_to_area=False,
         dtype="float32",
-        anchor=AnchorEnum.CENTER,  # see relevant issue for why this is needed
+        anchor=AnchorEnum.CENTER,
     )
 
     area = grid.loc[[task_id]]
@@ -251,7 +226,7 @@ def process_id(
     )
 
     try:
-        paths = MultiYearTask(
+        paths = process_all_years(
             all_time=datetime,
             area=area,
             itempath=namer,
@@ -260,7 +235,7 @@ def process_id(
             loader=loader,
             writer=writer,
             logger=logger,
-        ).run()
+        )
     except Exception as e:
         logger.error([task_id, "error", e])
         raise e

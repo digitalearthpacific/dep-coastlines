@@ -144,7 +144,7 @@ aoi_raster_name = "coastlines_aoi.tif"
 local_aoi_raster_path = Path(__file__).parent / f"../data/raw/{aoi_raster_name}"
 remote_aoi_raster_path = f"{config.BUCKET}/dep_ls_coastlines/raw/{aoi_raster_name}"
 
-if not remote_fs.exists(buffered_grid_bucket_path) or OVERWRITE:
+if not remote_fs.exists(remote_aoi_raster_path) or OVERWRITE:
     aoi = full_aoi()
 
     opts = gdal.RasterizeOptions(
@@ -157,10 +157,12 @@ if not remote_fs.exists(buffered_grid_bucket_path) or OVERWRITE:
         burnValues=[1],
     )
     gdal.Rasterize(
-        local_aoi_path, gdal.OpenEx(aoi.to_crs(PACIFIC_EPSG).to_json()), options=opts
+        local_aoi_raster_path,
+        gdal.OpenEx(aoi.to_crs(PACIFIC_EPSG).to_json()),
+        options=opts,
     )
     rw_fs = S3FileSystem(anon=False)
-    rw_fs.put_file(local_aoi_path, remote_aoi_path)
+    rw_fs.put_file(local_aoi_raster_path, remote_aoi_raster_path)
 
 
 if not remote_fs.exists(buffered_grid_bucket_path) or OVERWRITE:
