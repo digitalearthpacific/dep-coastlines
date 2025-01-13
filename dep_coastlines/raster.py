@@ -237,7 +237,7 @@ def process_id(
             logger=logger,
         )
     except Exception as e:
-        logger.error([task_id, "error", e])
+        logger.error([task_id, "error", f'"{e}"'])
         raise e
 
     logger.info([task_id, "complete", paths])
