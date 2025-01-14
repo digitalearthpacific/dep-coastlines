@@ -431,7 +431,7 @@ def process_id(
     loader = MultiyearMosaicLoader(
         start_year=start_year,
         end_year=end_year,
-        version="test-6",  # MOSAIC_VERSION,
+        version=MOSAIC_VERSION,
     )
     processor = Cleaner(
         water_index=water_index,
