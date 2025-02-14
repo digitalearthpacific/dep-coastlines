@@ -6,9 +6,7 @@ from odc.geo.geobox import GeoBox
 from odc.geo.xr import xr_zeros
 from xarray import concat
 
-from dep_coastlines.tide_utils import tide_cutoffs_lr
-from dep_coastlines.common import TIDES_NAMER
-from dep_coastlines.io import TideLoader
+from dep_coastlines.tide_utils import tides_lowres, tide_cutoffs_lr
 
 
 def load_tides(gdf):
@@ -24,25 +22,20 @@ def load_tides(gdf):
     return concat(mins, dim="id").mean(dim="id"), concat(maxes, dim="id").mean(dim="id")
 
 
-def _get_da(gdf, crs):
-    resolution = Resolution(3800, 3800)
+def _get_da(gdf, crs=None, time=None):
+    assigned_crs = gdf.crs if crs is None else crs
+    resolution = Resolution(3300, 3300)
 
     geobox = GeoBox.from_geopolygon(
-        Geometry(gdf.iloc[0].geometry, crs=gdf.crs).to_crs(crs), resolution=resolution
+        Geometry(gdf.iloc[0].geometry, crs=gdf.crs).to_crs(assigned_crs),
+        resolution=resolution,
     )
+    assigned_time = time if time is not None else [gdf.iloc[0]["time"]]
     return xr_zeros(
         geobox,
         chunks=(1000, 1000),
-    ).expand_dims(time=[gdf.iloc[0]["time"]])
+    ).expand_dims(time=assigned_time)
 
 
-def make_tides(gdf, crs):
-    return pixel_tides(
-        _get_da(gdf, crs),
-        resample=False,
-        model="FES2022",
-        directory="data/raw/tidal_models",
-        resolution=3800,
-        parallel=False,
-        extrapolate=False,
-    ).squeeze(drop=True)
+def make_tides(gdf, crs=None, time=None):
+    return tides_lowres(_get_da(gdf, crs, time)).squeeze(drop=True)

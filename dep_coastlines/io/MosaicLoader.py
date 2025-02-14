@@ -3,6 +3,7 @@ import warnings
 from numpy import mean
 from numpy.lib.stride_tricks import sliding_window_view
 import odc.geo.xr
+from odc.geo.geobox import AnchorEnum
 import odc.stac
 from pystac import Item
 import xarray as xr
@@ -117,7 +118,9 @@ class MosaicLoader(Loader):
             warnings.warn("error from when loading stac item: {}".format(e))
             return None
 
-        output = odc.stac.load([stac_item], chunks=dict(x=2048, y=2048)).squeeze()
+        output = odc.stac.load(
+            [stac_item], chunks=dict(x=2048, y=2048), anchor=AnchorEnum.EDGE
+        ).squeeze()
 
         output[
             [

@@ -25,9 +25,9 @@ spec:
     - name: code-file
       value: "dep_coastlines/raster.py"
     - name: version
-      value: "0.8.0"
+      value: "0.8.1"
     - name: image-tag
-      value: "v0.8.0dev61"
+      value: "mosaic.0.8.1.dev2"
     - name: dataset-id
       value: "coastlines/interim/mosaic"
     - name: datetime

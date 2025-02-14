@@ -73,7 +73,7 @@ class Cleaner(Processor):
         water_index: str = "twndwi",
         index_threshold: float = 0,
         comparison: Callable = operator.lt,
-        number_of_expansions: int = 8,
+        number_of_expansions: int = 64,
         initial_year: str = "1999",
         baseline_year: str = "2023",
         model_file=CLOUD_MODEL_FILE,
@@ -421,11 +421,11 @@ def process_id(
     task_id: Tuple | list[Tuple] | None,
     dataset_id=DATASET_ID,
     version: str = "0.8.0",
+    start_year: int = 1984,
+    end_year: int = 2024,
     water_index="twndwi",
 ) -> None:
-    start_year = 1984
-    end_year = 2024
-    namer = coastlineItemPath(dataset_id, version, time=f"{start_year}_{end_year}")
+    namer = coastlineItemPath(dataset_id, version, time=f"{start_year}/{end_year}")
     logger = coastlineLogger(namer, dataset_id=dataset_id)
 
     loader = MultiyearMosaicLoader(
@@ -452,12 +452,20 @@ def main(
     column: Annotated[str, Option()],
     row: Annotated[str, Option()],
     version: Annotated[str, Option()],
+    start_year: Annotated[int, Option()] = 1984,
+    end_year: Annotated[int, Option()] = 2024,
     water_index: str = "twndwi",
 ):
     configure_s3_access(cloud_defaults=True, requester_pays=True)
     boto3.setup_default_session()
     with Client():
-        process_id((int(column), int(row)), version=version, water_index=water_index)
+        process_id(
+            (int(column), int(row)),
+            version=version,
+            start_year=start_year,
+            end_year=end_year,
+            water_index=water_index,
+        )
 
 
 if __name__ == "__main__":

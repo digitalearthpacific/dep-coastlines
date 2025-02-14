@@ -27,11 +27,11 @@ spec:
     - name: version
       value: "0.8.1"
     - name: image-tag
-      value: "cl0.8.1"
+      value: "cl.0.8.1d"
     - name: dataset-id
       value: "coastlines/interim/coastlines"
     - name: datetime
-      value: "1999/2023"
+      value: "1984/2024"
   templates:
   - name: workflow-entrypoint
     retryStrategy:
@@ -107,6 +107,7 @@ spec:
       - name: column
       - name: row
       - name: version
+      - name: datetime
     container:
       image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
@@ -126,6 +127,8 @@ spec:
         - "{{ inputs.parameters.row }}"
         - --version
         - "{{ inputs.parameters.version }}"
+        - --datetime
+        - "{{ workflow.parameters.datetime }}"
       env:
         - name: DASK_ARRAY__RECHUNK__METHOD
           value: "tasks"

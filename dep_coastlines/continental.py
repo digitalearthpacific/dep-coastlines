@@ -133,7 +133,7 @@ def wms_fields(gdf):
 @click.option(
     "--baseline_year",
     type=int,
-    default=2023,
+    default=2024,
     help="The annual shoreline used to generate the hotspot "
     "summary points. This is typically the most recent "
     "annual shoreline in the dataset.",
@@ -342,9 +342,9 @@ def continental_cli(
             # hotspots radius by 30 m along-shore rates of change point distance)
             hotspots_gdf["n"] = hotspot_grouped.size()
             hotspots_gdf["n"] = hotspots_gdf["n"].fillna(0)
-            hotspots_gdf.loc[hotspots_gdf.n < (radius / 30), "certainty"] = (
-                "insufficient points"
-            )
+            hotspots_gdf.loc[
+                hotspots_gdf.n < (radius / 30), "certainty"
+            ] = "insufficient points"
 
             # Generate a geohash UID for each point and set as index
             uids = (

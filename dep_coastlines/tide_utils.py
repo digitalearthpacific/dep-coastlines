@@ -2,10 +2,27 @@ from pathlib import Path
 from typing import Tuple
 
 from dea_tools.coastal import pixel_tides
+from dep_tools.searchers import LandsatPystacSearcher
 from odc.geo.geobox import AnchorEnum
+from pystac_client import Client as PystacClient
 from xarray import DataArray, Dataset
 
 from dep_coastlines.io import ProjOdcLoader
+from dep_coastlines.common import use_alternate_s3_href
+
+
+def tides_for_area(area, datetime="1984/2024", **kwargs):
+    client = PystacClient.open(
+        "https://landsatlook.usgs.gov/stac-server",
+        modifier=use_alternate_s3_href,
+    )
+    items = LandsatPystacSearcher(
+        search_intersecting_pathrows=True,
+        datetime=datetime,
+        client=client,
+        collections=["landsat-c2l2-sr"],
+    ).search(area)
+    return tides_for_items(items, area, **kwargs)
 
 
 def tides_for_items(items, area, **kwargs):
@@ -18,6 +35,7 @@ def tides_for_items(items, area, **kwargs):
         dtype="float32",
         anchor=AnchorEnum.CENTER,
     ).load(items, area)
+    breakpoint()
 
     return tides_lowres(ds, **kwargs)
 
@@ -82,5 +100,6 @@ def tide_cutoffs_lr(
     tide_cutoff_buffer = (tide_max - tide_min) * 0.25
     tide_cutoff_min = tide_centre - tide_cutoff_buffer
     tide_cutoff_max = tide_centre + tide_cutoff_buffer
+    breakpoint()
 
     return tide_cutoff_min, tide_cutoff_max
