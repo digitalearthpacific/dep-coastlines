@@ -5,6 +5,9 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.base import BaseEstimator
 
+from dep_coastlines.config import CLOUD_MODEL_FILE
+from dep_coastlines.cloud_model.prep_training_data import TRAINING_DATA_FILE
+
 
 @dataclass
 class SavedModel:
@@ -72,8 +75,5 @@ def train(training_data):
 
 
 if __name__ == "__main__":
-    training_data_file = (
-        "dep_coastlines/cloud_model/training_data_with_features_0-7-0-4_17May2024.csv"
-    )
-    output = train(training_data_file)
-    dump(output, "dep_coastlines/cloud_model/full_model_0-7-0-4.joblib")
+    output = train(TRAINING_DATA_FILE)
+    dump(output, CLOUD_MODEL_FILE)

@@ -1,17 +1,64 @@
+from pathlib import Path
 from typing import Tuple
 
-from retry import retry
+from dea_tools.coastal import pixel_tides
+from dep_tools.searchers import LandsatPystacSearcher
+from odc.geo.geobox import AnchorEnum
+from pystac_client import Client as PystacClient
 from xarray import DataArray, Dataset
 
-from dep_tools.loaders import Loader
+from dep_coastlines.io import ProjOdcLoader
+from dep_coastlines.common import use_alternate_s3_href
 
 
-@retry(tries=10, delay=3)
-def filter_by_tides(ds: Dataset, item_id, tide_loader: Loader, area=None) -> Dataset:
+def tides_for_area(area, datetime="1984/2024", **kwargs):
+    client = PystacClient.open(
+        "https://landsatlook.usgs.gov/stac-server",
+        modifier=use_alternate_s3_href,
+    )
+    items = LandsatPystacSearcher(
+        search_intersecting_pathrows=True,
+        datetime=datetime,
+        client=client,
+        collections=["landsat-c2l2-sr"],
+    ).search(area)
+    return tides_for_items(items, area, **kwargs)
+
+
+def tides_for_items(items, area, **kwargs):
+    ds = ProjOdcLoader(
+        chunks=dict(band=1, time=1, x=8192, y=8192),
+        resampling={"qa_pixel": "nearest", "*": "cubic"},
+        fail_on_error=False,
+        bands=["red"],
+        clip_to_area=True,
+        dtype="float32",
+        anchor=AnchorEnum.CENTER,
+    ).load(items, area)
+    breakpoint()
+
+    return tides_lowres(ds, **kwargs)
+
+
+def tides_lowres(xr: Dataset, tide_directory="data/raw/tidal_models") -> Dataset:
+    tides_lowres = pixel_tides(
+        xr,
+        resample=False,
+        model="FES2022",
+        directory=tide_directory,
+        resolution=3300,
+        parallel=False,  # not doing parallel since it seemed to be slower
+        extrapolate=True,  # we are likely using the fes2022 extrapolated tide
+        # data but there are still some areas which are mis-masked as lakes
+    ).transpose("time", "y", "x")
+
+    tides_lowres.coords["time"] = tides_lowres.coords["time"].astype("str")
+    return tides_lowres
+
+
+def filter_by_tides(ds: Dataset, tides_lr: DataArray) -> Dataset:
     """Remove out of range tide values from a given dataset."""
-    tides_lr = tide_loader.load(item_id)
-
-    tide_cutoff_min, tide_cutoff_max = tide_cutoffs_dask(tides_lr, tide_centre=0.0)
+    tide_cutoff_min, tide_cutoff_max = tide_cutoffs_lr(tides_lr, tide_centre=0.0)
 
     tides_lr = tides_lr.sel(time=ds.time[ds.time.isin(tides_lr.time)])
 
@@ -40,10 +87,11 @@ def filter_by_tides(ds: Dataset, item_id, tide_loader: Loader, area=None) -> Dat
     return ds.where(tide_bool_hr)
 
 
-def tide_cutoffs_dask(
+def tide_cutoffs_lr(
     tides_lowres: DataArray, tide_centre=0.0
 ) -> Tuple[DataArray, DataArray]:
-    """A replacement for coastlines.tide_cutoffs that is dask enabled"""
+    """A replacement for coastlines.tide_cutoffs that is a little memory
+    friendlier"""
     # Calculate min and max tides
     tide_min = tides_lowres.min(dim="time")
     tide_max = tides_lowres.max(dim="time")
@@ -52,5 +100,6 @@ def tide_cutoffs_dask(
     tide_cutoff_buffer = (tide_max - tide_min) * 0.25
     tide_cutoff_min = tide_centre - tide_cutoff_buffer
     tide_cutoff_max = tide_centre + tide_cutoff_buffer
+    breakpoint()
 
     return tide_cutoff_min, tide_cutoff_max
