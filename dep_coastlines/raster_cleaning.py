@@ -1,16 +1,3 @@
-"""These are functions needed for raster cleaning, similar to coastlines.raster.
-So far everything is inspired / taken from the Digital Earth Austalia 
-(https://github.com/GeoscienceAustralia/dea-coastlines) and
-Digital Earth Africa (https://github.com/digitalearthafrica/deafrica-coastlines)
-coastline work, so much credit to those projects / authors for much of what 
-is below.
-
-We are not using those functions directly at this point because of efforts
-dask-enable some things that were not previously dask enabled (see, for
-instance, temporal_masking), and I am sure there will be modifications / 
-additions to the workflow which are study area specific to the Pacific.
-"""
-
 import numpy as np
 from rasterio.warp import transform_bounds
 import rioxarray as rx
@@ -19,6 +6,8 @@ from scipy.ndimage import gaussian_filter
 import xarray as xr
 import xrspatial as xs
 from xarray import apply_ufunc, DataArray, Dataset
+
+from dep_coastlines.grid import remote_aoi_raster_path
 
 BooleanDataArray = DataArray
 
@@ -68,16 +57,17 @@ def remove_disconnected_land(
     function.
     """
 
-    if candidate_land.year.size > 1:
+    if "year" in candidate_land.dims and candidate_land.year.size > 1:
         return candidate_land.groupby("year").map(
             lambda candidate_year: remove_disconnected_land(
-                certain_land, candidate_year
+                certain_land, candidate_year.squeeze(drop=True)
             )
         )
 
     zones = apply_ufunc(
         label, candidate_land, None, 0, dask="parallelized", kwargs=dict(connectivity=1)
     )
+
     connected_or_not = xs.zonal_stats(
         zones, certain_land.astype("int8"), stats_funcs=["max"]
     )
@@ -117,7 +107,9 @@ def find_inland_areas(water_bool_da, ocean_bool_da) -> DataArray:
 
     # Can't do this in chunks because the labels would be repeated across chunks.
     # but could parallelize across years I think
-    return water_bool_da.groupby("year").apply(_find_inland_2d)
+    return water_bool_da.groupby("year").apply(
+        lambda da: _find_inland_2d(da.squeeze(drop=True))
+    )
 
 
 def small_areas(bool_da: DataArray, min_size_in_pixels: int = 55) -> DataArray:
@@ -131,7 +123,7 @@ def small_areas(bool_da: DataArray, min_size_in_pixels: int = 55) -> DataArray:
         small_zones = size_by_zone["zone"][size_by_zone["sum"] < min_size_in_pixels]
         return bool_da_2d.where(zones.isin(small_zones) == 1, False)
 
-    return bool_da.groupby("year").apply(_remove_2d)
+    return bool_da.groupby("year").apply(lambda da: _remove_2d(da.squeeze(drop=True)))
 
 
 def ephemeral_areas(bool_da: DataArray) -> DataArray:
@@ -172,13 +164,14 @@ def ephemeral_areas(bool_da: DataArray) -> DataArray:
         stable_zones = location_by_zone["zone"][location_by_zone["max"] == 1]
         return zones.isin(stable_zones)
 
-    return ~bool_da.groupby("year").apply(_temporal_masking_2d)
+    return ~bool_da.groupby("year").apply(
+        lambda da: _temporal_masking_2d(da.squeeze(drop=True))
+    )
 
 
 def load_gadm_land(ds: Dataset) -> DataArray:
     # This is a rasterized version of gadm. It seems better than any ESA product
     # at defining land (see for instance Vanuatu).
-    input_path = "https://deppcpublicstorage.blob.core.windows.net/output/aoi/aoi.tif"
-    land = rx.open_rasterio(input_path, chunks=True).rio.write_crs(8859)
+    land = rx.open_rasterio(f"s3://{remote_aoi_raster_path}", chunks=True)
     bounds = list(transform_bounds(ds.rio.crs, land.rio.crs, *ds.rio.bounds()))
     return land.rio.clip_box(*bounds).squeeze().rio.reproject_match(ds).astype(bool)

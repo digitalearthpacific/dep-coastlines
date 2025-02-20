@@ -23,7 +23,7 @@ class ModelPredictor:
                 self.model.model,
                 input.sel(year=year)[self.model.predictor_columns],
                 clean=True,
-                proba=True,
+                proba=False,
             )
             prediction.coords["year"] = year
             masks.append(prediction)

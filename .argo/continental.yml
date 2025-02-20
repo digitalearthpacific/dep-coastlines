@@ -1,0 +1,42 @@
+kind: Workflow
+metadata:
+  name: continental
+  namespace: argo
+spec:
+  entrypoint: workflow-entrypoint
+  serviceAccountName: public-bucket-writer
+  podGC:
+    strategy: OnWorkflowSuccess
+    deleteDelayDuration: 600s
+  parallelism: 600
+  podMetadata:
+    labels:
+      app: coastlines
+    annotations:
+      karpenter.sh/do-not-disrupt: "true"
+  nodeSelector:
+    karpenter.sh/capacity-type: "spot"
+  hostAliases:
+    - ip: "52.92.184.90"
+      hostnames:
+        - "dep-public-staging.s3.us-west-2.amazonaws.com"
+  arguments:
+    parameters:
+    - name: image-tag
+      value: "cl.0.8.1d"
+  templates:
+  - name: workflow-entrypoint
+    container:
+      image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
+      imagePullPolicy: IfNotPresent
+      resources:
+        requests: 
+          memory: 32Gi
+          cpu: 4 
+      command: [ python ]
+      args:
+        - dep_coastlines/continental.py
+        - --vector-version
+        - "0.8.1"
+        - --continental-version
+        - "0.8.1"

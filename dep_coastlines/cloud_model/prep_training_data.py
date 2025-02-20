@@ -1,13 +1,13 @@
-from dataclasses import dataclass
 import geopandas as gpd
 import pandas as pd
-from sklearn.base import BaseEstimator
-from xarray import concat
 
-from dea_tools.classification import predict_xr
-from dep_tools.namers import DepItemPath
+from dep_coastlines.io import MosaicLoader
+from dep_coastlines.common import coastlineItemPath
+from dep_coastlines.config import MOSAIC_DATASET_ID, MOSAIC_VERSION
 
-from dep_coastlines.MosaicLoader import MosaicLoader
+TRAINING_DATA_FILE = (
+    f"dep_coastlines/cloud_model/training_data_with_features_{MOSAIC_VERSION}.csv"
+)
 
 
 def prep_training_data(input_file, output_file):
@@ -36,21 +36,19 @@ def cast_all(df, time_column="time"):
 
 
 def pull_data_for_datetime(df):
-    itempath = DepItemPath(
-        sensor="ls",
-        dataset_id="coastlines/mosaics-corrected",
-        version="0.7.0.4",
+    itempath = coastlineItemPath(
+        dataset_id=MOSAIC_DATASET_ID,
+        version=MOSAIC_VERSION,
         time=df.time.iloc[0].replace("/", "_"),
-        zero_pad_numbers=True,
     )
-    loader = MosaicLoader(itempath=itempath, add_deviations=False)
+    loader = MosaicLoader(itempath=itempath)
 
     def _pull_data_for_cell(group):
-        ds = loader.load(group.set_index(["row", "column"]))
-        print(f"{df.time.iloc[0]}|{group.row.iloc[0]}|{group.column.iloc[0]}")
+        ds = loader.load(group.set_index(["column", "row"]))
+        print(f"{df.time.iloc[0]}|{group.column.iloc[0]}|{group.row.iloc[0]}")
         return add_image_values(group, ds)
 
-    output = df.groupby(["row", "column"]).apply(_pull_data_for_cell)
+    output = df.groupby(["column", "row"]).apply(_pull_data_for_cell)
     return output
 
 
@@ -75,6 +73,5 @@ def add_image_values(pts: gpd.GeoDataFrame, image) -> gpd.GeoDataFrame:
 
 
 if __name__ == "__main__":
-    input_file = "data/training_data_v7.gpkg"
-    output_file = "data/training_data_with_features_0-7-0-4_13May2024.csv"
-    prep_training_data(input_file, output_file)
+    input_file = f"dep_coastlines/cloud_model/training_data_v7.gpkg"
+    prep_training_data(input_file, TRAINING_DATA_FILE)

@@ -15,7 +15,7 @@ def clip_tide_data(input_dir: Path, output_dir: Path, copy_to_s3: bool = False) 
             print(path)
             src = xr.open_dataset(nc, engine="h5netcdf")
             output = src.where(
-                (src.lat > -28) & (src.lat < 24) & (src.lon > 130) & (src.lon < 235),
+                (src.lat > -28) & (src.lat < 24) & (src.lon > 130) & (src.lon < 236),
                 drop=True,
             )
             subdir = path.parent.relative_to(input_dir)
@@ -48,7 +48,7 @@ def write_urls(url_file_path):
     client = boto3.client("s3")
     with open(url_file_path, "w") as dst:
         for o in client.list_objects(
-            Bucket=BUCKET, Prefix="dep_ls_coastlines/raw/fes2022b"
+            Bucket=BUCKET, Prefix="dep_ls_coastlines/raw/tidal_models/fes2022b"
         )["Contents"]:
             if not "non_extrapolated" in o["Key"]:
                 dst.write(f"https://{BUCKET}.s3.us-west-2.amazonaws.com/{o['Key']}\n")
@@ -56,10 +56,10 @@ def write_urls(url_file_path):
 
 def main(
     input_dir: Path,
-    output_dir: Path,
-    copy_to_s3: bool = False,
+    output_dir: Path = Path("data/raw/tidal_models/fes2022b"),
+    copy_to_s3: bool = True,
     write_urls_to_file: bool = True,
-    url_file_path="data/interim/tide_data_urls.txt",
+    url_file_path="data/tide_data_urls.txt",
 ):
     clip_tide_data(input_dir=input_dir, output_dir=output_dir, copy_to_s3=copy_to_s3)
     if write_urls_to_file:

@@ -78,7 +78,7 @@ DaWriter = CompositeWriter
 class CoastlineWriter(Writer):
     def __init__(self, itempath, **kwargs):
         # **kwargs are for e.g. overwrite, which applies to both
-        self._rasterWriter = CompositeWriter(itempath, driver="COG", **kwargs)
+        self._rasterWriter = CompositeWriter(itempath, use_odc_writer=False, **kwargs)
         self._vectorWriter = CompositeWriter(itempath, driver="GPKG", **kwargs)
 
     def write(
@@ -91,6 +91,7 @@ class CoastlineWriter(Writer):
         #            mask.Probabilities, item_id, ext="_mask_probabilities.tif"
         #        )
         self._vectorWriter.kwargs["layer"] = f"lines_{item_id}"
+        self._vectorWriter.kwargs["engine"] = "fiona"
         contour_schema = vector_schema(contours)
         contour_schema["eez_territory"] = "str:3"
         # Not sure why they reset the index in vector_schema, but we don't need this
@@ -114,4 +115,5 @@ class CoastlineWriter(Writer):
             self._vectorWriter.kwargs["schema"] = dict(
                 properties=roc_schema, geometry="Point"
             )
+
             self._vectorWriter.write(rates_of_change, item_id, "_roc.gpkg")

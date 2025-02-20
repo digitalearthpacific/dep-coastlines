@@ -67,3 +67,4 @@ https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_coastlines/raw/tida
 https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_coastlines/raw/tidal_models/fes2022b/ocean_tide/sa_fes2022.nc
 https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_coastlines/raw/tidal_models/fes2022b/ocean_tide/ssa_fes2022.nc
 https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_coastlines/raw/tidal_models/fes2022b/ocean_tide/t2_fes2022.nc
+https://dep-public-staging.s3.us-west-2.amazonaws.com/dep_ls_coastlines/raw/tidal_models/fes2022b/tide_data_urls.txt

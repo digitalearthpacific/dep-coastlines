@@ -1,10 +1,10 @@
 import re
 from typing import Optional
 
+from cloud_logger import CsvLogger
+from dep_tools.namers import S3ItemPath
 import pystac
 import pystac_client
-from dep_tools.namers import S3ItemPath
-from cloud_logger import CsvLogger
 
 import dep_coastlines.config as config
 
@@ -20,11 +20,6 @@ def coastlineItemPath(dataset_id: str, version: str, time: str) -> S3ItemPath:
     )
     namer.item_prefix = re.sub("_interim|_raw|_processed", "", namer.item_prefix)
     return namer
-
-
-TIDES_NAMER = coastlineItemPath(
-    config.TIDES_DATASET_ID, config.TIDES_VERSION, config.TIDES_DATETIME
-)
 
 
 def coastlineLogger(
