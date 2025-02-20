@@ -78,7 +78,6 @@ def areas_near_mean_tide(gdf):
         & (this_late_tide > tide_cutoff_min)
         & (this_late_tide < tide_cutoff_max)
     )
-    breakpoint()
     valid_areas_gdf = xr_vectorize(valid_areas.rio.write_crs(this_early_tide.rio.crs))
     valid_areas_gdf = valid_areas_gdf[valid_areas_gdf.attribute == 1]
     return gdf.overlay(valid_areas_gdf.to_crs(gdf.crs), how="intersection")

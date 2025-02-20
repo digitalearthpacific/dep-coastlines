@@ -35,7 +35,6 @@ def tides_for_items(items, area, **kwargs):
         dtype="float32",
         anchor=AnchorEnum.CENTER,
     ).load(items, area)
-    breakpoint()
 
     return tides_lowres(ds, **kwargs)
 
@@ -100,6 +99,5 @@ def tide_cutoffs_lr(
     tide_cutoff_buffer = (tide_max - tide_min) * 0.25
     tide_cutoff_min = tide_centre - tide_cutoff_buffer
     tide_cutoff_max = tide_centre + tide_cutoff_buffer
-    breakpoint()
 
     return tide_cutoff_min, tide_cutoff_max
