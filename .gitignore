@@ -131,3 +131,6 @@ data/*.tif
 constraints.txt
 *.qgz
 dep_ls_coastlines
+
+# other
+.DS_Store
