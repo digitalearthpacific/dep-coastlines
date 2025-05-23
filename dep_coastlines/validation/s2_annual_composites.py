@@ -5,8 +5,9 @@ import sys
 from typing import Annotated
 
 from dask.distributed import Client as DaskClient
-from dep_tools.aws import write_to_s3
+from dep_tools.aws import object_exists, write_to_s3
 from dep_tools.s2_utils import mask_clouds
+from eo_tides import pixel_tides as eo_pixel_tides
 import geopandas as gpd
 from numpy.dtypes import DateTime64DType
 import odc.stac
@@ -66,7 +67,6 @@ def all_time_tides(ds):
 
 
 def filter_by_tides(ds):
-    from eo_tides import pixel_tides as eo_pixel_tides
 
     all_tides = eo_pixel_tides(
         ds,
@@ -95,40 +95,34 @@ def filter_by_tides(ds):
         model="FES2022_load",
     )
 
-    #    ds_tides = (
-    #        tides_lowres(ds)
-    #        .chunk(time=1)
-    #        .odc.reproject(ds.odc.geobox)
-    #        .chunk(x=CHUNK_SIZE, y=CHUNK_SIZE)
-    #    )
-
-    print("making bool...")
     tide_bool = (ds_tides >= tide_cutoff_min_hr) & (ds_tides <= tide_cutoff_max_hr)
     tide_bool["time"] = tide_bool.time.astype(DateTime64DType)
-    print("going in...")
     return ds.where(tide_bool)
 
 
 @app.command()
 def create_mosaic(tile: str, year: str):
-    s2 = load_s2(tile, year)
-    ocm = load_ocm(tile, year)
+    bucket = "dep-public-staging"
+    path = f"dep_ls_coastlines/validation/s2_mosaics/{tile}_{year}.tif"
+    if not object_exists(bucket=bucket, key=path):
+        s2 = load_s2(tile, year)
+        ocm = load_ocm(tile, year)
 
-    s2 = filter_by_tides(s2)
+        s2 = filter_by_tides(s2)
 
-    # output_path = OUTPUT_DIR / f"{tile}_{year}.tif"
-    output = (
-        mask_clouds(s2)
-        .where((ocm.mask == 0) & (s2 != 0))[["red", "green", "blue"]]
-        .median(dim="time")
-    )
+        # output_path = OUTPUT_DIR / f"{tile}_{year}.tif"
+        output = (
+            mask_clouds(s2)
+            .where((ocm.mask == 0) & (s2 != 0))[["red", "green", "blue"]]
+            .median(dim="time")
+        )
 
-    write_to_s3(
-        output,
-        path=f"dep_ls_coastlines/validation/s2_mosaics/{tile}_{year}.tif",
-        bucket="dep-public-staging",
-        use_odc_writer=False,
-    )
+        write_to_s3(
+            output,
+            path=path,
+            bucket=bucket,
+            use_odc_writer=False,
+        )
 
 
 def bool_parser(raw: str):
@@ -151,7 +145,7 @@ def tiles_and_years(
         "60KXF",
         "60LYR",
     ]
-    years = range(2018, 2025)
+    years = range(2017, 2025)
     output = product(selected_tiles, years)
     return (
         json.dump([{"tile": tile, "year": year} for tile, year in output], sys.stdout)
