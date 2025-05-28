@@ -3,7 +3,6 @@ import geopandas as gpd
 import pandas as pd
 import plotnine as pn
 from rasterio.enums import Resampling
-from shapely import box
 from sklearn.metrics import r2_score
 import xarray as xr
 
@@ -11,10 +10,12 @@ from validate import load_coastlines, load_coastlines_raster_for_geometry
 
 
 def compare_roc(validation_contours):
-    aoi = box(*validation_contours.geometry.total_bounds)
+    aoi = validation_contours.geometry.buffer(
+        distance=100, cap_style="flat"
+    ).unary_union
     points_gdf = load_coastlines(
         aoi, layer="rates_of_change", buffer=-20, use_next_gen=True
-    )
+    ).clip(aoi)
     water_for_contours = (
         xr.concat(
             [
@@ -57,13 +58,19 @@ def compare_roc(validation_contours):
 
 
 if __name__ == "__main__":
-    test_validation_contours = (
-        gpd.read_file("data/validation/s2_validation_test_2.gpkg")
-        .dissolve(by="year")
-        .reset_index()
+    files = [
+        "data/validation/s2_validation_lines.gpkg",
+        "data/validation/s2_validation_lines_2.gpkg",
+        "data/validation/s2_validation_test_2.gpkg",
+    ]
+    input_d = pd.concat([gpd.read_file(file).to_crs(3832) for file in files])
+    d = input_d.groupby("AOI").apply(
+        lambda lines: compare_roc(
+            validation_contours=lines.dissolve(by="year").reset_index()
+        )
     )
-    d = compare_roc(validation_contours=test_validation_contours)
-    gpd.GeoDataFrame(d.reset_index(), geometry="index").to_file("d2.gpkg")
+
+    gpd.GeoDataFrame(d.reset_index(), geometry="level_1").to_file("d2.gpkg")
     r2 = r2_score(d.val_rate_time, d.cl_rate_time)
     mae = d.mae.mean()
     rmse = d.rmse.mean()
@@ -77,4 +84,5 @@ if __name__ == "__main__":
             "text", label=f"r2 = {r2:.2f}\nmae={mae:.2f}\nrmse={rmse:.2f}", x=-15, y=25
         )
     )
-    plot.save("plot2.png", dpi=300)
+    plot.save("png_roc_compare.png", dpi=300)
+    breakpoint()
