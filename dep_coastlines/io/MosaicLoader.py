@@ -118,9 +118,7 @@ class MosaicLoader(Loader):
             warnings.warn("error from when loading stac item: {}".format(e))
             return None
 
-        output = odc.stac.load(
-            [stac_item], chunks=dict(x=2048, y=2048), anchor=AnchorEnum.EDGE
-        ).squeeze()
+        output = odc.stac.load([stac_item], chunks=dict(x=2048, y=2048)).squeeze()
 
         output[
             [

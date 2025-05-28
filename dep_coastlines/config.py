@@ -4,6 +4,7 @@ _region = "us-west-2"
 HTTPS_PREFIX = f"https://{BUCKET}.s3.{_region}.amazonaws.com"
 AOI_URL = f"{HTTPS_PREFIX}/aoi/aoi.gpkg"
 CURRENT_COASTLINES_OUTPUT = "data/processed/0-7-0-54/dep_ls_coastlines_0-7-0-54.gpkg"
+NEXT_GEN_COASTLINES_OUTPUT = "data/processed/0.8.1/dep_ls_coastlines_0.8.1.gpkg"
 
 MOSAIC_VERSION = "0.8.1"
 MOSAIC_DATASET_ID = "coastlines/interim/mosaic"
