@@ -33,6 +33,7 @@ from shapely.geometry.point import Point
 
 from dep_coastlines.common import coastlineItemPath
 from dep_coastlines.config import (
+    BUCKET,
     HTTPS_PREFIX,
     VECTOR_DATASET_ID,
     VECTOR_DATETIME,
@@ -342,9 +343,9 @@ def continental_cli(
             # hotspots radius by 30 m along-shore rates of change point distance)
             hotspots_gdf["n"] = hotspot_grouped.size()
             hotspots_gdf["n"] = hotspots_gdf["n"].fillna(0)
-            hotspots_gdf.loc[
-                hotspots_gdf.n < (radius / 30), "certainty"
-            ] = "insufficient points"
+            hotspots_gdf.loc[hotspots_gdf.n < (radius / 30), "certainty"] = (
+                "insufficient points"
+            )
 
             # Generate a geohash UID for each point and set as index
             uids = (
@@ -451,6 +452,8 @@ def continental_cli(
         )
         build_tiles(OUTPUT_GPKG, OUTPUT_TILES)
 
+    upload_dir(output_dir, continental_version)
+
 
 def build_tiles(output_gpkg: Path, output_file: Path) -> None:
     layers = {
@@ -477,6 +480,14 @@ def build_tiles(output_gpkg: Path, output_file: Path) -> None:
         os.system(
             f"tippecanoe {opts} -pi -z13 -f -o {output_pmtile_path} -L {name}:{output_geojson_path}"
         )
+
+
+def upload_dir(local_dir, version):
+    import s3fs
+
+    s3 = s3fs.S3FileSystem()
+    s3_path = f"{BUCKET}/dep_ls_coastlines/processed/{version}/"
+    s3.put(local_dir, s3_path, recursive=True)
 
 
 if __name__ == "__main__":
