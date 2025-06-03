@@ -131,9 +131,17 @@ def bool_parser(raw: str):
 
 @app.command()
 def tiles_and_years(
-    output_json: Annotated[str, typer.Option(parser=bool_parser)] = False
+    output_json: Annotated[str, typer.Option(parser=bool_parser)] = False,
 ):
     selected_tiles = [
+        "59NLG",
+        "56MKU",
+        "01KGU",
+        "07LFL",
+        "01KHV",
+        "56MQU",
+        "60KWF",
+        "59NLG",
         "54LYR",
         "01KFS",
         "55MEM",
