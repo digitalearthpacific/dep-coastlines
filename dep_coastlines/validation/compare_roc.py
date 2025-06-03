@@ -59,9 +59,9 @@ def compare_roc(validation_contours):
 
 if __name__ == "__main__":
     files = [
-        "data/validation/s2_validation_lines.gpkg",
+        #        "data/validation/s2_validation_lines.gpkg",
         "data/validation/s2_validation_lines_2.gpkg",
-        "data/validation/s2_validation_test_2.gpkg",
+        #        "data/validation/s2_validation_test_2.gpkg",
     ]
     input_d = pd.concat([gpd.read_file(file).to_crs(3832) for file in files])
     d = input_d.groupby("AOI").apply(
