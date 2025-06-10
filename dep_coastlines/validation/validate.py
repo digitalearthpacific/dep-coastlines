@@ -41,6 +41,8 @@ def load_coastlines(
             if isinstance(buffered_geom, gpd.GeoDataFrame)
             else buffered_geom.bounds
         ),
+        engine="pyogrio",
+        use_arrow=True,
     )
     if year:
         coastlines = coastlines[coastlines.year == year]

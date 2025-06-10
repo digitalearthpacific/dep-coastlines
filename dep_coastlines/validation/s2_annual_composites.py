@@ -67,7 +67,6 @@ def all_time_tides(ds):
 
 
 def filter_by_tides(ds):
-
     all_tides = eo_pixel_tides(
         ds,
         pd.date_range(start="1984", end="2025", freq="16d").tolist(),

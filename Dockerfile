@@ -11,10 +11,18 @@ RUN apt-get update && apt-get install -y \
     && apt-get autoremove \
     && rm -rf /var/lib/{apt,dpkg,cache,log}
 
+
 ADD . /tmp/dep-coastlines
 WORKDIR /tmp
 RUN pip install --no-cache-dir --upgrade pip && pip install ./dep-coastlines
 
+# Install tippecanoe, needed for creating pmtiles file for tileserver
+RUN git clone https://github.com/mapbox/tippecanoe.git \
+  && cd tippecanoe \ 
+  && make -j \
+  && make install
+
+# Download tide data
 ADD . /code
 WORKDIR /code
 RUN wget -nH -r --cut-dirs=1 -P data -i data/tide_data_urls.txt

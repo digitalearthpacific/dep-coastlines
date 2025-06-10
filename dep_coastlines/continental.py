@@ -14,7 +14,10 @@
 # https://github.com/digitalearthafrica/deafrica-coastlines/blob/main/coastlines/continental.py
 # by Jesse Anderson for Digital Earth Pacific.
 # Original authors: Robbi Bishop-Taylor, Alex Leith, Indiphile Ngqambuza
-
+# Major changes:
+#    * Read and write to s3
+#    * Create pmtiles output using tippecanoe
+#
 
 import os
 from pathlib import Path
@@ -39,6 +42,7 @@ from dep_coastlines.config import (
     VECTOR_DATETIME,
     VECTOR_VERSION,
 )
+from dep_coastlines.vector import calculate_roc_stats
 
 STYLES_FILE = "dep_coastlines/styles.csv"
 
@@ -267,6 +271,10 @@ def continental_cli(
                 OUTPUT_GPKG, layer="rates_of_change", engine="pyogrio", use_arrow=True
             ).set_index("uid")
 
+            ratesofchange_gdf = calculate_roc_stats(
+                ratesofchange_gdf, initial_year=2017, minimum_valid_observations=8
+            )
+
             shorelines_gdf = gpd.read_file(
                 OUTPUT_GPKG, layer="shorelines_annual", engine="pyogrio", use_arrow=True
             ).set_index("year")
@@ -322,6 +330,7 @@ def continental_cli(
                 ),
                 axis=1,
             )
+            breakpoint()
 
             # Add rates of change back into dataframe
             hotspot_values[
