@@ -7,6 +7,9 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     ca-certificates \
     build-essential \
+    # These 2 needed for tippecanoe
+    libsqlite3-dev \
+    zlib1g-dev \
     && apt-get autoclean \
     && apt-get autoremove \
     && rm -rf /var/lib/{apt,dpkg,cache,log}
