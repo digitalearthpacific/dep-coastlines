@@ -6,16 +6,23 @@ from rasterio.enums import Resampling
 from sklearn.metrics import r2_score
 import xarray as xr
 
-from validate import load_coastlines, load_coastlines_raster_for_geometry
+from validate import load_coastlines_raster_for_geometry
 
 
 def compare_roc(validation_contours):
     aoi = validation_contours.geometry.buffer(
         distance=100, cap_style="flat"
-    ).unary_union
-    points_gdf = load_coastlines(
-        aoi, layer="rates_of_change", buffer=-20, use_next_gen=True
+    ).unary_union.buffer(distance=-30)
+
+    limited_years_coastlines_file = "data/processed/0.8.3/dep_ls_coastlines_0.8.3.gpkg"
+    points_gdf = gpd.read_file(
+        limited_years_coastlines_file,
+        layer="rates_of_change",
+        bbox=aoi.bounds,
+        engine="pyogrio",
+        use_arrow=True,
     ).clip(aoi)
+
     water_for_contours = (
         xr.concat(
             [
@@ -40,8 +47,6 @@ def compare_roc(validation_contours):
         max_valid_dist=5000,
     )
     common_columns = points_gdf.columns.intersection(val_points_gdf.columns)
-    points_gdf = points_gdf[common_columns]
-    points_gdf = calculate_regressions(points_gdf)
     val_points_gdf = val_points_gdf[common_columns]
     val_points_gdf = calculate_regressions(val_points_gdf)
 
@@ -64,7 +69,7 @@ if __name__ == "__main__":
         #        "data/validation/s2_validation_test_2.gpkg",
     ]
     input_d = pd.concat([gpd.read_file(file).to_crs(3832) for file in files])
-    d = input_d.groupby("AOI").apply(
+    d = input_d.groupby("set_id").apply(
         lambda lines: compare_roc(
             validation_contours=lines.dissolve(by="year").reset_index()
         )
@@ -81,7 +86,7 @@ if __name__ == "__main__":
         + pn.theme_bw()
         + pn.labs(x="Validation ROC", y="DEP Coastlines ROC")
         + pn.annotate(
-            "text", label=f"r2 = {r2:.2f}\nmae={mae:.2f}\nrmse={rmse:.2f}", x=-15, y=25
+            "text", label=f"r2 = {r2:.2f}\nmae={mae:.2f}\nrmse={rmse:.2f}", x=-15, y=10
         )
     )
     plot.save("png_roc_compare.png", dpi=300)

@@ -2,7 +2,7 @@
 This is a work-in-progress script to "post-process" water index data before
 vectorizing. The functionality here is part of the vectorization code from the
 DEA and DEAfrica work, but it is primarily raster based, hence the name.
-The actual vectorization (using subpixel_contours) may or may not belong here, 
+The actual vectorization (using subpixel_contours) may or may not belong here,
 so things may move around / get renamed some in the coming weeks.
 
 Please refer to raster_cleaning.py for specific functions.
@@ -10,7 +10,6 @@ Please refer to raster_cleaning.py for specific functions.
 
 from joblib import load
 import operator
-from pathlib import Path
 from typing import Tuple, Annotated, Callable
 
 import boto3
@@ -60,11 +59,78 @@ DATASET_ID = "coastlines/interim/coastlines"
 BooleanDataArray = DataArray
 
 
+def calculate_roc_stats(ratesofchange_gdf, initial_year, minimum_valid_observations=15):
+    stats_list = ["valid_obs", "valid_span", "sce", "nsm", "max_year", "min_year"]
+    ratesofchange_gdf[stats_list] = ratesofchange_gdf.apply(
+        lambda x: all_time_stats(x, initial_year=initial_year), axis=1
+    )
+
+    ratesofchange_gdf["certainty"] = "good"
+    # for now, leaving out "offshore_islands" category, as most of the study
+    # area would be in there. However, consider (if available) breakdowns
+    # like "atolls", "volcanic", etc
+
+    # These would need to be mapped.
+    # ratesofchange_gdf.loc[
+    #    rocky_shoreline_flag(ratesofchange_gdf, geomorphology_gdf), "certainty"
+    # ] = "likely rocky coastline"
+
+    # Other things to consider:
+    # tidal flats
+    # reefs
+
+    ratesofchange_gdf.loc[ratesofchange_gdf.rate_time.abs() > 200, "certainty"] = (
+        "extreme value (> 200 m)"
+    )
+
+    ratesofchange_gdf.loc[ratesofchange_gdf.angle_std > 30, "certainty"] = (
+        "high angular variability"
+    )
+    ratesofchange_gdf.loc[
+        ratesofchange_gdf.valid_obs < minimum_valid_observations, "certainty"
+    ] = "insufficient observations"
+    return ratesofchange_gdf
+
+
 def calculate_consensus_land(ds: Dataset) -> BooleanDataArray:
     """Returns true for areas for which the all-years medians of mndwi,
     ndwi and nirwi are less than zero. (nirwi
     is negative where the nir08 band is greater than 0.128.)"""
     return (ds.nirwi_all < 0) & (ds.mndwi_all < 0) & (ds.ndwi_all < 0)
+
+
+def calculate_rates_of_change(
+    contours, water_index, water_index_name, baseline_year, initial_year
+):
+    water_index["year"] = water_index.year.astype(int)
+    contours.year = contours.year.astype(str)
+    contours = contours.set_index("year")
+
+    baseline_year = contours.index.astype(int).max().astype(str)
+    points_gdf = points_on_line(contours, baseline_year, distance=30)
+    if points_gdf is not None and len(points_gdf) > 0:
+        points_gdf = annual_movements(
+            points_gdf,
+            contours,
+            water_index.to_dataset(name=water_index_name),
+            baseline_year,
+            water_index_name,
+            max_valid_dist=5000,
+        )
+    points_gdf = calculate_regressions(points_gdf)
+    points_gdf = calculate_roc_stats(points_gdf, initial_year)
+
+    # Generate a geohash UID for each point and set as index
+    uids = (
+        points_gdf.geometry.to_crs("EPSG:4326")
+        .apply(lambda x: geohash.encode(x.y, x.x, precision=10))
+        .rename("uid")
+    )
+    points_gdf = points_gdf.set_index(uids)
+
+    contours = contours.reset_index()
+    contours.year = contours.year.astype(int)
+    return points_gdf
 
 
 class Cleaner(Processor):
@@ -137,66 +203,6 @@ class Cleaner(Processor):
             attribute_col="ISO_Ter1",
             rename_col="eez_territory",
         )
-
-    def points(self, contours, water_index):
-        water_index["year"] = water_index.year.astype(int)
-        contours.year = contours.year.astype(str)
-        contours = contours.set_index("year")
-
-        baseline_year = contours.index.astype(int).max().astype(str)
-        points_gdf = points_on_line(contours, baseline_year, distance=30)
-        if points_gdf is not None and len(points_gdf) > 0:
-            points_gdf = annual_movements(
-                points_gdf,
-                contours,
-                water_index.to_dataset(name=self.water_index_name),
-                self.baseline_year,
-                self.water_index_name,
-                max_valid_dist=5000,
-            )
-        points_gdf = calculate_regressions(points_gdf)  # , contours)
-
-        stats_list = ["valid_obs", "valid_span", "sce", "nsm", "max_year", "min_year"]
-        points_gdf[stats_list] = points_gdf.apply(
-            lambda x: all_time_stats(x, initial_year=self.initial_year), axis=1
-        )
-
-        points_gdf["certainty"] = "good"
-        # for now, leaving out "offshore_islands" category, as most of the study
-        # area would be in there. However, consider (if available) breakdowns
-        # like "atolls", "volcanic", etc
-
-        # These would need to be mapped.
-        # points_gdf.loc[
-        #    rocky_shoreline_flag(points_gdf, geomorphology_gdf), "certainty"
-        # ] = "likely rocky coastline"
-
-        # Other things to consider:
-        # tidal flats
-        # reefs
-
-        points_gdf.loc[points_gdf.rate_time.abs() > 200, "certainty"] = (
-            "extreme value (> 200 m)"
-        )
-
-        points_gdf.loc[points_gdf.angle_std > 30, "certainty"] = (
-            "high angular variability"
-        )
-        points_gdf.loc[points_gdf.valid_obs < 15, "certainty"] = (
-            "insufficient observations"
-        )
-
-        # Generate a geohash UID for each point and set as index
-        uids = (
-            points_gdf.geometry.to_crs("EPSG:4326")
-            .apply(lambda x: geohash.encode(x.y, x.x, precision=10))
-            .rename("uid")
-        )
-        points_gdf = points_gdf.set_index(uids)
-
-        contours = contours.reset_index()
-        contours.year = contours.year.astype(int)
-        return points_gdf
 
     def process(
         self, input: Dataset | list[Dataset], area
@@ -291,7 +297,13 @@ class Cleaner(Processor):
         self.coastlines = contour_certainty(
             self.coastlines.set_index("year"), certainty_masks
         ).reset_index()
-        self.roc_points = self.points(self.coastlines, output[self.water_index_name])
+        self.roc_points = calculate_rates_of_change(
+            contours=self.coastlines,
+            water_index=output[self.water_index_name],
+            water_index_name=self.water_index_name,
+            baseline_year=self.baseline_year,
+            initial_year=self.initial_year,
+        )
 
         self.add_attributes()
 
