@@ -4,7 +4,7 @@ import pandas as pd
 from rasterio.enums import Resampling
 import xarray as xr
 
-from validate import load_coastlines_raster_for_geometry
+from utils import load_coastlines_raster_for_geometry
 
 
 def compare_roc(validation_contours):
@@ -56,7 +56,7 @@ def compare_roc(validation_contours):
         ],
         axis=1,
     ).assign(
-        TODO: these aren't e.g. "mae" but rather abs error
+        # TODO: these aren't e.g. "mae" but rather abs error
         mae=lambda x: abs(x.cl_rate_time - x.val_rate_time),
         mse=lambda x: (x.cl_rate_time - x.val_rate_time) ** 2,
     )

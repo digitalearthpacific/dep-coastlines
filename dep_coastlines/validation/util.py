@@ -18,7 +18,7 @@ from dep_coastlines.config import (
     NEXT_GEN_COASTLINES_OUTPUT,
 )
 from dep_coastlines.grid import buffered_grid as GRID
-from dep_coastlines.tide_utils import tides_lowres, tide_cutoffs_lr
+from dep_coastlines.tide_utils import tides_lowres
 
 
 @retry(tries=3)
