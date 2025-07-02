@@ -1,15 +1,14 @@
 from coastlines.vector import annual_movements, calculate_regressions
 import geopandas as gpd
 import pandas as pd
-import plotnine as pn
 from rasterio.enums import Resampling
-from sklearn.metrics import r2_score
 import xarray as xr
 
 from validate import load_coastlines_raster_for_geometry
 
 
 def compare_roc(validation_contours):
+    print(validation_contours.set_id.iloc[0])
     aoi = validation_contours.geometry.buffer(
         distance=100, cap_style="flat"
     ).unary_union.buffer(distance=-30)
@@ -57,37 +56,27 @@ def compare_roc(validation_contours):
         ],
         axis=1,
     ).assign(
+        TODO: these aren't e.g. "mae" but rather abs error
         mae=lambda x: abs(x.cl_rate_time - x.val_rate_time),
-        rmse=lambda x: ((x.cl_rate_time - x.val_rate_time) ** 2) ** 0.5,
+        mse=lambda x: (x.cl_rate_time - x.val_rate_time) ** 2,
+    )
+
+
+def main():
+    df = (
+        gpd.read_file("data/validation/s2_validation_lines_2.gpkg")
+        .to_crs(3832)
+        .groupby("set_id")
+        .apply(
+            lambda lines: compare_roc(
+                validation_contours=lines.dissolve(by="year").reset_index()
+            )
+        )
+    )
+    gpd.GeoDataFrame(df.reset_index(), geometry="level_1").to_file(
+        "data/validation/rates_of_change_validation.gpkg"
     )
 
 
 if __name__ == "__main__":
-    files = [
-        #        "data/validation/s2_validation_lines.gpkg",
-        "data/validation/s2_validation_lines_2.gpkg",
-        #        "data/validation/s2_validation_test_2.gpkg",
-    ]
-    input_d = pd.concat([gpd.read_file(file).to_crs(3832) for file in files])
-    d = input_d.groupby("set_id").apply(
-        lambda lines: compare_roc(
-            validation_contours=lines.dissolve(by="year").reset_index()
-        )
-    )
-
-    gpd.GeoDataFrame(d.reset_index(), geometry="level_1").to_file("d2.gpkg")
-    r2 = r2_score(d.val_rate_time, d.cl_rate_time)
-    mae = d.mae.mean()
-    rmse = d.rmse.mean()
-
-    plot = (
-        pn.ggplot(d, pn.aes(x=d.val_rate_time, y=d.cl_rate_time))
-        + pn.geom_point()
-        + pn.theme_bw()
-        + pn.labs(x="Validation ROC", y="DEP Coastlines ROC")
-        + pn.annotate(
-            "text", label=f"r2 = {r2:.2f}\nmae={mae:.2f}\nrmse={rmse:.2f}", x=-15, y=10
-        )
-    )
-    plot.save("png_roc_compare.png", dpi=300)
-    breakpoint()
+    main()
