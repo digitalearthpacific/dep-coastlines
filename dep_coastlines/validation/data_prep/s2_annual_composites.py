@@ -18,7 +18,7 @@ from shapely import box
 import typer
 
 
-from dep_coastlines.tide_utils import filter_by_tides, tide_cutoffs_lr, tides_lowres
+from dep_coastlines.tide_utils import filter_by_tides, tide_cutoffs_lr
 from dep_coastlines.validation.util import make_tides
 
 CHUNK_SIZE = 8192
@@ -109,7 +109,6 @@ def create_mosaic(tile: str, year: str):
 
         s2 = filter_by_tides(s2)
 
-        # output_path = OUTPUT_DIR / f"{tile}_{year}.tif"
         output = (
             mask_clouds(s2)
             .where((ocm.mask == 0) & (s2 != 0))[["red", "green", "blue"]]

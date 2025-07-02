@@ -114,11 +114,11 @@ def process_layer(name):
 
 if __name__ == "__main__":
     names = [
-        # "american_samoa_vivid_2022_30cm",
-        # "cnmi_vivid_2022_30cm",
-        # "guam_vivid_2022_30cm",
-        #        "guam_vivid",
-        # "marshall_islands_vivid2021",
+        "american_samoa_vivid_2022_30cm",
+        "cnmi_vivid_2022_30cm",
+        "guam_vivid_2022_30cm",
+        "guam_vivid",
+        "marshall_islands_vivid2021",
         "marshall_islands_vivid_2023_30cm",
         "micronesia2021",
         "micronesia_vivid_2023_30cm",
