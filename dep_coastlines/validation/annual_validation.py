@@ -10,7 +10,7 @@ from shapely import Geometry
 from shapely.geometry import LineString
 from shapely.ops import nearest_points
 
-from utils import load_coastlines, load_coastlines_raster_for_geometry
+from util import load_coastlines, load_coastlines_raster_for_geometry
 
 
 def load_validation_data():

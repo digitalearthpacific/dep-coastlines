@@ -17,7 +17,7 @@ spec:
   nodeSelector:
     karpenter.sh/capacity-type: "spot"
   hostAliases:
-    - ip: "52.92.184.90"
+    - ip: "3.5.87.18"
       hostnames:
         - "dep-public-staging.s3.us-west-2.amazonaws.com"
   arguments:
@@ -25,13 +25,16 @@ spec:
     - name: code-file
       value: "dep_coastlines/vector.py"
     - name: version
-      value: "0.8.1"
+      value: "0.8.3"
     - name: image-tag
-      value: "cl.0.8.1d"
+      value: "v0.8.2dev1"
     - name: dataset-id
       value: "coastlines/interim/coastlines"
-    - name: datetime
-      value: "1984/2024"
+    - name: start-year
+      value: "2017"
+    - name: end-year
+      value: "2024"
+
   templates:
   - name: workflow-entrypoint
     retryStrategy:
@@ -49,10 +52,6 @@ spec:
           template: generate
           arguments:
             parameters:
-              - name: limit
-                value: "None"
-              - name: version
-                value: "{{ workflow.parameters.version }}"
               - name: overwrite-logs
                 value: "False"
               - name: filter-using-log
@@ -68,13 +67,10 @@ spec:
               value: "{{item.column}}"
             - name: row
               value: "{{item.row}}"
-            - name: version
-              value: "{{ workflow.parameters.version }}"
           withParam: "{{ tasks.generate-ids.outputs.result }}"
   - name: generate
     inputs:
       parameters:
-      - name: version
       - name: overwrite-logs
       - name: filter-using-log
       - name: filter-existing-stac-items
@@ -91,9 +87,9 @@ spec:
         - --dataset-id
         - "{{ workflow.parameters.dataset-id }}"
         - --datetime
-        - "{{ workflow.parameters.datetime }}"
+        - "{{ workflow.parameters.start-year }}/{{ workflow.parameters.end-year }}"
         - --version
-        - "{{ inputs.parameters.version }}"
+        - "{{ workflow.parameters.version }}"
         - --overwrite-logs
         - "{{ inputs.parameters.overwrite-logs }}"
         - --filter-using-log
@@ -106,8 +102,6 @@ spec:
       parameters:
       - name: column
       - name: row
-      - name: version
-      - name: datetime
     container:
       image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
@@ -126,9 +120,11 @@ spec:
         - --row
         - "{{ inputs.parameters.row }}"
         - --version
-        - "{{ inputs.parameters.version }}"
-        - --datetime
-        - "{{ workflow.parameters.datetime }}"
+        - "{{ workflow.parameters.version }}"
+        - --start-year
+        - "{{ workflow.parameters.start-year }}"
+        - --end-year
+        - "{{ workflow.parameters.end-year }}"
       env:
         - name: DASK_ARRAY__RECHUNK__METHOD
           value: "tasks"

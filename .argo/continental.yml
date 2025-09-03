@@ -1,6 +1,6 @@
 kind: Workflow
 metadata:
-  name: continental
+  name: coastlines-continental
   namespace: argo
 spec:
   entrypoint: workflow-entrypoint
@@ -8,7 +8,6 @@ spec:
   podGC:
     strategy: OnWorkflowSuccess
     deleteDelayDuration: 600s
-  parallelism: 600
   podMetadata:
     labels:
       app: coastlines
@@ -17,13 +16,13 @@ spec:
   nodeSelector:
     karpenter.sh/capacity-type: "spot"
   hostAliases:
-    - ip: "52.92.184.90"
+    - ip: "3.5.87.18"
       hostnames:
         - "dep-public-staging.s3.us-west-2.amazonaws.com"
   arguments:
     parameters:
     - name: image-tag
-      value: "cl.0.8.1d"
+      value: "v0.8.2dev2"
   templates:
   - name: workflow-entrypoint
     container:
@@ -36,7 +35,7 @@ spec:
       command: [ python ]
       args:
         - dep_coastlines/continental.py
-        - --vector-version
-        - "0.8.1"
-        - --continental-version
-        - "0.8.1"
+        - --vector_version
+        - "0.8.3"
+        - --continental_version
+        - "0.8.3"

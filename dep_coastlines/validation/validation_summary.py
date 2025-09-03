@@ -21,6 +21,7 @@ def calculate_roc_stats(sets):
 
         plot = (
             pn.ggplot(d, pn.aes(x=d.val_rate_time, y=d.cl_rate_time))
+            # + pn.geom_abline(slope=1, color="blue")
             + pn.geom_point(size=0.5)
             + pn.theme_bw()
             + pn.labs(x="Validation ROC (m/yr)", y="DEP Coastlines ROC (m/yr)")
@@ -93,10 +94,10 @@ def calculate_length_of_validation_lines():
     validation_data = load_validation_data()
     # JA did it all
     roc_data = validation_data[validation_data.digitiser_name.isna()]
-    number_of_years = 8
     km_per_meter = 1 / 1000
     total_km = roc_data.geometry.length.sum() * km_per_meter
     print(f"Total length of roc validation data: {total_km:.2f}")
+    number_of_years = 8
     print(f"KM per year: {total_km / number_of_years:.2f}")
 
 
