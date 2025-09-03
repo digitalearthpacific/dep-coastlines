@@ -1,0 +1,29 @@
+kind: Workflow
+metadata:
+  generateName: coastlines-copy
+  namespace: argo
+spec:
+  entrypoint: workflow-entrypoint
+  serviceAccountName: open-data-bucket-writer
+  podGC:
+    strategy: OnWorkflowSuccess
+    deleteDelayDuration: 600s
+  podMetadata:
+    labels:
+      app: coastlines
+    annotations:
+      karpenter.sh/do-not-disrupt: "true"
+  nodeSelector:
+    karpenter.sh/capacity-type: "spot"
+  templates:
+  - name: workflow-entrypoint
+    container:
+      image: amazon/aws-cli
+      command: [sh, -c]
+      args:
+        - |
+          curl -fSL \
+            https://dep-public-staging.s3.amazonaws.com/dep_ls_coastlines/processed/0-7-0-55/dep_ls_coastlines_0-7-0-55.pmtiles \
+            -o /tmp/dep_ls_coastlines_0-7-0-55.pmtiles &&
+          aws s3 cp /tmp/dep_ls_coastlines_0-7-0-55.pmtiles \
+            s3://dep-public-data/dep_ls_coastlines/

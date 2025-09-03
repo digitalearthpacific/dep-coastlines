@@ -1,7 +1,5 @@
 from xarray import DataArray, Dataset
 
-from dep_tools.utils import scale_and_offset
-
 
 def mndwi(xr: Dataset) -> DataArray:
     # modified normalized differential water index is just a normalized index

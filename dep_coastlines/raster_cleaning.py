@@ -9,17 +9,23 @@ from xarray import apply_ufunc, DataArray, Dataset
 
 from dep_coastlines.grid import remote_aoi_raster_path
 
-BooleanDataArray = DataArray
-
 
 def smooth_gaussian(da: DataArray, sigma: float = 0.799) -> DataArray:
-    """Apply a 3x3 gaussian kernel to the input. The convolution ignores nan values
-    by using the kernel values for the non-nan pixels only, and scaling the
-    divisor accordingly.
+    """Apply a 3x3 gaussian kernel to a DataArray.
 
-    A sigma value of 0.799 represents a "classic" 3x3 kernel with a center weight
+    The convolution ignores nan values by using the kernel values for
+    the non-nan pixels only, and scaling the divisor accordingly. A sigma
+    value of 0.799 represents a "classic" 3x3 kernel with a center weight
     of approximately 1/4, side weights of approximately 1/8, and corner weights of
     approximately 1/16. Lower values more heavily weight the center.
+
+    Args:
+        da: A DataArray
+        sigma: Value for the sigma parameter as passed to
+            :py:func:`scipy.ndimage.gaussian_filter`.
+
+    Returns:
+        The input DataArray with the smoothing applied.
     """
 
     def kernel(sigma: float):
@@ -46,8 +52,8 @@ def smooth_gaussian(da: DataArray, sigma: float = 0.799) -> DataArray:
 
 
 def remove_disconnected_land(
-    certain_land: BooleanDataArray, candidate_land: BooleanDataArray
-):
+    certain_land: DataArray[bool], candidate_land: DataArray[bool]
+) -> DataArray[bool]:
     """Remove pixels from `candidate_land` that are not connected to `certain_land`.
     The algorithm is to first identify unique land regions and use them as zones,
     calculating the maximum value of certain_land (i.e. 1 or 0) within each. Regions
