@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dep-coastlines"
-version = "0.6.0"
-description = "Shoreline mapping for Digital Earth Pacific"
 authors = [{ name = "Jesse Anderson", email = "jesse.anderson@gmail.com" }]
+description = "Shoreline mapping for Digital Earth Pacific"
+dynamic = ["version"]
 license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.10"
@@ -33,6 +33,9 @@ dependencies = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["dep_coastlines"]
+
+[tool.hatch.version]
+path = "dep_coastlines/__init__.py"
 
 [tool.uv.sources]
 dep-tools = { git = "https://github.com/digitalearthpacific/dep-tools.git", tag = "v0.5.2" }
