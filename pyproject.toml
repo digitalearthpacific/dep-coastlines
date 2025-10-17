@@ -37,6 +37,14 @@ packages = ["dep_coastlines"]
 [tool.hatch.version]
 path = "dep_coastlines/__init__.py"
 
+[tool.isort]
+profile = "black"
+line_length = 88 
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+combine_as_imports = true
+
 [tool.uv.sources]
 dep-tools = { git = "https://github.com/digitalearthpacific/dep-tools.git", tag = "v0.5.2" }
 dea-coastlines = { git = "https://github.com/GeoscienceAustralia/dea-coastlines.git", tag = "3.0.1" }
@@ -44,5 +52,9 @@ cloud-logger = { git = "https://github.com/jessjaco/cloud-logger.git" }
 
 [dependency-groups]
 dev = [
+    "black>=25.9.0",
+    "isort>=7.0.0",
     "plotnine>=0.15.0",
+    "pyright>=1.1.406",
+    "pytest>=8.4.2",
 ]
