@@ -1,3 +1,5 @@
+"""Definition of the analysis grid."""
+
 from pathlib import Path
 
 import geopandas as gpd
@@ -14,81 +16,24 @@ import dep_coastlines.config as config
 OVERWRITE = False
 
 
-def assign_crs(gdf) -> gpd.GeoDataFrame:
-    # Using the "most common" zone among loaded landsat data works fine except
-    # in some years in some areas the most common zone differs, due to data
-    # availability. Here we determine which zone, has the greatest area of
-    # the buffered gadm for each cell.
-    #
-    # Alternatively, we would need to determine which landsat _scene_ has the
-    # most area within the buffered gadm for each cell, then determine the
-    # projection of that scene. I can't find such a crosswalk (a table of
-    # which projection each landsat scene has).
-    utm_zones = (
-        gpd.read_file("data/World_UTM_Grid_-8777149898303524843.gpkg")[
-            # bad stuff here I think from reprojection
-            lambda x: x["ZONE"]
-            != 25
-        ]
-        .to_crs(config.OUTPUT_CRS)
-        .dissolve(by="ZONE")
-        .reset_index()
-        # makes e.g. 55 32655
-        .assign(epsg=lambda d: "326" + d.ZONE.astype("Int64").astype(str).str.zfill(2))
-    )
+def make_grid(grid_buffer: int | float = 250) -> gpd.GeoDataFrame:
+    """Create the analysis grid.
 
-    zone_lookup = (
-        gdf.overlay(utm_zones, how="intersection")
-        .assign(area=lambda r: r.geometry.area)
-        .sort_values("area", ascending=False)
-        # drops the second by default, e.g. the lower value(s)
-        .drop_duplicates(["row", "column"])
-        .set_index(["row", "column"])
-    ).epsg
+    The output is a GeoDataFrame which contains a 0.018018... decimal
+    degree buffer around the land-water boundary, as defined by
+    GADM.
 
-    return gdf.set_index(["row", "column"]).join(zone_lookup).reset_index()
+    Args:
+        grid_buffer: An amount in meters by which to buffer each grid cell.
+            Doing this maintains consistency in coastlines across tile
+            bounds.
 
-
-def remove_inland_borders(aoi):
-    # The only inland border is between PNG & Indonesia.
-
-    # A buffer of the exterior line created weird interior gaps,
-    # (See https://github.com/locationtech/jts/issues/876)
-    # so I buffer the polygons by a positive then negative buffer
-    # and take the difference. I do a tiny amount here so I can remove
-    # the boundary between PNG & Indonesia without pulling out any of
-    # western PNG.
-    tiny_buffer = 0.0001
-    aoi_buffer = aoi.buffer(tiny_buffer)
-    aoi_negative_buffer = aoi.buffer(-tiny_buffer)
-    aoi = aoi_buffer.difference(aoi_negative_buffer)
-
-    # remove border of PNG & Indonesia
-    indonesia = gpd.read_file(
-        f"https://geodata.ucdavis.edu/gadm/gadm4.1/gpkg/gadm41_IDN.gpkg"
-    )
-    indonesia.geometry = indonesia.buffer(0.01)
-    return gpd.GeoDataFrame(geometry=aoi).overlay(indonesia, how="difference")
-
-
-def full_aoi() -> gpd.GeoDataFrame:
-    padm = gadm()
-    hawaii = (
-        gpd.read_file(
-            "https://geodata.ucdavis.edu/gadm/gadm4.1/gpkg/gadm41_USA.gpkg",
-            layer="ADM_ADM_1",
-        )
-        .set_index("ISO_1")
-        .loc[["US-HI"]]
-        .reset_index()
-    )
-    return pd.concat([padm, hawaii]).dissolve()[["geometry"]]
-
-
-def make_grid(grid_buffer=250) -> gpd.GeoDataFrame:
-    aoi = full_aoi()
-
-    aoi = remove_inland_borders(aoi)
+    Returns:
+        The analysis grid. It is indexed by the DE Pacific grid index
+        in a (column, row) format.
+    """
+    aoi = _full_aoi()
+    aoi = _remove_inland_borders(aoi)
 
     # Buffer the country boundaries enough to be sure to capture the coastline.
     # Approx 2km at equator, other CRSes did not work (horizontal stripes that
@@ -127,7 +72,107 @@ def make_grid(grid_buffer=250) -> gpd.GeoDataFrame:
         lambda r: f"{str(r.column)},{str(r.row)}", axis=1
     )
     coastline_grid["geometry"] = coastline_grid.geometry.apply(fix_winding)
-    return assign_crs(coastline_grid)
+    return _assign_crs(coastline_grid)
+
+
+def _remove_inland_borders(aoi: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Remove land-land country borders.
+
+    The only inland border is between Papua New-Guinea & Indonesia.
+    Removing it prevents unecessary processing of areas which don't
+    contain any coasts
+
+
+    Args:
+        aoi: The country boundaries.
+
+    Returns:
+        The input with the border between PNG & Indonesia removed.
+
+    """
+
+    # A buffer of the exterior line created weird interior gaps,
+    # (See https://github.com/locationtech/jts/issues/876)
+    # so I buffer the polygons by a positive then negative buffer
+    # and take the difference. I do a tiny amount here so I can remove
+    # the boundary between PNG & Indonesia without pulling out any of
+    # western PNG.
+    tiny_buffer = 0.0001
+    aoi_buffer = aoi.buffer(tiny_buffer)
+    aoi_negative_buffer = aoi.buffer(-tiny_buffer)
+    aoi = aoi_buffer.difference(aoi_negative_buffer)
+
+    # remove border of PNG & Indonesia
+    indonesia = gpd.read_file(
+        f"https://geodata.ucdavis.edu/gadm/gadm4.1/gpkg/gadm41_IDN.gpkg"
+    )
+    indonesia.geometry = indonesia.buffer(0.01)
+    return gpd.GeoDataFrame(geometry=aoi).overlay(indonesia, how="difference")
+
+
+def _assign_crs(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Assign an appropriate CRS to each grid cell.
+
+    Using the "most common" zone among loaded Landsat data works fine except
+    in some years in some areas the most common zone differs, due to
+    differing data availability. Here we determine which UTM zone has the
+    greatest area of the buffered gadm for each cell.
+
+    Alternatively, we would need to determine which Landsat scene has the
+    most area within the buffered gadm for each cell, then determine the
+    projection of that scene. I couldn't find such a crosswalk (a table of
+    which projection each landsat scene has).
+
+    Args:
+        gdf: The coastlines grid.
+
+    Returns:
+        The input with an additional column `"epsg"` which contains the
+        EPSG code for the identified "best" UTM zone.
+    """
+    utm_zones = (
+        gpd.read_file("data/World_UTM_Grid_-8777149898303524843.gpkg")[
+            # bad stuff here I think from reprojection
+            lambda x: x["ZONE"]
+            != 25
+        ]
+        .to_crs(config.OUTPUT_CRS)
+        .dissolve(by="ZONE")
+        .reset_index()
+        # makes e.g. 55 32655
+        .assign(epsg=lambda d: "326" + d.ZONE.astype("Int64").astype(str).str.zfill(2))
+    )
+
+    zone_lookup = (
+        gdf.overlay(utm_zones, how="intersection")
+        .assign(area=lambda r: r.geometry.area)
+        .sort_values("area", ascending=False)
+        # drops the second by default, e.g. the lower value(s)
+        .drop_duplicates(["row", "column"])
+        .set_index(["row", "column"])
+    ).epsg
+
+    return gdf.set_index(["row", "column"]).join(zone_lookup).reset_index()
+
+
+def _full_aoi() -> gpd.GeoDataFrame:
+    """The full area of interest for the coastlines product.
+
+    Currently this contains all areas defined by :func:`dep_tools.grids.gadm`
+    plus the US state of Hawaii, which was included when testing some
+    validation data only available there.
+    """
+    padm = gadm()
+    hawaii = (
+        gpd.read_file(
+            "https://geodata.ucdavis.edu/gadm/gadm4.1/gpkg/gadm41_USA.gpkg",
+            layer="ADM_ADM_1",
+        )
+        .set_index("ISO_1")
+        .loc[["US-HI"]]
+        .reset_index()
+    )
+    return pd.concat([padm, hawaii]).dissolve()[["geometry"]]
 
 
 remote_fs = S3FileSystem(anon=True)
@@ -145,7 +190,7 @@ local_aoi_raster_path = Path(__file__).parent / f"../data/raw/{aoi_raster_name}"
 remote_aoi_raster_path = f"{config.BUCKET}/dep_ls_coastlines/raw/{aoi_raster_name}"
 
 if not remote_fs.exists(remote_aoi_raster_path) or OVERWRITE:
-    aoi = full_aoi()
+    aoi = _full_aoi()
 
     opts = gdal.RasterizeOptions(
         creationOptions=dict(
@@ -262,3 +307,4 @@ _test_tiles = [
     (88, 47),
 ]
 test_buffered_grid = buffered_grid.loc[_test_tiles]
+"""Select tiles which have been useful in debugging outputs."""

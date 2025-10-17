@@ -1,3 +1,5 @@
+"""Clip tidal data in order to save space."""
+
 from pathlib import Path
 import warnings
 

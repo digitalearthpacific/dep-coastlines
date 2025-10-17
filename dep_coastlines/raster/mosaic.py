@@ -1,3 +1,5 @@
+"""This module contains functionality to create annual tide-corrected mosaics."""
+
 from typing import Iterable, Tuple
 
 import geopandas as gpd
@@ -8,21 +10,53 @@ from dep_tools.utils import scale_to_int16
 from xarray import DataArray, Dataset
 
 from dep_coastlines.tide_utils import filter_by_tides
-from dep_coastlines.water_indices import twndwi
+from dep_coastlines.raster.water_indices import twndwi
 
 
 class MosaicProcessor(LandsatProcessor):
-    """Create a tide-filtered annual mosaic.
-
-    Args:
-        all_tides: All tides for the target area.
-    """
+    """Create a tide-filtered annual mosaic."""
 
     def __init__(self, all_tides: Dataset, **kwargs):
+        """Create the Processor.
+
+        Args:
+            all_tides: A dataset containing tidal data for all times.
+            **kwargs: Passed to :class:`dep_tools.processors.LandsatProcessor`.
+        """
         super().__init__(**kwargs)
         self._tides = all_tides
 
     def process(self, xr: Dataset, area: gpd.GeoDataFrame) -> Dataset | None:
+        """Create the mosaic.
+
+        The input data is clipped to the area, then cloud-masked. Masks
+        from overlapping images are combined before masking using
+        :func:`mask_clouds_by_day`. Then, pixelwise tidal filtering is
+        performed using the input tidal data and :func:`dep_coastlines.tide_utils.filter_by_tides`.
+
+        Median values of all input bands are calculated, as well as (calculated)
+        twndwi. Median absolute deviation is also calculated for each of these,
+        as well as "count" and the standard deviation of twndwi ("twndwi_stdev").
+
+        Bands are multiplied by 10,000 and converted to 16-bit integer,
+        except for the "count" band and any bands ending in "stdev" or "mad"
+        (since the magnitude of these could potentially fall out of the
+        range of this data type).
+
+        Args:
+            xr: An xarray Dataset containing all Landsat scenes for a given
+                time period (year or three years) and location.
+            area:
+                An area within the footprint of `xr` which contains the coastal
+                areas we are interested in.
+
+        Returns:
+            A Dataset with summary values for the period of data.
+
+        Raises:
+            NoOutputError: If tidal filtering removes all data.
+
+        """
         # Clip the input to the given area, to reduce computation size
         # for tiles with limited coastal areas.
         xr = xr.rio.clip(

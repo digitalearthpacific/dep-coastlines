@@ -1,4 +1,4 @@
-"""Calculates water indices for the given areas and times and saves to s3."""
+"""Calculate annual mosaics for the given areas and times and save to s3."""
 
 from datetime import datetime
 from typing import Tuple
@@ -9,12 +9,13 @@ from dask.distributed import Client
 from dep_tools.exceptions import EmptyCollectionError, NoOutputError
 from dep_tools.namers import GenericItemPath
 from dep_tools.processors import XrPostProcessor
-from dep_tools.searchers import LandsatPystacSearcher
+from dep_tools.searchers import LandsatPystacSearcher, Searcher
 from dep_tools.stac_utils import use_alternate_s3_href
 from dep_tools.task import AwsStacTask
 from dep_tools.writers import AwsDsCogWriter
 from odc.geo.geobox import AnchorEnum
 from odc.stac import configure_s3_access
+from pystac import Item
 from pystac_client import Client as PystacClient
 from rasterio.errors import RasterioIOError, WarpOperationError
 from retry import retry
@@ -27,7 +28,7 @@ from dep_coastlines.common import (
 from dep_coastlines.config import MOSAIC_DATASET_ID
 from dep_coastlines.grid import buffered_grid as grid
 from dep_coastlines.io import ProjOdcLoader
-from dep_coastlines.raster import MosaicProcessor
+from dep_coastlines.raster.mosaic import MosaicProcessor
 from dep_coastlines.tide_utils import tides_for_items
 from dep_coastlines.time_utils import (
     composite_from_years,
@@ -39,7 +40,7 @@ from dep_coastlines.time_utils import (
 def process_id(
     task_id: Tuple | list[Tuple] | None,
     version: str,
-    datetime: str = "2020/2024",
+    datetime: str = "1984/2024",
     dataset_id: str = MOSAIC_DATASET_ID,
     load_before_write: bool = True,
     fail_on_read_error: bool = True,
@@ -50,7 +51,9 @@ def process_id(
         task_id: The DE Pacific tile id for the given task.
         version: The version of the output mosaic data.
         datetime: A string of the form "year" or "year1/year2" which indicates
-            the year or the start and end year of the desired mosaics.
+            the year or the start and end year of the desired mosaics. The entire
+            period of record should be processed at one time, since tidal
+            filtering is based on the full time-series of tide data.
         dataset_id: The dataset identifier for the output.
         load_before_write: Should the output dataset be loaded into memory
             before writing? Passed to :class:`dep_tools.loaders.OdcLoader`.
@@ -100,7 +103,19 @@ def process_id(
 
 def _process_all_years(
     area: gpd.GeoDataFrame, all_time: str, itempath: GenericItemPath, **kwargs
-):
+) -> list[str]:
+    """Process all years of data & write the output to S3.
+
+    Args:
+        area: The target area.
+        all_time: As for :func:`process_id`.
+        itempath: The ItemPath for the output.
+        **kwargs: Passed to :class:`dep_tools.tasks.AwsStacTask`.
+
+    Returns:
+        A list of paths written to S3.
+
+    """
     client = PystacClient.open(
         "https://landsatlook.usgs.gov/stac-server",
         modifier=use_alternate_s3_href,
@@ -114,7 +129,6 @@ def _process_all_years(
     ).search(area)
 
     tides = tides_for_items(items, area)
-    breakpoint()
     processor = MosaicProcessor(
         tides,
         mask_clouds=True,
@@ -144,6 +158,7 @@ def _process_all_years(
     return paths
 
 
+# Enable retries for each task in case of network instability.
 @retry(
     (WarpOperationError, RasterioIOError),
     tries=5,
@@ -155,17 +170,32 @@ def _run_single_task(task) -> str | list[str]:
     return task.run()
 
 
-class ItemFilterer:
-    """A "searcher" which filters a list of items by the given year."""
+class ItemFilterer(Searcher):
+    """A Searcher which filters a list of items by the given year.
 
-    def __init__(self, items, year):
+    This is a bit of a mis-use of the Searcher paradigm, but allows
+    us to avoid performing another STAC search just to find items
+    we have already found when creating the tide data.
+    """
+
+    def __init__(self, items: list[Item], year: str):
+        """Create the object.
+
+        Args:
+            items: A list of STAC Items, containing data for a certain
+                area for the full analysis time.
+            year: A string in the format "<year>" or "<year>/<year>" containing
+                the years we need.
+        """
         self._items = []
         for item in items:
+            # Account for multiple formats for the datetime property.
             format_string = (
                 "%Y-%m-%dT%H:%M:%S.%fZ"
                 if "." in item.properties["datetime"]
                 else "%Y-%m-%dT%H:%M:%SZ"
             )
+            # Perform the filtering
             item_year = str(
                 datetime.strptime(item.properties["datetime"], format_string).year
             )
@@ -176,7 +206,16 @@ class ItemFilterer:
         if len(self._items) == 0:
             raise EmptyCollectionError
 
-    def search(self, *_):
+    def search(self, *_) -> list[Item]:
+        """Perform the filter.
+
+        Args:
+            *_: Ignored
+
+        Returns:
+            A list of STAC Items, filtered to self.year.
+
+        """
         return self._items
 
 
@@ -187,6 +226,7 @@ def main(
     load_before_write: bool = True,
     fail_on_read_error: bool = True,
 ):
+    """Process a single tile of data."""
     configure_s3_access(cloud_defaults=True, requester_pays=True)
     boto3.setup_default_session()
     with Client():
