@@ -3,7 +3,6 @@ import warnings
 from numpy import mean
 from numpy.lib.stride_tricks import sliding_window_view
 import odc.geo.xr
-from odc.geo.geobox import AnchorEnum
 import odc.stac
 from pystac import Item
 import xarray as xr
@@ -13,7 +12,7 @@ from dep_tools.namers import DepItemPath
 
 from dep_coastlines.common import coastlineItemPath
 from dep_coastlines.config import MOSAIC_DATASET_ID, MOSAIC_VERSION, HTTPS_PREFIX
-from dep_coastlines.water_indices import twndwi, mndwi, ndwi, nirwi
+from dep_coastlines.raster.water_indices import twndwi, mndwi, ndwi, nirwi
 
 
 def get_datetimes(start_year, end_year, years_per_composite):

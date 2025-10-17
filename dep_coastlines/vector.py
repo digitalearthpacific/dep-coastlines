@@ -8,53 +8,41 @@ so things may move around / get renamed some in the coming weeks.
 Please refer to raster_cleaning.py for specific functions.
 """
 
-from joblib import load
 import operator
-from typing import Tuple, Annotated, Callable
+from typing import Callable, Tuple
 
-import boto3
+import geohash
+import xrspatial as xs
 from coastlines.vector import (
     all_time_stats,
     annual_movements,
     calculate_regressions,
+    certainty_masking,
     contour_certainty,
     points_on_line,
     region_atttributes,
 )
-from dask.distributed import Client
 from dea_tools.spatial import subpixel_contours
-from geopandas import GeoDataFrame
-import geohash
-from numpy import isfinite
-from odc.algo import mask_cleanup
-from odc.stac import configure_s3_access
-from pyogrio import read_dataframe
-from typer import Option, run
-from xarray import DataArray, Dataset
-import xrspatial as xs
-
 from dep_tools.processors import Processor
 from dep_tools.task import (
-    ErrorCategoryAreaTask,
     NoOutputError,
 )
+from geopandas import GeoDataFrame
+from joblib import load
+from numpy import isfinite
+from odc.algo import mask_cleanup
+from pyogrio import read_dataframe
+from xarray import DataArray, Dataset
 
-from dep_coastlines.common import coastlineItemPath, coastlineLogger
-from dep_coastlines.config import CLOUD_MODEL_FILE, MOSAIC_VERSION
-from dep_coastlines.cloud_model.fit_model import SavedModel  # noqa needed for load
 from dep_coastlines.cloud_model.predictor import ModelPredictor
-from dep_coastlines.io import CoastlineWriter, MultiyearMosaicLoader
-from dep_coastlines.raster_cleaning import (
-    load_gadm_land,
-    find_inland_areas,
+from dep_coastlines.config import CLOUD_MODEL_FILE
+from dep_coastlines.raster.cleaning import (
     fill_with_nearby_dates,
+    find_inland_areas,
+    load_gadm_land,
     remove_disconnected_land,
     smooth_gaussian,
 )
-from dep_coastlines.grid import buffered_grid as GRID
-
-
-DATASET_ID = "coastlines/interim/coastlines"
 
 BooleanDataArray = DataArray
 
@@ -182,7 +170,7 @@ class Cleaner(Processor):
         return analysis_zone
 
     def add_attributes(self):
-        # gpd.read_file got a 403
+        # Using read_dataframe because gpd.read_file returns a 403 error.
         eez = read_dataframe(
             "https://pacificdata.org/data/dataset/964dbebf-2f42-414e-bf99-dd7125eedb16/resource/dad3f7b2-a8aa-4584-8bca-a77e16a391fe/download/country_boundary_eez.geojson"
         )
@@ -209,8 +197,11 @@ class Cleaner(Processor):
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
         # Apply cloud mask
         output, mask = self.model.apply_mask(input)
+
+        # Fill missing data
         output = fill_with_nearby_dates(output)
 
+        # filter variables and load data into memory
         variation_var = self.water_index_name + "_mad"
         variables_to_keep = [self.water_index_name, variation_var, "count"]
         output = output[variables_to_keep].compute()
@@ -314,172 +305,3 @@ class Cleaner(Processor):
             self.coastlines,
             self.roc_points,
         )
-
-
-from dea_tools.spatial import subpixel_contours, xr_vectorize
-import numpy as np
-from rasterio.features import sieve
-from skimage.morphology import (
-    dilation,
-    disk,
-)
-import xarray as xr
-
-
-# The following 2 functions copied from dea coastlines solely for the
-# .squeeze to accomodate xarray updates
-def _create_mask(raster_mask, sieve_size, crs):
-    """
-    Clean and dilate an annual raster produced by `certainty_masking`,
-    then vectorize into a dictionary of vector features that are
-    taken as an input by `contour_certainty`.
-    """
-
-    # Clean mask by sieving to merge small areas of pixels into
-    # their neighbours.
-    sieved = xr.apply_ufunc(sieve, raster_mask, sieve_size)
-
-    # Apply greyscale dilation to expand masked pixels and
-    # err on the side of overclassifying certainty issues
-    dilated = xr.apply_ufunc(dilation, sieved, disk(3))
-
-    # Vectorise
-    vector_mask = xr_vectorize(
-        dilated,
-        crs=crs,
-        attribute_col="certainty",
-    )
-
-    # Dissolve column, fix geometry and rename classes
-    vector_mask = vector_mask.dissolve("certainty")
-    vector_mask["geometry"] = vector_mask.geometry.buffer(0)
-    vector_mask = vector_mask.rename(
-        {0: "good", 1: "unstable data", 2: "insufficient data"}
-    )
-
-    return (raster_mask.year.item(), vector_mask)
-
-
-def certainty_masking(yearly_ds, obs_threshold=5, stdev_threshold=0.3, sieve_size=128):
-    """
-    Generate annual vector polygon masks containing information
-    about the certainty of each extracted shoreline feature.
-    These masks are used to assign each shoreline feature with
-    important certainty information to flag potential issues with
-    the data.
-
-    Parameters:
-    -----------
-    yearly_ds : xarray.Dataset
-        An `xarray.Dataset` containing annual DEA Coastlines
-        rasters.
-    obs_threshold : int, optional
-        The minimum number of post-gapfilling Landsat observations
-        required for an extracted shoreline to be considered good
-        quality. Annual shorelines based on low numbers of
-        observations can be noisy due to the influence of
-        environmental noise like unmasked cloud, sea spray, white
-        water etc. Defaults to 5.
-    stdev_threshold : float, optional
-        The maximum MNDWI standard deviation required for a
-        post-gapfilled Landsat observation to be considered good
-        quality. Annual shorelines based on MNDWI with a high
-        standard deviation represent unstable data, which can
-        indicate that the tidal modelling process did not adequately
-        remove the influence of tide. For more information,
-        refer to Bishop-Taylor et al. 2021
-        (https://doi.org/10.1016/j.rse.2021.112734).
-        Defaults to 0.3.
-    sieve_size : int, optional
-        To reduce the complexity of the output masks, they are
-        first cleaned using `rasterio.features.sieve` to replace
-        small areas of pixels with the values of their larger
-        neighbours. This parameter sets the minimum polygon size
-        to retain in this process. Defaults to 128.
-
-    Returns:
-    --------
-    vector_masks : dictionary of geopandas.GeoDataFrames
-        A dictionary with year (as an str) as the key, and vector
-        data as a `geopandas.GeoDataFrame` for each year in the
-        analysis.
-    """
-
-    from concurrent.futures import ProcessPoolExecutor
-    from itertools import repeat
-
-    # Identify problematic pixels
-    high_stdev = yearly_ds["stdev"] > stdev_threshold
-    low_obs = yearly_ds["count"] < obs_threshold
-
-    # Create raster mask with values of 0 for good data, values of
-    # 1 for unstable data, and values of 2 for insufficient data.
-    raster_mask = high_stdev.where(~low_obs, 2).astype(np.int16)
-
-    # Process in parallel
-    with ProcessPoolExecutor() as executor:
-        # Apply func in parallel, repeating params for each iteration
-        groups = [group.squeeze() for (i, group) in raster_mask.groupby("year")]
-        to_iterate = (
-            groups,
-            *(repeat(i, len(groups)) for i in [sieve_size, yearly_ds.odc.crs]),
-        )
-        vector_masks = dict(executor.map(_create_mask, *to_iterate), total=len(groups))
-
-    return vector_masks
-
-
-def process_id(
-    task_id: Tuple | list[Tuple] | None,
-    dataset_id=DATASET_ID,
-    version: str = "0.8.0",
-    start_year: int = 1984,
-    end_year: int = 2024,
-    water_index="twndwi",
-) -> None:
-    namer = coastlineItemPath(dataset_id, version, time=f"{start_year}/{end_year}")
-    logger = coastlineLogger(namer, dataset_id=dataset_id)
-
-    loader = MultiyearMosaicLoader(
-        start_year=start_year,
-        end_year=end_year,
-        version=MOSAIC_VERSION,
-    )
-    processor = Cleaner(
-        water_index=water_index,
-        send_area_to_processor=True,
-        initial_year=str(start_year),
-        baseline_year=str(end_year),
-    )
-    writer = CoastlineWriter(
-        namer,
-        extra_attrs=dict(dep_version=version),
-    )
-
-    ErrorCategoryAreaTask(
-        task_id, GRID.loc[[task_id]], loader, processor, writer, logger
-    ).run()
-
-
-def main(
-    column: Annotated[str, Option()],
-    row: Annotated[str, Option()],
-    version: Annotated[str, Option()],
-    start_year: Annotated[int, Option()] = 1984,
-    end_year: Annotated[int, Option()] = 2024,
-    water_index: str = "twndwi",
-):
-    configure_s3_access(cloud_defaults=True, requester_pays=True)
-    boto3.setup_default_session()
-    with Client():
-        process_id(
-            (int(column), int(row)),
-            version=version,
-            start_year=start_year,
-            end_year=end_year,
-            water_index=water_index,
-        )
-
-
-if __name__ == "__main__":
-    run(main)
