@@ -1,41 +1,48 @@
+"""Print a list of ids which need to be processed."""
+
 import json
 import sys
-from typing import Annotated, Optional
+from typing import Annotated
 
 from cloud_logger import filter_by_log
-from dep_tools.parsers import bool_parser
+from dep_tools.parsers import bool_parser, datetime_parser
 from dep_tools.stac_utils import remove_items_with_existing_stac
-from typer import Option, Typer
+from typer import Option, run
 
 from dep_coastlines.common import (
     coastlineItemPath,
     coastlineLogger,
-    cs_list_of_ints,
-    int_or_none,
 )
 from dep_coastlines.grid import buffered_grid as GRID
-from dep_coastlines.time_utils import composite_from_years, parse_datetime
 
-app = Typer()
-
-
-@app.command()
 def print_ids(
     dataset_id: Annotated[str, Option()],
     version: Annotated[str, Option()],
-    datetime: Annotated[str, Option()],
-    years_per_composite: Annotated[str, Option(parser=cs_list_of_ints)] = "1",
-    limit: Optional[str] = Option(None, parser=int_or_none),
+    datetime: Annotated[str, Option(parser=datetime_parser)],
     retry_errors: Annotated[str, Option(parser=bool_parser)] = "True",
     overwrite_logs: Annotated[str, Option(parser=bool_parser)] = "False",
     filter_using_log: Annotated[str, Option(parser=bool_parser)] = "True",
     filter_existing_stac_items: Annotated[str, Option(parser=bool_parser)] = "False",
 ):
-    params = []
-    # All the casting here is just to appease the linter; the parsers handle
-    # the actual conversions.
-    for year in composite_from_years(parse_datetime(datetime), years_per_composite):
-        ids = _get_ids(
+    """Print a list of tile ids and years to process.
+
+    Args:
+        dataset_id: The dataset id.
+        version: The output data version.
+        datetime: A string of the form <year> or <year 1>_<year 2>, representing
+         the year or years to process. Parsed by :func:`dep_tools.parsers.parse_datetime`.
+        retry_errors: If `filter_using_log` is `True`, whether to retry tasks that were
+            previously logged as errors.
+        overwrite_logs: Whether to delete the log before processing.
+        filter_using_log: Whether to filter tasks to run using the log.
+        filter_existing_stac_items: Whether to filter tasks to run by excluding those
+            which already have an output STAC Item stored as json in the output location.
+
+    Returns: Nothing. A list of dictionaries with keys `column`, `row`, and `datetime` is
+        sent to stdout.
+    """
+    params = [{"column": id[0], "row": id[1], "datetime": year} for year in datetime for id in 
+        _get_ids(
             datetime=year,
             version=version,
             dataset_id=dataset_id,
@@ -43,12 +50,7 @@ def print_ids(
             delete_existing_log=bool(overwrite_logs),
             filter_using_log=bool(filter_using_log),
             filter_existing_stac_items=bool(filter_existing_stac_items),
-        )
-
-        params += [{"column": id[0], "row": id[1], "datetime": year} for id in ids]
-
-    if limit is not None:
-        params = params[0 : int(limit)]
+        )]
 
     json.dump(params, sys.stdout)
 
@@ -80,4 +82,4 @@ def _get_ids(
 
 
 if __name__ == "__main__":
-    app()
+    run(print_ids)

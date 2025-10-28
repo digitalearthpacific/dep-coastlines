@@ -62,7 +62,8 @@ def remove_disconnected_land(
     calculating the maximum value of certain_land (i.e. 1 or 0) within each. Regions
     with a max of 1 are kept.
 
-    This is similar to but more restrictive than :func:`coastlines.vector.temporal_masking`
+    This is similar to but more restrictive than :func:`coastlines.vector.temporal_masking`.
+
     Args:
         certain_land: A boolean DataArray where true values represent known land
             areas.
@@ -110,7 +111,20 @@ def find_inland_areas(water_bool_da, ocean_bool_da) -> DataArray:
     )
 
 
-def fill_with_nearby_dates(xarr: DataArray | Dataset) -> DataArray:
+def fill_with_nearby_dates(xarr: DataArray | Dataset) -> DataArray | Dataset:
+    """Fill missing values with those from the prior or following year.
+
+    If both adjacent years are missing or null, the output will be null.
+
+    Args:
+        xarr: An input xarray object with a "year" dimension, which is a string
+            representation of a 4-digit year.
+
+    Returns:
+        The input with null values filled with values from adjacent years. If `xarr`
+        is a :class:`DataArray` object, the same is returned.
+    """
+
     def fill(da: DataArray) -> DataArray:
         output = da.to_dataset("year")
         for year in da.year.values:
@@ -129,6 +143,22 @@ def fill_with_nearby_dates(xarr: DataArray | Dataset) -> DataArray:
 
 
 def small_areas(bool_da: DataArray, min_size_in_pixels: int = 55) -> DataArray:
+    """Identify small areas of continuity in the input.
+
+    If `bool_da` is chunked and areas span chunks, the will be treated as
+    separate chunks.
+
+    Args:
+        bool_da: A boolean :class:`xarray.DataArray`. `True` values represent the
+            regions to be assessed.
+        min_size_in_pixels: The minimum size of non-small regions, in pixels.
+
+    Returns:
+        A boolean :class:`xarray.DataArray`, with areas smaller than
+            `min_size_in_pixels` set to true.
+
+    """
+
     def _remove_2d(bool_da_2d: DataArray) -> DataArray:
         # For now, ok doing this in chunks, but could remove some bigger areas
         # if they span chunks

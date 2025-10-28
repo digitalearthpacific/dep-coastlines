@@ -28,12 +28,11 @@ from dep_coastlines.common import (
 from dep_coastlines.config import MOSAIC_DATASET_ID
 from dep_coastlines.grid import buffered_grid as grid
 from dep_coastlines.io import ProjOdcLoader
+from dep_coastlines.parsers import datetime_parser
 from dep_coastlines.raster.mosaic import MosaicProcessor
 from dep_coastlines.tide_utils import tides_for_items
 from dep_coastlines.time_utils import (
     composite_from_years,
-    parse_datetime,
-    years_from_yearstring,
 )
 
 
@@ -200,7 +199,7 @@ class ItemFilterer(Searcher):
                 datetime.strptime(item.properties["datetime"], format_string).year
             )
 
-            if item_year in years_from_yearstring(year, "/"):
+            if item_year in datetime_parser(year, "/"):
                 self._items.append(item)
 
         if len(self._items) == 0:
