@@ -1,3 +1,5 @@
+"""Perform annual coastline and rates-of-change extraction from mosaics."""
+
 from typing import Annotated, Tuple
 
 import boto3

@@ -2,13 +2,31 @@ from xarray import DataArray, Dataset
 
 
 def mndwi(xr: Dataset) -> DataArray:
-    # modified normalized differential water index is just a normalized index
-    # like NDVI, with different bands
+    """Calculate modified normalized differental water index (MNDWI).
+
+    MNDWI is calculated as (green - swir16) / (green + swir16).
+
+    Args:
+        xr: An :class:`xarray.Dataset` with variables "green" and
+            "swir16".
+
+    Returns: A :class:`xarray.DataArray` named "mndwi".
+    """
     mndwi = normalized_ratio(xr.green, xr.swir16)
     return mndwi.rename("mndwi")
 
 
 def ndwi(xr: Dataset) -> DataArray:
+    """Calculate normalized differental water index (NDWI).
+
+    NDWI is calculated as (green - nir08) / (green + nir08).
+
+    Args:
+        xr: An :class:`xarray.Dataset` with variables "green" and
+            "nir08".
+
+    Returns: A :class:`xarray.DataArray` named "ndwi".
+    """
     ndwi = normalized_ratio(xr.green, xr.nir08)
     return ndwi.rename("ndwi")
 
