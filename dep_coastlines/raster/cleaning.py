@@ -115,6 +115,7 @@ def fill_with_nearby_dates(xarr: DataArray | Dataset) -> DataArray | Dataset:
     """Fill missing values with those from the prior or following year.
 
     If both adjacent years are missing or null, the output will be null.
+    If both adjacent years have data, the earlier year's is used.
 
     Args:
         xarr: An input xarray object with a "year" dimension, which is a string
