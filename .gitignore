@@ -1,5 +1,6 @@
 # local data
-coastlines-local
+coastlines-local/
+data/
 
 # GIS leftovers
 *.aux.xml

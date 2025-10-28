@@ -31,13 +31,3 @@ def coastlineLogger(
         overwrite=delete_existing_log,
         header="time|index|status|paths|comment\n",
     )
-
-
-# These are parsers for use with typer and argo (since argo can only use
-# strings), and doesn't allow missing parameters, etc.
-def int_or_none(raw: str) -> Optional[int]:
-    return None if raw == "None" else int(raw)
-
-
-def cs_list_of_ints(raw: str) -> list[int] | int:
-    return [int(s) for s in raw.split(",")] if "," in raw else int(raw)
