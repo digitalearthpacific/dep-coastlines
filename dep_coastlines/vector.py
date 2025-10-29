@@ -122,6 +122,7 @@ def calculate_rates_of_change(
 
 
 class Cleaner(Processor):
+
     def __init__(
         self,
         water_index: str = "twndwi",
@@ -142,6 +143,7 @@ class Cleaner(Processor):
         self.model = ModelPredictor(load(model_file))
         self.comparison = comparison
         self.number_of_expansions = number_of_expansions
+        self.send_area_to_processor = False
 
     def land(self, output):
         return self.comparison(output[self.water_index_name], self.index_threshold)
@@ -193,8 +195,21 @@ class Cleaner(Processor):
         )
 
     def process(
-        self, input: Dataset | list[Dataset], area
+        self, input: Dataset | list[Dataset]
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
+        """
+
+        Args:
+            input: An :class:`xarray.Dataset` with coordinates "x", "y" and
+                "year" variables:
+
+        Returns:
+
+
+        Raises:
+            NoOutputError: If there is determined to be no land in the area.
+        """
+        breakpoint()
         # Apply cloud mask
         output, mask = self.model.apply_mask(input)
 
