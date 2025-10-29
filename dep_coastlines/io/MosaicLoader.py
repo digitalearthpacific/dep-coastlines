@@ -8,7 +8,7 @@ from pystac import Item
 import xarray as xr
 
 from dep_tools.loaders import Loader
-from dep_tools.namers import DepItemPath
+from dep_tools.namers import GenericItemPath
 
 from dep_coastlines.common import coastlineItemPath
 from dep_coastlines.config import MOSAIC_DATASET_ID, MOSAIC_VERSION, HTTPS_PREFIX
@@ -93,7 +93,7 @@ class MultiyearMosaicLoader(Loader):
 class MosaicLoader(Loader):
     def __init__(
         self,
-        itempath: DepItemPath,
+        itempath: GenericItemPath,
         add_deviations: bool = False,
     ):
         self._itempath = itempath
