@@ -1,7 +1,6 @@
 import warnings
 
 from numpy import mean
-from numpy.lib.stride_tricks import sliding_window_view
 import odc.geo.xr
 import odc.stac
 from pystac import Item
@@ -9,37 +8,34 @@ import xarray as xr
 
 from dep_tools.loaders import Loader
 from dep_tools.namers import GenericItemPath
+from dep_tools.parsers import datetime_parser
 
 from dep_coastlines.common import coastlineItemPath
 from dep_coastlines.config import MOSAIC_DATASET_ID, MOSAIC_VERSION, HTTPS_PREFIX
 from dep_coastlines.raster.water_indices import twndwi, mndwi, ndwi, nirwi
-
-
-def get_datetimes(start_year, end_year, years_per_composite):
-    # nearly duplicated in task_utils, should probably refactor
-    # yeah, just switch to get_composite_datetime and make years separate
-    assert years_per_composite % 2 == 1
-    year_buffer = int((years_per_composite - 1) / 2)
-    years = range(int(start_year) - year_buffer, int(end_year) + 1 + year_buffer)
-    if years_per_composite > 1:
-        years = [
-            f"{y[0]}/{y[years_per_composite - 1]}"
-            for y in sliding_window_view(list(years), years_per_composite)
-        ]
-    return [str(y) for y in years]
+from dep_coastlines.time_utils import composite_from_years
 
 
 class MultiyearMosaicLoader(Loader):
+    """Load raster mosaics for multiple years and composite lengths."""
+
     def __init__(
         self,
-        start_year,
-        end_year,
+        start_year: str,
+        end_year: str,
         years_per_composite: list[int] | int = [1, 3],
         version: str = MOSAIC_VERSION,
     ):
+        """Initialize the loader.
+
+        Args:
+            start_year: The first year.
+            end_year: The last year.
+            years_per_composite: An integer or list of integers.
+            version: The version identifier.
+        """
         super().__init__()
-        self._start_year = start_year
-        self._end_year = end_year
+        self._datetime = f"{start_year}_{end_year}"
         self._version = version
         if isinstance(years_per_composite, list):
             if len(years_per_composite) == 1:
@@ -50,10 +46,10 @@ class MultiyearMosaicLoader(Loader):
         else:
             self._years_per_composite = years_per_composite  # int
 
-    def load_composite_set(self, area, years_per_composite) -> xr.Dataset:
+    def _load_composite_set(self, area, years_per_composite) -> xr.Dataset:
         dss = []
-        for datetime in get_datetimes(
-            self._start_year, self._end_year, years_per_composite
+        for datetime in composite_from_years(
+            datetime_parser(self._datetime), years_per_composite
         ):
             itempath = coastlineItemPath(
                 dataset_id=MOSAIC_DATASET_ID,
@@ -77,9 +73,19 @@ class MultiyearMosaicLoader(Loader):
         return output
 
     def load(self, area) -> xr.Dataset | list[xr.Dataset]:
+        """Load the data.
+
+        :class:`MosaicLoader` loads data for each year of composite year.
+
+        Args:
+            area (): Passed to :func:`MosaicLoader.load()`.
+
+        Returns:
+
+        """
         if not isinstance(self._years_per_composite, list):
             return _add_deviations(
-                self.load_composite_set(area, self._years_per_composite)
+                self._load_composite_set(area, self._years_per_composite)
             )
         else:
             composite_sets = [

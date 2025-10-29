@@ -80,8 +80,7 @@ def _remove_inland_borders(aoi: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
     The only inland border is between Papua New-Guinea & Indonesia.
     Removing it prevents unecessary processing of areas which don't
-    contain any coasts
-
+    contain coasts.
 
     Args:
         aoi: The country boundaries.

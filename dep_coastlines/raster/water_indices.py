@@ -1,21 +1,35 @@
+"""Water indices for use in determining coastlines."""
+
 from xarray import DataArray, Dataset
 
 
 def mndwi(xr: Dataset) -> DataArray:
-    # modified normalized differential water index is just a normalized index
-    # like NDVI, with different bands
-    mndwi = normalized_ratio(xr.green, xr.swir16)
+    """Calculate modified normalized differental water index (MNDWI).
+
+    MNDWI is calculated as (green - swir16) / (green + swir16).
+
+    Args:
+        xr: An :class:`xarray.Dataset` with variables "green" and
+            "swir16".
+
+    Returns: A :class:`xarray.DataArray` named "mndwi".
+    """
+    mndwi = _normalized_ratio(xr.green, xr.swir16)
     return mndwi.rename("mndwi")
 
 
 def ndwi(xr: Dataset) -> DataArray:
-    ndwi = normalized_ratio(xr.green, xr.nir08)
-    return ndwi.rename("ndwi")
+    """Calculate normalized differental water index (NDWI).
 
+    NDWI is calculated as (green - nir08) / (green + nir08).
 
-def ndvi(xr: Dataset) -> DataArray:
-    ndvi = normalized_ratio(xr.nir08, xr.red)
-    return ndvi.rename("ndvi")
+    Args:
+        xr: An :class:`xarray.Dataset` with variables "green" and
+            "nir08".
+
+    Returns: A :class:`xarray.DataArray` named "ndwi".
+    """
+    return _normalized_ratio(xr.green, xr.nir08).rename("ndwi")
 
 
 def wndwi(xr: Dataset, alpha: float = 0.5) -> DataArray:
@@ -37,24 +51,24 @@ def nirwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
     # I make it an "index" so
     # 1. Directionality is the same as other indices and
     # 2. The scales are similarly comprable
-    return normalized_ratio(cutoff, xr.nir08).rename("nirwi")
+    return _normalized_ratio(cutoff, xr.nir08).rename("nirwi")
 
 
 def tndwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
     green = xr.green.where((xr.nir08 >= cutoff) & (xr.green < cutoff), cutoff)
-    return normalized_ratio(green, xr.nir08)
+    return _normalized_ratio(green, xr.nir08)
 
 
 def stndwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
     values_are_high = (xr.green > cutoff) & (xr.nir08 > cutoff)
     land = xr.green < xr.nir08
     super_green = xr.green.where(values_are_high | land, cutoff)
-    return normalized_ratio(super_green, xr.nir08)
+    return _normalized_ratio(super_green, xr.nir08)
 
 
 def tmndwi(xr: Dataset, cutoff: float = 0.081) -> DataArray:
     green = xr.green.where((xr.swir16 >= cutoff) & (xr.green < cutoff), cutoff)
-    return normalized_ratio(green, xr.swir16)
+    return _normalized_ratio(green, xr.swir16)
 
 
 def awei(xr: Dataset) -> DataArray:
@@ -62,5 +76,6 @@ def awei(xr: Dataset) -> DataArray:
     return awei.rename("awei")
 
 
-def normalized_ratio(band1: DataArray | float, band2: DataArray | float) -> DataArray:
+def _normalized_ratio(band1: DataArray | float, band2: DataArray | float) -> DataArray:
+    """Calculate the normalized ratio of 2 arrays."""
     return (band1 - band2) / (band1 + band2)

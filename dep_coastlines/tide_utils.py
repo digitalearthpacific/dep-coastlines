@@ -1,5 +1,4 @@
-from typing import Tuple
-
+from coastlines.raster import tide_cutoffs
 from eo_tides import pixel_tides
 from dep_tools.searchers import LandsatPystacSearcher
 from dep_tools.stac_utils import use_alternate_s3_href
@@ -72,7 +71,10 @@ def tides_lowres(xr: Dataset, tide_directory="data/raw/tidal_models") -> Dataset
 
 def filter_by_tides(ds: Dataset, tides_lr: DataArray) -> Dataset:
     """Remove out of range tide values from a given dataset."""
-    tide_cutoff_min, tide_cutoff_max = tide_cutoffs_lr(tides_lr, tide_centre=0.0)
+    # first argument is not used
+    tide_cutoff_min, tide_cutoff_max = tide_cutoffs(
+        ds=None, tides_da=tides_lr, tide_centre=0.0
+    )
 
     tides_lr = tides_lr.sel(time=ds.time[ds.time.isin(tides_lr.time)])
 
@@ -99,20 +101,3 @@ def filter_by_tides(ds: Dataset, tides_lr: DataArray) -> Dataset:
 
     # Apply mask, and load in corresponding tide masked data
     return ds.where(tide_bool_hr)
-
-
-def tide_cutoffs_lr(
-    tides_lowres: DataArray, tide_centre=0.0
-) -> Tuple[DataArray, DataArray]:
-    """A replacement for coastlines.tide_cutoffs that is a little memory
-    friendlier"""
-    # Calculate min and max tides
-    tide_min = tides_lowres.min(dim="time")
-    tide_max = tides_lowres.max(dim="time")
-
-    # Identify cutoffs
-    tide_cutoff_buffer = (tide_max - tide_min) * 0.25
-    tide_cutoff_min = tide_centre - tide_cutoff_buffer
-    tide_cutoff_max = tide_centre + tide_cutoff_buffer
-
-    return tide_cutoff_min, tide_cutoff_max

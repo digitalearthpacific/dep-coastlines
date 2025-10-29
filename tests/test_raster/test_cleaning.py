@@ -1,6 +1,10 @@
 import numpy as np
 import xarray as xr
-from dep_coastlines.raster.cleaning import smooth_gaussian, remove_disconnected_land
+from dep_coastlines.raster.cleaning import (
+    fill_with_nearby_dates,
+    smooth_gaussian,
+    remove_disconnected_land,
+)
 
 
 def test_smooth_gaussian_basic():
@@ -151,7 +155,7 @@ def test_remove_disconnected_land():
         ]
     )
 
-    presumed_result_da = (
+    expected_result_da = (
         xr.DataArray(
             presumed_result,
             dims=("y", "x"),
@@ -164,4 +168,27 @@ def test_remove_disconnected_land():
     )
 
     result = remove_disconnected_land(certain_land_da, candidate_land_da)
-    assert (result == presumed_result_da).all()
+    xr.testing.assert_equal(result, expected_result_da)
+
+
+def test_fill_with_nearby_dates_dataarray():
+    nan = float("nan")
+    data = xr.DataArray(
+        np.array(
+            [
+                [nan, 1, nan, nan],
+                [2, nan, nan, nan],
+                [3, nan, 3, nan],
+            ]
+        ),
+        dims=("z", "year"),
+        coords=dict(z=np.arange(4), year=[2001, 2002, 2003]),
+    )
+
+    expected_output = xr.DataArray(
+        np.array([[2, 1, nan, nan], [2, 1, 3, nan], [3, nan, nan, nan]]),
+        dims=("z", "year"),
+        coords=dict(z=np.arange(4), year=[2001, 2002, 2003]),
+    )
+
+    xr.testing.assert_equal(fill_with_nearby_dates(data), expected_output)
