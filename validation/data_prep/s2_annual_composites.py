@@ -4,8 +4,10 @@ from pathlib import Path
 import sys
 from typing import Annotated
 
+from coastlines.raster import tide_cutoffs
 from dask.distributed import Client as DaskClient
 from dep_tools.aws import object_exists, write_to_s3
+from dep_tools.parsers import bool_parser
 from dep_tools.s2_utils import mask_clouds
 from eo_tides import pixel_tides as eo_pixel_tides
 import geopandas as gpd
@@ -18,8 +20,7 @@ from shapely import box
 import typer
 
 
-from dep_coastlines.tide_utils import filter_by_tides, tide_cutoffs_lr
-from dep_coastlines.validation.util import make_tides
+from validation.util import make_tides
 
 CHUNK_SIZE = 8192
 
@@ -75,7 +76,8 @@ def filter_by_tides(ds):
         directory="data/raw/tidal_models",
         model="FES2022_load",
     )
-    tide_cutoff_min, tide_cutoff_max = tide_cutoffs_lr(all_tides)
+    # 1st argument not used
+    tide_cutoff_min, tide_cutoff_max = tide_cutoffs(ds=None, tides_da=all_tides)
     tide_cutoff_min_hr = (
         tide_cutoff_min.interp(x=ds.x, y=ds.y)
         .compute()
@@ -121,10 +123,6 @@ def create_mosaic(tile: str, year: str):
             bucket=bucket,
             use_odc_writer=False,
         )
-
-
-def bool_parser(raw: str):
-    return False if raw == "False" else True
 
 
 @app.command()
