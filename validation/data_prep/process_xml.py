@@ -1,13 +1,13 @@
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from coastlines.raster import tide_cutoffs
 import geopandas as gpd
 import numpy as np
 from odc.geo.geom import box
 from xarray import concat
 
 from dep_coastlines.io.TideLoader import TideLoader
-from dep_coastlines.tide_utils import tide_cutoffs_lr
 from dep_coastlines.validation.util import make_tides
 
 
@@ -16,7 +16,10 @@ def load_tides(gdf):
     mins = []
     maxes = []
     for _, row in gdf.iterrows():
-        amin, amax = tide_cutoffs_lr(tide_loader.load((row.column, row.row)))
+        # First arg is not used
+        amin, amax = tide_cutoffs(
+            ds=None, tides_da=tide_loader.load((row.column, row.row))
+        )
         mins.append(amin.expand_dims(id=1))
         maxes.append(amax.expand_dims(id=1))
 
