@@ -1,7 +1,7 @@
 from dea_tools.classification import predict_xr
 from xarray import concat
 
-from dep_coastlines.cloud_model.fit_model import SavedModel
+from dep_coastlines.cloud_model import SavedModel
 
 
 class ModelPredictor:

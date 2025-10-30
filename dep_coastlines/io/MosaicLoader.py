@@ -89,7 +89,7 @@ class MultiyearMosaicLoader(Loader):
             )
         else:
             composite_sets = [
-                self.load_composite_set(area, years_per_composite)
+                self._load_composite_set(area, years_per_composite)
                 for years_per_composite in self._years_per_composite
             ]
 
