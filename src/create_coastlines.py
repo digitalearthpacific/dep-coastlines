@@ -8,7 +8,7 @@ from dep_tools.task import ErrorCategoryAreaTask
 from odc.stac import configure_s3_access
 from typer import Option, run
 
-from dep_coastlines.cloud_model.fit_model import SavedModel  # noqa
+from dep_coastlines.cloud_model import SavedModel  # noqa
 from dep_coastlines.common import coastlineItemPath, coastlineLogger
 from dep_coastlines.config import MOSAIC_VERSION
 from dep_coastlines.grid import buffered_grid as GRID

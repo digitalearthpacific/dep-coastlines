@@ -11,7 +11,7 @@ NEXT_GEN_COASTLINES_OUTPUT = "data/processed/0.8.2/dep_ls_coastlines_0.8.2.gpkg"
 MOSAIC_VERSION = "0.8.1"
 MOSAIC_DATASET_ID = "coastlines/interim/mosaic"
 
-CLOUD_MODEL_VERSION = "0.8.0"
+CLOUD_MODEL_VERSION = "0.8.1"
 CLOUD_MODEL_FILE = (
     f"dep_coastlines/cloud_model/cloud_model_{CLOUD_MODEL_VERSION}.joblib"
 )

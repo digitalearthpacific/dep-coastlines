@@ -41,6 +41,7 @@ from dep_coastlines.raster.cleaning import (
     find_inland_areas,
     load_gadm_land,
     remove_disconnected_land,
+    remove_disconnected_areas,
     smooth_gaussian,
 )
 
@@ -153,9 +154,7 @@ class Cleaner(Processor):
         # Only expand where there's an edge that's land. Do it multiple times
         # to fill between larger areas. Later we will fill one last time with
         # water to ensure lines are closed.
-        # TODO: why do 2 here? I feel like doing just 1 was non-productive,
-        # but I'm not sure why. I just feel like doing 2 is responsible for
-        # the repeated remove discconected calls in .process.
+        # We do 2 because the last expansion needs 2 to fill in corners.
         def expand_once(analysis_zone):
             return analysis_zone | mask_cleanup(
                 self.land(output.where(analysis_zone)),
@@ -204,6 +203,18 @@ class Cleaner(Processor):
         self,
         input: Dataset | list[Dataset],
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
+        """
+
+        Args:
+            input: An :class:`xarray.Dataset` with coordinates "x", "y" and
+                "year" variables:
+
+        Returns:
+
+
+        Raises:
+            NoOutputError: If there is determined to be no land in the area.
+        """
         # order shown is what is done. number indicate perhaps
         # order as it should be?
         # 1. apply cloud mask
@@ -236,50 +247,44 @@ class Cleaner(Processor):
         # clouds that were not masked, etc. These areas will be further filtered.
         candidate_land = self.land(output)
 
-        # Identify candidate areas connected in some way to consensus areas.
-        # This ensures that we are including true bounds of known land areas
-        # for _this_ year, based on our target water index & data.
-
-        # TODO: consider just eroding then dilating consensus land by 1?
+        # Identify land areas connected in some way to consensus areas.
         connected_areas = remove_disconnected_land(consensus_land, candidate_land)
 
-        # This identifies consensus land area that are a single pixel in size.
-        no_connected_neighbors = xs.focal.mean(consensus_land) == 0
+        # Areas that are not directly connected to consensus land
+        # no_connected_neighbors = xs.focal.mean(consensus_land) == 0
 
-        # Candidate land that is on top of consensus land of only a pixel in size
-        # may be false positives.
-        # TODO: not totally pos what we're getting at here. Presumably this only
-        # removes pixels atop isolated consensus land, not those connected to it
-        suspicious_connected_areas = candidate_land & no_connected_neighbors
+        # Candidate land that is not directly connected to consensus land
+        # suspicious_connected_areas = candidate_land & no_connected_neighbors
 
-        # Since we have only defined land areas to this point, we need to expand our
-        # analysis to include bounding water so coastline delineation via
-        # the marching squares algorithm can correctly function.
-        # To do this, we first filter "connected areas" to remove suspicious ones.
-        analysis_zone = connected_areas & ~suspicious_connected_areas
+        # TODO: trying to figure out why we need to define this.
+        # analysis_zone = connected_areas & ~suspicious_connected_areas
 
         # Next, we expand the analysis zone to include a collar of water. This is
         # accomplished by iteratively dilating land only by 2 pixels.
         # See `expand_analysis_zone` for details.
         analysis_zone, max_cap = self.expand_analysis_zone(
-            analysis_zone=analysis_zone, output=output, return_max_cap=True
+            # analysis_zone=analysis_zone, output=output, return_max_cap=True
+            analysis_zone=connected_areas,
+            output=output,
+            return_max_cap=True,
         )
 
         # Redefine candidate land based on the new analysis zone.
         # TODO: there seems to be some circular logic, here but I am not
         # editing until I can look closer. Specifically, why do we need to
         # redefine analysis_zone?
-        candidate_land = self.land(output.where(analysis_zone))
+        # candidate_land = self.land(output.where(analysis_zone))
         # Now again remove disconnected areas which we may have expanded into.
-        disconnected_areas = find_disconnected_areas(consensus_land, candidate_land)
-        connected_areas = remove_disconnected_land(consensus_land, candidate_land)
+        # disconnected_areas = find_disconnected_areas(consensus_land, candidate_land)
+        # candidate_land = remove_disconnected_land(consensus_land, candidate_land)
 
-        disconnected_areas = candidate_land & ~connected_areas
-        analysis_zone = analysis_zone & ~disconnected_areas
-        if not analysis_zone.any():
-            raise NoOutputError(
-                "Analysis zone is empty, there may be no land detected in this area"
-            )
+        # disconnected_areas = candidate_land & ~connected_areas
+        # analysis_zone = analysis_zone & ~disconnected_areas
+        # if not analysis_zone.any():
+        # if not candidate_land.any():
+        #    raise NoOutputError(
+        #        "Analysis zone is empty, there may be no land detected in this area"
+        #    )
 
         # Since we are operating using a buffer around the gadm boundary (see grid.py),
         # there are a lot of inland areas which we need to make sure are coded as land.
@@ -310,35 +315,31 @@ class Cleaner(Processor):
             .rio.write_crs(output.rio.crs)
         )
 
-        # Next, we need to code inland areas which lie outside our analysis
-        # buffer as land.
         obvious_land = -0.5
-        water = ~self.land(
+        annual_water = ~self.land(
             self.water_index.where(
                 ~(self.water_index.isnull() & (core_land | consensus_land)),
                 obvious_land,
             ).to_dataset(name=self.water_index_name)
         )
 
-        # Remove inland water.
-        # consensus land may have inland water, but gadm doesn't.
-        # Also, consensus land will have masked areas as False rather
-        # than nan. Neither of these should matter because gadm doesn't have
-        # these issues. I bring in consensus land basically to add land areas
-        # near shoreline that gadm may miss.
-        land = gadm_land | consensus_land
-        ocean = mask_cleanup(~land, mask_filters=[("erosion", 2)])
-        inland_water = find_inland_areas(water, ocean)
-        inland_water = find_disconnected_areas(ocean, water)
+        all_time_land = gadm_land | consensus_land
+        core_ocean = mask_cleanup(~all_time_land, mask_filters=[("erosion", 2)])
 
-        # Remove some infinite values that may be present in the water index.
-        water_index = self.water_index.where(~inland_water).where(
+        annual_ocean = remove_disconnected_areas(core_ocean, annual_water)
+        annual_inland_water = annual_water & ~annual_ocean
+
+        # inland_water = find_inland_areas(water, ocean)
+        # inland_water = find_disconnected_areas(ocean, water)
+        #
+        # # Remove some infinite values that may be present in the water index.
+        self.water_index = self.water_index.where(~annual_inland_water).where(
             lambda wi: isfinite(wi)
         )
 
         # Perform coastline delineation.
         self.coastlines = subpixel_contours(
-            water_index,
+            self.water_index,
             dim="year",
             z_values=[self.index_threshold],
             min_vertices=5,
@@ -353,6 +354,7 @@ class Cleaner(Processor):
         self.coastlines = contour_certainty(
             self.coastlines.set_index("year"), certainty_masks
         ).reset_index()
+        breakpoint()
         self.roc_points = calculate_rates_of_change(
             contours=self.coastlines,
             water_index=output[self.water_index_name],
@@ -363,9 +365,11 @@ class Cleaner(Processor):
 
         self.add_attributes()
 
-        water_index["year"] = water_index.year.astype(str)
+        # water_index["year"] = water_index.year.astype(str)
+        self.water_index["year"] = self.water_index.year.astype(str)
         return (
-            water_index.to_dataset("year"),
+            # water_index.to_dataset("year"),
+            self.water_index.to_dataset("year"),
             mask,
             self.coastlines,
             self.roc_points,
