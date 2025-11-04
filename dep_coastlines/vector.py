@@ -234,6 +234,13 @@ class Cleaner(Processor):
         variation_var = self.water_index_name + "_mad"
         variables_to_keep = [self.water_index_name, variation_var, "count"]
         output = output[variables_to_keep].compute()
+        output[self.water_index_name] = (
+            output[self.water_index_name].groupby("year").map(smooth_gaussian)
+        )
+
+        output[variation_var] = (
+            output[variation_var].groupby("year").map(smooth_gaussian)
+        )
 
         # Consensus land is identified as land by
         # multiple water indices across all-time mosaics. These are areas
@@ -310,8 +317,8 @@ class Cleaner(Processor):
             output[self.water_index_name]
             .where(analysis_zone | core_land)
             .where(~max_cap, obvious_water)
-            .groupby("year")
-            .map(smooth_gaussian)
+            #            .groupby("year")
+            #            .map(smooth_gaussian)
             .rio.write_crs(output.rio.crs)
         )
 
@@ -354,7 +361,6 @@ class Cleaner(Processor):
         self.coastlines = contour_certainty(
             self.coastlines.set_index("year"), certainty_masks
         ).reset_index()
-        breakpoint()
         self.roc_points = calculate_rates_of_change(
             contours=self.coastlines,
             water_index=output[self.water_index_name],
