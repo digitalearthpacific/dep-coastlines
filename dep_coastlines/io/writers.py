@@ -1,4 +1,5 @@
 """A :class:`Writer` object definition to write coastline raster & vector output data."""
+
 from typing import Tuple
 
 from coastlines.vector import vector_schema
