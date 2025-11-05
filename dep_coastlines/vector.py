@@ -235,7 +235,10 @@ class Cleaner(Processor):
         variables_to_keep = [self.water_index_name, variation_var, "count"]
         output = output[variables_to_keep].compute()
         output[self.water_index_name] = (
-            output[self.water_index_name].groupby("year").map(smooth_gaussian)
+            output[self.water_index_name]
+            .where(lambda wi: isfinite(wi))
+            .groupby("year")
+            .map(smooth_gaussian)
         )
 
         output[variation_var] = (
@@ -257,6 +260,19 @@ class Cleaner(Processor):
         # Identify land areas connected in some way to consensus areas.
         connected_areas = remove_disconnected_land(consensus_land, candidate_land)
 
+        # Since we are operating using a buffer around the gadm boundary (see grid.py),
+        # there are a lot of inland areas which we need to make sure are coded as land.
+        # Much of this becomes necessary because we are dealing with bool data (things
+        # can only be True/False, not null).
+        gadm_land = load_gadm_land(output)
+
+        # basically to capture land outside the buffer that would otherwise
+        # link inland water to perceived ocean
+        # The amount here is linked to the buffer value in the grid
+        core_land = mask_cleanup(gadm_land, mask_filters=[("erosion", 60)])
+
+        annual_consensus_land = connected_areas | core_land
+
         # Areas that are not directly connected to consensus land
         # no_connected_neighbors = xs.focal.mean(consensus_land) == 0
 
@@ -271,7 +287,8 @@ class Cleaner(Processor):
         # See `expand_analysis_zone` for details.
         analysis_zone, max_cap = self.expand_analysis_zone(
             # analysis_zone=analysis_zone, output=output, return_max_cap=True
-            analysis_zone=connected_areas,
+            # analysis_zone=connected_areas,
+            analysis_zone=annual_consensus_land,
             output=output,
             return_max_cap=True,
         )
@@ -293,17 +310,6 @@ class Cleaner(Processor):
         #        "Analysis zone is empty, there may be no land detected in this area"
         #    )
 
-        # Since we are operating using a buffer around the gadm boundary (see grid.py),
-        # there are a lot of inland areas which we need to make sure are coded as land.
-        # Much of this becomes necessary because we are dealing with bool data (things
-        # can only be True/False, not null).
-        gadm_land = load_gadm_land(output)
-
-        # basically to capture land outside the buffer that would otherwise
-        # link inland water to perceived ocean
-        # The amount here is linked to the buffer value in the grid
-        core_land = mask_cleanup(gadm_land, mask_filters=[("erosion", 60)])
-
         # Do final masking of the water index.
         # 1. Only perform coastline extraction over defined analysis zone
         #    and core land.
@@ -315,35 +321,48 @@ class Cleaner(Processor):
         obvious_water = 0.5
         self.water_index = (
             output[self.water_index_name]
-            .where(analysis_zone | core_land)
+            .where(analysis_zone)
             .where(~max_cap, obvious_water)
             #            .groupby("year")
             #            .map(smooth_gaussian)
             .rio.write_crs(output.rio.crs)
         )
 
-        obvious_land = -0.5
-        annual_water = ~self.land(
-            self.water_index.where(
-                ~(self.water_index.isnull() & (core_land | consensus_land)),
-                obvious_land,
-            ).to_dataset(name=self.water_index_name)
-        )
+        # Remove inland water by finding water that is not connected to ocean
 
+        # First create an annual water map.
+        # Fill nans in the water index that are core or consensus land with land values
+        # then define annual water mask as places that are not defined as land.
+        # obvious_land = -0.5
+        annual_water = ~(
+            (core_land | consensus_land & self.water_index.isnull())
+            | (self.water_index < 0)
+        )
+        # annual_water = ~self.land(
+        #     self.water_index.where(
+        #         ~(self.water_index.isnull() & (core_land | consensus_land)),
+        #         obvious_land,
+        #     ).to_dataset(name=self.water_index_name)
+        # )
+        #
+
+        # Define core ocean areas as places that are not always land, eroded by 60-m
         all_time_land = gadm_land | consensus_land
         core_ocean = mask_cleanup(~all_time_land, mask_filters=[("erosion", 2)])
 
+        # Define ocean for each year by removing water that is not connected to ocean
         annual_ocean = remove_disconnected_areas(core_ocean, annual_water)
+
+        # Define inland water for each year as places defined as water that are
+        # not ocean.
         annual_inland_water = annual_water & ~annual_ocean
+
+        # Mask out inland water
+        self.water_index = self.water_index.where(~annual_inland_water)
 
         # inland_water = find_inland_areas(water, ocean)
         # inland_water = find_disconnected_areas(ocean, water)
         #
-        # # Remove some infinite values that may be present in the water index.
-        self.water_index = self.water_index.where(~annual_inland_water).where(
-            lambda wi: isfinite(wi)
-        )
-
         # Perform coastline delineation.
         self.coastlines = subpixel_contours(
             self.water_index,
