@@ -8,11 +8,9 @@ so things may move around / get renamed some in the coming weeks.
 Please refer to raster_cleaning.py for specific functions.
 """
 
-import operator
-from typing import Callable, Tuple
+from typing import Tuple
 
 import geohash
-import xrspatial as xs
 from coastlines.vector import (
     all_time_stats,
     annual_movements,
@@ -38,9 +36,7 @@ from dep_coastlines.cloud_model.predictor import ModelPredictor
 from dep_coastlines.config import CLOUD_MODEL_FILE
 from dep_coastlines.raster.cleaning import (
     fill_with_nearby_dates,
-    find_inland_areas,
     load_gadm_land,
-    remove_disconnected_land,
     remove_disconnected_areas,
     smooth_gaussian,
 )
@@ -83,7 +79,8 @@ def calculate_consensus_land(ds: Dataset) -> DataArray:
     """Returns true for areas for which the all-years medians of mndwi,
     ndwi and nirwi are less than zero. (nirwi
     is negative where the nir08 band is greater than 0.128.)"""
-    return (ds.nirwi_all < 0) & (ds.mndwi_all < 0) & (ds.ndwi_all < 0)
+    return ds.twndwi_all < 0
+    # return (ds.nirwi_all < 0) & (ds.mndwi_all < 0) & (ds.ndwi_all < 0)
 
 
 def calculate_rates_of_change(
@@ -122,91 +119,90 @@ def calculate_rates_of_change(
     return points_gdf
 
 
+def expand_analysis_zone(
+    analysis_zone,
+    water_index,
+    number_of_expansions: int = 64,
+    return_max_cap: bool = False,
+):
+    # Only expand where there's an edge that's land. Do it multiple times
+    # to fill between larger areas. Later we will fill one last time with
+    # water to ensure lines are closed.
+    # We do 2 because the last expansion needs 2 to fill in corners.
+    def expand_once(analysis_zone):
+        return analysis_zone | mask_cleanup(
+            water_index.where(analysis_zone) < 0,
+            mask_filters=[("dilation", 2)],
+        )
+
+    for _ in range(number_of_expansions):
+        analysis_zone = expand_once(analysis_zone)
+
+    if return_max_cap:
+        last_expansion = expand_once(analysis_zone)
+        max_cap = last_expansion & ~analysis_zone
+        return analysis_zone, max_cap
+
+    return analysis_zone
+
+
+def add_attributes(coastlines, roc_points):
+    """Add other attributes to coastlines and rates of change points.
+
+    Currently the only attribute added is the three-letter country code
+    for the economic exclusion zone within which the feature falls.
+    """
+    # Using read_dataframe because gpd.read_file returns a 403 error.
+    eez = read_dataframe(
+        "https://pacificdata.org/data/dataset/964dbebf-2f42-414e-bf99-dd7125eedb16/resource/dad3f7b2-a8aa-4584-8bca-a77e16a391fe/download/country_boundary_eez.geojson"
+    )
+    these_areas = (
+        eez.to_crs(3832)
+        .clip(coastlines.buffer(250).to_crs(3832).total_bounds)
+        .to_crs(coastlines.crs)
+    )
+    coastlines = region_atttributes(
+        coastlines.set_index("year"),
+        these_areas,
+        attribute_col="ISO_Ter1",
+        rename_col="eez_territory",  # pyright: ignore[reportArgumentType]
+    )
+    roc_points = region_atttributes(
+        roc_points,
+        these_areas,
+        attribute_col="ISO_Ter1",
+        rename_col="eez_territory",  # pyright: ignore[reportArgumentType]
+    )
+    return coastlines, roc_points
+
+
 class Cleaner(Processor):
     send_area_to_processor = False
 
     def __init__(
         self,
         water_index: str = "twndwi",
-        index_threshold: float = 0,
-        comparison: Callable = operator.lt,
-        number_of_expansions: int = 64,
         initial_year: str = "1999",
         baseline_year: str = "2023",
         model_file=CLOUD_MODEL_FILE,
-        **kwargs,
     ):
-        super().__init__(**kwargs)
-        self.index_threshold = index_threshold
+        super().__init__()
         self.water_index_name = water_index
         self.initial_year = initial_year  # for points
         self.baseline_year = baseline_year  #
-
         self.model = ModelPredictor(load(model_file))
-        self.comparison = comparison
-        self.number_of_expansions = number_of_expansions
-        self.send_area_to_processor = False
-
-    def land(self, output):
-        return self.comparison(output[self.water_index_name], self.index_threshold)
-
-    def expand_analysis_zone(self, analysis_zone, output, return_max_cap: bool = False):
-        # Only expand where there's an edge that's land. Do it multiple times
-        # to fill between larger areas. Later we will fill one last time with
-        # water to ensure lines are closed.
-        # We do 2 because the last expansion needs 2 to fill in corners.
-        def expand_once(analysis_zone):
-            return analysis_zone | mask_cleanup(
-                self.land(output.where(analysis_zone)),
-                mask_filters=[("dilation", 2)],
-            )
-
-        for _ in range(self.number_of_expansions):
-            analysis_zone = expand_once(analysis_zone)
-
-        if return_max_cap:
-            last_expansion = expand_once(analysis_zone)
-            max_cap = last_expansion & ~analysis_zone
-            return analysis_zone, max_cap
-
-        return analysis_zone
-
-    def add_attributes(self):
-        """Add other attributes to coastlines and rates of change points.
-
-        Currently the only attribute added is the three-letter country code
-        for the economic exclusion zone within which the feature falls.
-        """
-        # Using read_dataframe because gpd.read_file returns a 403 error.
-        eez = read_dataframe(
-            "https://pacificdata.org/data/dataset/964dbebf-2f42-414e-bf99-dd7125eedb16/resource/dad3f7b2-a8aa-4584-8bca-a77e16a391fe/download/country_boundary_eez.geojson"
-        )
-        these_areas = (
-            eez.to_crs(3832)
-            .clip(self.coastlines.buffer(250).to_crs(3832).total_bounds)
-            .to_crs(self.water_index.rio.crs)
-        )
-        self.coastlines = region_atttributes(
-            self.coastlines.set_index("year"),
-            these_areas,
-            attribute_col="ISO_Ter1",
-            rename_col="eez_territory",
-        )
-        self.roc_points = region_atttributes(
-            self.roc_points,
-            these_areas,
-            attribute_col="ISO_Ter1",
-            rename_col="eez_territory",
-        )
 
     def process(
-        self, input: Dataset | list[Dataset]
+        self, input: list[Dataset]
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
         """
 
         Args:
             input: An :class:`xarray.Dataset` with coordinates "x", "y" and
-                "year" variables:
+                "year" and (minimally) the variable corresponding to
+                the value of `water_index`, `<water_index>_mad`, `count`,
+                `nirwi_all`, `mndwi_all`, & `ndwi_all`. It also must contain
+                any variables used in the model contained in `model_file`.
 
         Returns:
 
@@ -214,16 +210,6 @@ class Cleaner(Processor):
         Raises:
             NoOutputError: If there is determined to be no land in the area.
         """
-        # order shown is what is done. number indicate perhaps
-        # order as it should be?
-        # 1. apply cloud mask
-        # 2. fill with nearby dates
-        # 3. Remove land disconnected from all time land
-        # 4. Expand to add water collar
-        # 7. Perform gaussian blur.
-        # 5. Remove inland water.
-        # 6. Remove infinite values.
-
         # Apply cloud mask
         output, mask = self.model.apply_mask(input)
 
@@ -234,6 +220,8 @@ class Cleaner(Processor):
         variation_var = self.water_index_name + "_mad"
         variables_to_keep = [self.water_index_name, variation_var, "count"]
         output = output[variables_to_keep].compute()
+
+        # Remove any infinite values from water index and smooth
         output[self.water_index_name] = (
             output[self.water_index_name]
             .where(lambda wi: isfinite(wi))
@@ -241,114 +229,66 @@ class Cleaner(Processor):
             .map(smooth_gaussian)
         )
 
+        # Smooth variation var too
         output[variation_var] = (
             output[variation_var].groupby("year").map(smooth_gaussian)
         )
 
-        # Consensus land is identified as land by
-        # multiple water indices across all-time mosaics. These are areas
-        # that we are almost certain contain land. (They likely exclude
-        # land areas in some years, so should not be considered complete).
-        an_input = input[0] if isinstance(input, list) else input
-        consensus_land = calculate_consensus_land(an_input.isel(year=0)).compute()
+        # Since we are operating using a buffer around the gadm boundary (see grid.py),
+        # there are a lot of inland areas which we need to make sure are coded as land.
+        # Much of this becomes necessary because we are dealing with bool data (things
+        # can only be True/False, not nan).
+        gadm_land = load_gadm_land(output)
+
+        # Erode gadm land significantly to deal with false positive land values
+        core_land = mask_cleanup(gadm_land, mask_filters=[("erosion", 60)])
+
+        # Define consensus land across all years
+        # consensus_land = calculate_consensus_land(input[0].isel(year=0)).compute()
+        consensus_land = (output.twndwi.median(dim="year", skipna=True) < 0) | core_land
 
         # Define candidate land as areas identified as land in this year's data.
         # This contains land, but also likely some areas misidentified due to
         # clouds that were not masked, etc. These areas will be further filtered.
-        candidate_land = self.land(output)
+        candidate_land = output[self.water_index_name] < 0
 
         # Identify land areas connected in some way to consensus areas.
-        connected_areas = remove_disconnected_land(consensus_land, candidate_land)
+        connected_areas = remove_disconnected_areas(consensus_land, candidate_land)
 
-        # Since we are operating using a buffer around the gadm boundary (see grid.py),
-        # there are a lot of inland areas which we need to make sure are coded as land.
-        # Much of this becomes necessary because we are dealing with bool data (things
-        # can only be True/False, not null).
-        gadm_land = load_gadm_land(output)
-
-        # basically to capture land outside the buffer that would otherwise
-        # link inland water to perceived ocean
-        # The amount here is linked to the buffer value in the grid
-        core_land = mask_cleanup(gadm_land, mask_filters=[("erosion", 60)])
-
+        # Define consensus land for each year as known land areas or places
+        # connected to it.
         annual_consensus_land = connected_areas | core_land
 
-        # Areas that are not directly connected to consensus land
-        # no_connected_neighbors = xs.focal.mean(consensus_land) == 0
-
-        # Candidate land that is not directly connected to consensus land
-        # suspicious_connected_areas = candidate_land & no_connected_neighbors
-
-        # TODO: trying to figure out why we need to define this.
-        # analysis_zone = connected_areas & ~suspicious_connected_areas
-
-        # Next, we expand the analysis zone to include a collar of water. This is
+        # Next, expand the analysis zone to include a collar of water, so
+        # the coastline extraction can work. This is
         # accomplished by iteratively dilating land only by 2 pixels.
         # See `expand_analysis_zone` for details.
-        analysis_zone, max_cap = self.expand_analysis_zone(
-            # analysis_zone=analysis_zone, output=output, return_max_cap=True
-            # analysis_zone=connected_areas,
+        analysis_zone, max_cap = expand_analysis_zone(
             analysis_zone=annual_consensus_land,
-            output=output,
+            water_index=output[self.water_index_name],
             return_max_cap=True,
         )
 
-        # Redefine candidate land based on the new analysis zone.
-        # TODO: there seems to be some circular logic, here but I am not
-        # editing until I can look closer. Specifically, why do we need to
-        # redefine analysis_zone?
-        # candidate_land = self.land(output.where(analysis_zone))
-        # Now again remove disconnected areas which we may have expanded into.
-        # disconnected_areas = find_disconnected_areas(consensus_land, candidate_land)
-        # candidate_land = remove_disconnected_land(consensus_land, candidate_land)
-
-        # disconnected_areas = candidate_land & ~connected_areas
-        # analysis_zone = analysis_zone & ~disconnected_areas
-        # if not analysis_zone.any():
-        # if not candidate_land.any():
-        #    raise NoOutputError(
-        #        "Analysis zone is empty, there may be no land detected in this area"
-        #    )
-
         # Do final masking of the water index.
-        # 1. Only perform coastline extraction over defined analysis zone
-        #    and core land.
-        # 2. Areas that may have been at the limit of expansion in need to be
+        # 1. Only perform coastline extraction over defined analysis zone.
+        # 2. Land areas that are at the limit of expansion in need to be
         #    collared by water.
-        # 3. Apply gaussian smoothing. This is done here rather than during loading
-        #    using e.g. a cubic convolution to control smoothing over null areas.
-        #    (smooth gaussian handles nans).
-        obvious_water = 0.5
+        # obvious_water = 0.5
         self.water_index = (
-            output[self.water_index_name]
-            .where(analysis_zone)
-            .where(~max_cap, obvious_water)
+            output[self.water_index_name].where(analysis_zone)
+            # .where(~max_cap, obvious_water)
             #            .groupby("year")
             #            .map(smooth_gaussian)
             .rio.write_crs(output.rio.crs)
         )
 
-        # Remove inland water by finding water that is not connected to ocean
-
-        # First create an annual water map.
-        # Fill nans in the water index that are core or consensus land with land values
-        # then define annual water mask as places that are not defined as land.
-        # obvious_land = -0.5
-        annual_water = ~(
-            (core_land | consensus_land & self.water_index.isnull())
-            | (self.water_index < 0)
-        )
-        # annual_water = ~self.land(
-        #     self.water_index.where(
-        #         ~(self.water_index.isnull() & (core_land | consensus_land)),
-        #         obvious_land,
-        #     ).to_dataset(name=self.water_index_name)
-        # )
-        #
+        # First create an annual water map. It is places where the water index
+        # is non-negative, but also places where it is null that we know aren't land.
+        annual_water = (self.water_index > 0) | ~core_land & self.water_index.isnull()
 
         # Define core ocean areas as places that are not always land, eroded by 60-m
-        all_time_land = gadm_land | consensus_land
-        core_ocean = mask_cleanup(~all_time_land, mask_filters=[("erosion", 2)])
+        # all_time_land = core_land | consensus_land
+        core_ocean = mask_cleanup(~consensus_land, mask_filters=[("erosion", 2)])
 
         # Define ocean for each year by removing water that is not connected to ocean
         annual_ocean = remove_disconnected_areas(core_ocean, annual_water)
@@ -364,31 +304,30 @@ class Cleaner(Processor):
         # inland_water = find_disconnected_areas(ocean, water)
         #
         # Perform coastline delineation.
-        self.coastlines = subpixel_contours(
+        coastlines = subpixel_contours(
             self.water_index,
             dim="year",
-            z_values=[self.index_threshold],
             min_vertices=5,
         )
 
-        if len(self.coastlines) == 0:
+        if len(coastlines) == 0:
             raise NoOutputError("no coastlines created; water index may be empty")
 
         certainty_masks = certainty_masking(
             output.rename({variation_var: "stdev"}), stdev_threshold=0.3
         )
-        self.coastlines = contour_certainty(
-            self.coastlines.set_index("year"), certainty_masks
+        coastlines = contour_certainty(
+            coastlines.set_index("year"), certainty_masks
         ).reset_index()
-        self.roc_points = calculate_rates_of_change(
-            contours=self.coastlines,
+        roc_points = calculate_rates_of_change(
+            contours=coastlines,
             water_index=output[self.water_index_name],
             water_index_name=self.water_index_name,
             baseline_year=self.baseline_year,
             initial_year=self.initial_year,
         )
 
-        self.add_attributes()
+        coastlines, roc_points = add_attributes(coastlines, roc_points)
 
         # water_index["year"] = water_index.year.astype(str)
         self.water_index["year"] = self.water_index.year.astype(str)
@@ -396,6 +335,6 @@ class Cleaner(Processor):
             # water_index.to_dataset("year"),
             self.water_index.to_dataset("year"),
             mask,
-            self.coastlines,
-            self.roc_points,
+            coastlines,
+            roc_points,
         )
