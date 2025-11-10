@@ -23,7 +23,7 @@ RUN git clone https://github.com/mapbox/tippecanoe.git \
 ADD . /code
 WORKDIR /code
 
-RUN python3 -m pip install --upgrade uv --break-system-packages && uv sync
+RUN python3 -m pip install --upgrade uv --break-system-packages && uv sync --no-install-package pygeos
 
 # Download tide data
 RUN wget -nH -r --cut-dirs=1 -P data -i data/tide_data_urls.txt
