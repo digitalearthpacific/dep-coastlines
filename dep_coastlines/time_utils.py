@@ -1,4 +1,6 @@
-def composite_from_years(years: list[str|int], years_per_composite: list | int = 1) -> list[str|int]:
+def composite_from_years(
+    years: list[str], years_per_composite: list | int = 1
+) -> list[str | int]:
     """Convert a list of years to a list of multi-year composites.
 
     Args:
