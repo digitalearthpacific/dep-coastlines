@@ -75,12 +75,12 @@ def calculate_roc_stats(ratesofchange_gdf, initial_year, minimum_valid_observati
     return ratesofchange_gdf
 
 
-def calculate_consensus_land(ds: Dataset) -> DataArray:
-    """Returns true for areas for which the all-years medians of mndwi,
-    ndwi and nirwi are less than zero. (nirwi
-    is negative where the nir08 band is greater than 0.128.)"""
-    return ds.twndwi_all < 0
-    # return (ds.nirwi_all < 0) & (ds.mndwi_all < 0) & (ds.ndwi_all < 0)
+# def calculate_consensus_land(ds: Dataset) -> DataArray:
+#     """Returns true for areas for which the all-years medians of mndwi,
+#     ndwi and nirwi are less than zero. (nirwi
+#     is negative where the nir08 band is greater than 0.128.)"""
+#     return ds.twndwi_all < 0
+#     # return (ds.nirwi_all < 0) & (ds.mndwi_all < 0) & (ds.ndwi_all < 0)
 
 
 def calculate_rates_of_change(
@@ -230,22 +230,25 @@ class Cleaner(Processor):
         )
 
         # Smooth variation var too
-        output[variation_var] = (
-            output[variation_var].groupby("year").map(smooth_gaussian)
-        )
+        # output[variation_var] = (
+        #     output[variation_var].groupby("year").map(smooth_gaussian)
+        # )
+        #
 
         # Since we are operating using a buffer around the gadm boundary (see grid.py),
         # there are a lot of inland areas which we need to make sure are coded as land.
-        # Much of this becomes necessary because we are dealing with bool data (things
-        # can only be True/False, not nan).
+        # This is most important when we are detecting inland water below.
         gadm_land = load_gadm_land(output)
 
-        # Erode gadm land significantly to deal with false positive land values
+        # Erode gadm land significantly to ensure coastline which may be mismapped
+        # is not included.
         core_land = mask_cleanup(gadm_land, mask_filters=[("erosion", 60)])
 
         # Define consensus land across all years
         # consensus_land = calculate_consensus_land(input[0].isel(year=0)).compute()
-        consensus_land = (output.twndwi.median(dim="year", skipna=True) < 0) | core_land
+        consensus_land = (
+            output[self.water_index_name].median(dim="year", skipna=True) < 0
+        ) | core_land
 
         # Define candidate land as areas identified as land in this year's data.
         # This contains land, but also likely some areas misidentified due to
@@ -257,34 +260,33 @@ class Cleaner(Processor):
 
         # Define consensus land for each year as known land areas or places
         # connected to it.
-        annual_consensus_land = connected_areas | core_land
+        annual_consensus_land = core_land | connected_areas
 
         # Next, expand the analysis zone to include a collar of water, so
-        # the coastline extraction can work. This is
-        # accomplished by iteratively dilating land only by 2 pixels.
-        # See `expand_analysis_zone` for details.
+        # the coastline extraction can work. This is accomplished by iteratively
+        # dilating land using `expand_analysis_zone`.
         analysis_zone, max_cap = expand_analysis_zone(
             analysis_zone=annual_consensus_land,
             water_index=output[self.water_index_name],
             return_max_cap=True,
         )
 
-        # Do final masking of the water index.
-        # 1. Only perform coastline extraction over defined analysis zone.
-        # 2. Land areas that are at the limit of expansion in need to be
-        #    collared by water.
+        # Mask areas outside the analysis zone
+        self.water_index = output[self.water_index_name].where(analysis_zone)
         # obvious_water = 0.5
-        self.water_index = (
-            output[self.water_index_name].where(analysis_zone)
-            # .where(~max_cap, obvious_water)
-            #            .groupby("year")
-            #            .map(smooth_gaussian)
-            .rio.write_crs(output.rio.crs)
-        )
+        # .where(~max_cap, obvious_water) .groupby("year")
+        #            .map(smooth_gaussian)
+        #    .rio.write_crs(output.rio.crs)
+        # )
+
+        # Now remove inland water, defined as places not connected to the ocean.
 
         # First create an annual water map. It is places where the water index
         # is non-negative, but also places where it is null that we know aren't land.
-        annual_water = (self.water_index > 0) | ~core_land & self.water_index.isnull()
+        # annual_water = (self.water_index > 0) | ~core_land & self.water_index.isnull()
+        annual_water = (
+            self.water_index > 0
+        ) | ~consensus_land & self.water_index.isnull()
 
         # Define core ocean areas as places that are not always land, eroded by 60-m
         # all_time_land = core_land | consensus_land

@@ -56,7 +56,6 @@ def process_id(
     )
     processor = Cleaner(
         water_index=water_index,
-        send_area_to_processor=True,
         initial_year=str(start_year),
         baseline_year=str(end_year),
     )
