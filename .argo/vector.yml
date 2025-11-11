@@ -23,15 +23,15 @@ spec:
   arguments:
     parameters:
     - name: code-file
-      value: "dep_coastlines/vector.py"
+      value: "src/create_coastlines.py"
     - name: version
-      value: "0.8.3"
+      value: "0.8.4dev1"
     - name: image-tag
-      value: "v0.8.2dev1"
+      value: "v0.8.4dev1"
     - name: dataset-id
       value: "coastlines/interim/coastlines"
     - name: start-year
-      value: "2017"
+      value: "1999"
     - name: end-year
       value: "2024"
 
@@ -83,7 +83,7 @@ spec:
           cpu: 2
       command: [ python ]
       args:
-        - dep_coastlines/task_utils.py
+        - src/print_tasks.py
         - --dataset-id
         - "{{ workflow.parameters.dataset-id }}"
         - --datetime
