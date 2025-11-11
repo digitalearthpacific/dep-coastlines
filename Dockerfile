@@ -27,3 +27,6 @@ RUN python3 -m pip install --upgrade uv --break-system-packages && uv sync --no-
 
 # Download tide data
 RUN wget -nH -r --cut-dirs=1 -P data -i data/tide_data_urls.txt
+
+ENV PATH="/code/.venv/bin:$PATH"
+
