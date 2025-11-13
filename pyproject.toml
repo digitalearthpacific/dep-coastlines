@@ -11,6 +11,7 @@ license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "click>=8.2.1",
     "cloud-logger",
     "dask[complete]>=2025.7.0",
     "dea-coastlines",
