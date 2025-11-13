@@ -44,7 +44,6 @@ from dep_coastlines.raster.cleaning import (
 
 def calculate_roc_stats(ratesofchange_gdf, initial_year, minimum_valid_observations=15):
     stats_list = ["valid_obs", "valid_span", "sce", "nsm", "max_year", "min_year"]
-    breakpoint()
     ratesofchange_gdf[stats_list] = ratesofchange_gdf.apply(
         lambda x: all_time_stats(x, initial_year=initial_year), axis=1
     )
