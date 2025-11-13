@@ -272,7 +272,9 @@ def continental_cli(
             ).set_index("uid")
 
             ratesofchange_gdf = calculate_roc_stats(
-                ratesofchange_gdf, initial_year=2017, minimum_valid_observations=8
+                ratesofchange_gdf,
+                initial_year=int(VECTOR_DATETIME[:4]),
+                minimum_valid_observations=18,
             )
 
             shorelines_gdf = gpd.read_file(
@@ -492,6 +494,7 @@ def build_tiles(output_gpkg: Path, output_file: Path) -> None:
         )
 
     os.system(f"tile-join -f -pk -o {output_file} {tippecanoe_layers}")
+
 
 def upload_dir(local_dir, version):
     s3 = S3FileSystem()

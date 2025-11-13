@@ -1199,6 +1199,7 @@ wheels = [
 name = "dep-coastlines"
 source = { editable = "." }
 dependencies = [
+    { name = "click" },
     { name = "cloud-logger" },
     { name = "dask", extra = ["complete"] },
     { name = "dea-coastlines" },
@@ -1230,6 +1231,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "click", specifier = ">=8.2.1" },
     { name = "cloud-logger", git = "https://github.com/jessjaco/cloud-logger.git" },
     { name = "dask", extras = ["complete"], specifier = ">=2025.7.0" },
     { name = "dea-coastlines", git = "https://github.com/GeoscienceAustralia/dea-coastlines.git?tag=3.0.1" },
