@@ -11,6 +11,7 @@ Please refer to raster_cleaning.py for specific functions.
 from typing import Tuple
 
 import geohash
+import geopandas as gpd
 from coastlines.vector import (
     all_time_stats,
     annual_movements,
@@ -30,7 +31,7 @@ from joblib import load
 from numpy import isfinite
 from odc.algo import mask_cleanup
 from pyogrio import read_dataframe
-from xarray import DataArray, Dataset
+from xarray import Dataset
 
 from dep_coastlines.cloud_model.predictor import ModelPredictor
 from dep_coastlines.config import CLOUD_MODEL_FILE
@@ -152,9 +153,8 @@ def add_attributes(coastlines, roc_points):
     Currently the only attribute added is the three-letter country code
     for the economic exclusion zone within which the feature falls.
     """
-    # Using read_dataframe because gpd.read_file returns a 403 error.
-    eez = read_dataframe(
-        "https://pacificdata.org/data/dataset/964dbebf-2f42-414e-bf99-dd7125eedb16/resource/dad3f7b2-a8aa-4584-8bca-a77e16a391fe/download/country_boundary_eez.geojson"
+    eez = gpd.read_file(
+        "https://dep-public-staging.s3.us-west-2.amazonaws.com/aoi/country_boundary_eez.gpkg"
     )
     these_areas = (
         eez.to_crs(3832)
@@ -290,7 +290,9 @@ class Cleaner(Processor):
 
         # Define core ocean areas as places that are not always land, eroded by 60-m
         # all_time_land = core_land | consensus_land
-        core_ocean = mask_cleanup(~consensus_land, mask_filters=[("erosion", 2)])
+        core_ocean = mask_cleanup(
+            ~(consensus_land | gadm_land), mask_filters=[("erosion", 2)]
+        )
 
         # Define ocean for each year by removing water that is not connected to ocean
         annual_ocean = remove_disconnected_areas(core_ocean, annual_water)
