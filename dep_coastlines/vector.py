@@ -284,15 +284,14 @@ class Cleaner(Processor):
         # First create an annual water map. It is places where the water index
         # is non-negative, but also places where it is null that we know aren't land.
         # annual_water = (self.water_index > 0) | ~core_land & self.water_index.isnull()
+        consensus_water = ~(consensus_land | gadm_land)
         annual_water = (
             self.water_index > 0
-        ) | ~consensus_land & self.water_index.isnull()
+        ) | consensus_water & self.water_index.isnull()
 
         # Define core ocean areas as places that are not always land, eroded by 60-m
         # all_time_land = core_land | consensus_land
-        core_ocean = mask_cleanup(
-            ~(consensus_land | gadm_land), mask_filters=[("erosion", 2)]
-        )
+        core_ocean = mask_cleanup(consensus_water, mask_filters=[("erosion", 2)])
 
         # Define ocean for each year by removing water that is not connected to ocean
         annual_ocean = remove_disconnected_areas(core_ocean, annual_water)
