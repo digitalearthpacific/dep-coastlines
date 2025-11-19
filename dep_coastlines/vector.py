@@ -30,7 +30,6 @@ from geopandas import GeoDataFrame
 from joblib import load
 from numpy import isfinite
 from odc.algo import mask_cleanup
-from pyogrio import read_dataframe
 from xarray import Dataset
 
 from dep_coastlines.cloud_model.predictor import ModelPredictor
@@ -218,7 +217,14 @@ class Cleaner(Processor):
 
         # filter variables and load data into memory
         variation_var = self.water_index_name + "_mad"
-        variables_to_keep = [self.water_index_name, variation_var, "count"]
+        variables_to_keep = [
+            self.water_index_name,
+            variation_var,
+            "count",
+            "ndwi",
+            "mndwi",
+            "nirwi",
+        ]
         output = output[variables_to_keep].compute()
 
         # Remove any infinite values from water index and smooth
@@ -244,10 +250,11 @@ class Cleaner(Processor):
         # is not included.
         core_land = mask_cleanup(gadm_land, mask_filters=[("erosion", 60)])
 
-        # Define consensus land across all years
-        # consensus_land = calculate_consensus_land(input[0].isel(year=0)).compute()
+        # Define consensus land across all years by using all water indices
         consensus_land = (
-            output[self.water_index_name].median(dim="year", skipna=True) < 0
+            (output.ndwi.median(dim="year", skipna=True) < 0)
+            & (output.mndwi.median(dim="year", skipna=True) < 0)
+            & (output.nirwi.median(dim="year", skipna=True) < 0)
         ) | core_land
 
         # Define candidate land as areas identified as land in this year's data.
@@ -265,25 +272,18 @@ class Cleaner(Processor):
         # Next, expand the analysis zone to include a collar of water, so
         # the coastline extraction can work. This is accomplished by iteratively
         # dilating land using `expand_analysis_zone`.
-        analysis_zone, max_cap = expand_analysis_zone(
+        analysis_zone = expand_analysis_zone(
             analysis_zone=annual_consensus_land,
             water_index=output[self.water_index_name],
-            return_max_cap=True,
         )
 
         # Mask areas outside the analysis zone
         self.water_index = output[self.water_index_name].where(analysis_zone)
-        # obvious_water = 0.5
-        # .where(~max_cap, obvious_water) .groupby("year")
-        #            .map(smooth_gaussian)
-        #    .rio.write_crs(output.rio.crs)
-        # )
 
         # Now remove inland water, defined as places not connected to the ocean.
 
         # First create an annual water map. It is places where the water index
         # is non-negative, but also places where it is null that we know aren't land.
-        # annual_water = (self.water_index > 0) | ~core_land & self.water_index.isnull()
         consensus_water = ~(consensus_land | gadm_land)
         annual_water = (
             self.water_index > 0
@@ -303,9 +303,6 @@ class Cleaner(Processor):
         # Mask out inland water
         self.water_index = self.water_index.where(~annual_inland_water)
 
-        # inland_water = find_inland_areas(water, ocean)
-        # inland_water = find_disconnected_areas(ocean, water)
-        #
         # Perform coastline delineation.
         coastlines = subpixel_contours(
             self.water_index,
@@ -332,7 +329,6 @@ class Cleaner(Processor):
 
         coastlines, roc_points = add_attributes(coastlines, roc_points)
 
-        # water_index["year"] = water_index.year.astype(str)
         self.water_index["year"] = self.water_index.year.astype(str)
         return (
             # water_index.to_dataset("year"),
