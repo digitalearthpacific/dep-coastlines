@@ -32,7 +32,8 @@ class MosaicProcessor(LandsatProcessor):
         The input data is clipped to the area, then cloud-masked. Masks
         from overlapping images are combined before masking using
         :func:`mask_clouds_by_day`. Then, pixelwise tidal filtering is
-        performed using the input tidal data and :func:`dep_coastlines.tide_utils.filter_by_tides`.
+        performed using the input tidal data and
+        :func:`dep_coastlines.tide_utils.filter_by_tides`.
 
         Median values of all input bands are calculated, as well as (calculated)
         twndwi. Median absolute deviation is also calculated for each of these,

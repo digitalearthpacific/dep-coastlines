@@ -30,13 +30,14 @@ from geopandas import GeoDataFrame
 from joblib import load
 from numpy import isfinite
 from odc.algo import mask_cleanup
-from xarray import Dataset
+from xarray import DataArray, Dataset
 
 from dep_coastlines.cloud_model.predictor import ModelPredictor
 from dep_coastlines.config import CLOUD_MODEL_FILE
 from dep_coastlines.raster.cleaning import (
     fill_with_nearby_dates,
     load_gadm_land,
+    load_land_additions,
     remove_disconnected_areas,
     smooth_gaussian,
 )
@@ -119,16 +120,40 @@ def calculate_rates_of_change(
     return points_gdf
 
 
-def expand_analysis_zone(
-    analysis_zone,
-    water_index,
+def define_analysis_zone(
+    core_land: DataArray,
+    water_index: DataArray,
     number_of_expansions: int = 64,
     return_max_cap: bool = False,
-):
+) -> DataArray | tuple[DataArray, DataArray]:
+    """Define the analysis zone for coastline extraction.
+
+    Common water indices applied to Landsat data are sensitive to noise at
+    low values, which can create false positive land detections in ocean. This
+    pattern is particularly problematic around small islands. This function
+    is used to define an analysis zone around known land areas which includes
+    as little ocean as possible (some ocean is needed to perform coastline
+    delineation correctly). This is accomplished by iteratively expanding
+    land areas only, as defined by the water index.
+
+    Args:
+        core_land: The starting land mask for each year. This should be as conservative
+            as possible, while including all islands, etc.
+        water_index: The water index used to determine whether a pixel is land or
+            water. As is convention, negative values indicate land, positive water.
+        number_of_expansions: The number of times to expand land areas.
+        return_max_cap: Depending on the number of expansions and how conservatively
+            defined core land is, the mask may not expand into water in all places.
+            This returns areas which would continue to expand if expansion continued.
+    Returns:
+        An analysis mask.
+
+    """
     # Only expand where there's an edge that's land. Do it multiple times
-    # to fill between larger areas. Later we will fill one last time with
-    # water to ensure lines are closed.
+    # to fill between larger areas.
     # We do 2 because the last expansion needs 2 to fill in corners.
+    analysis_zone = core_land.copy()
+
     def expand_once(analysis_zone):
         return analysis_zone | mask_cleanup(
             water_index.where(analysis_zone) < 0,
@@ -198,10 +223,10 @@ class Cleaner(Processor):
 
         Args:
             input: An :class:`xarray.Dataset` with coordinates "x", "y" and
-                "year" and (minimally) the variable corresponding to
-                the value of `water_index`, `<water_index>_mad`, `count`,
-                `nirwi_all`, `mndwi_all`, & `ndwi_all`. It also must contain
-                any variables used in the model contained in `model_file`.
+                "year" and (minimally) the variable named by `water_index`,
+                `<water_index>_mad`, `count`, `nirwi`, `mndwi`, & `ndwi`.
+                It also must contain any variables used in the model
+                contained in `model_file`.
 
         Returns:
 
@@ -227,7 +252,7 @@ class Cleaner(Processor):
         ]
         output = output[variables_to_keep].compute()
 
-        # Remove any infinite values from water index and smooth
+        # Remove any infinite values from water index and apply smoothing.
         output[self.water_index_name] = (
             output[self.water_index_name]
             .where(lambda wi: isfinite(wi))
@@ -235,20 +260,19 @@ class Cleaner(Processor):
             .map(smooth_gaussian)
         )
 
-        # Smooth variation var too
-        # output[variation_var] = (
-        #     output[variation_var].groupby("year").map(smooth_gaussian)
-        # )
-        #
-
         # Since we are operating using a buffer around the gadm boundary (see grid.py),
         # there are a lot of inland areas which we need to make sure are coded as land.
         # This is most important when we are detecting inland water below.
         gadm_land = load_gadm_land(output)
 
-        # Erode gadm land significantly to ensure coastline which may be mismapped
+        # places missed likely because they were ephemeral (like volcanos)
+        land_additions = load_land_additions(output.twndwi)
+
+        # Erode gadm land significantly to ensure land which may be mismapped
         # is not included.
-        core_land = mask_cleanup(gadm_land, mask_filters=[("erosion", 60)])
+        core_land = (
+            mask_cleanup(gadm_land, mask_filters=[("erosion", 60)]) | land_additions
+        )
 
         # Define consensus land across all years by using all water indices
         consensus_land = (
@@ -271,9 +295,9 @@ class Cleaner(Processor):
 
         # Next, expand the analysis zone to include a collar of water, so
         # the coastline extraction can work. This is accomplished by iteratively
-        # dilating land using `expand_analysis_zone`.
-        analysis_zone = expand_analysis_zone(
-            analysis_zone=annual_consensus_land,
+        # dilating land.
+        analysis_zone = define_analysis_zone(
+            core_land=annual_consensus_land,  # pyright: ignore[reportArgumentType]
             water_index=output[self.water_index_name],
         )
 
