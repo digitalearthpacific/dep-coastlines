@@ -1,4 +1,4 @@
-"""Water indices for use in determining coastlines."""
+"""Water indices for use in discriminating water and land."""
 
 from xarray import DataArray, Dataset
 
@@ -32,48 +32,64 @@ def ndwi(xr: Dataset) -> DataArray:
     return _normalized_ratio(xr.green, xr.nir08).rename("ndwi")
 
 
-def wndwi(xr: Dataset, alpha: float = 0.5) -> DataArray:
-    # Alpha ranges from 0 to 1, with higher values indicating
-    # greater influence of nir08.
-    # See https://doi.org/10.1080/01431161.2017.1341667
-    wndwi = (xr.green - alpha * xr.nir08 - (1 - alpha) * xr.swir16) / (
-        xr.green + alpha * xr.nir08 + (1 - alpha) * xr.swir16
-    )
-    return wndwi.rename("wndwi")
-
-
 def twndwi(xr: Dataset, alpha: float = 0.5, nir_cutoff: float = 0.128) -> DataArray:
-    return (1 - alpha) * mndwi(xr) + alpha * tndwi(xr, nir_cutoff)
+    """Calculate a water-index as a weighted average of MNDWI and thresholded nir.
+
+    Guo et al. (2017) devised a water index (WNDWI) based on a weighted average of
+    modified normalized differential water index (MNDWI) and the
+    normalized differential water index (NDWI). This function implements a similar
+    weighted index, but replacing NDWI with a thresholded water index based on
+    Mondejar and Tongco (2017). This water index has been extensively tested
+    against others and has proven more impervious to noisy values in water near coastal
+    areas than other indices and combinations.
+
+    For more information, see: https://doi.org/10.1080/01431161.2017.1341667
+    and https://doi.org/10.1080/01431161.2017.1341667
+
+    Args:
+        xr: An xarray dataset with variables "green", "swir16", and "nir08",
+            containing the green, shortwave infrared, and near-infrared Landsat
+            bands.
+        alpha: The weighting value, between zero and one. A value of 0.5 indicates
+            equal weighting of MNDWI and the thresholded nir index, with lower values
+            more heavily weighting MNDWI.
+        nir_cutoff:
+            The cutoff used to threshold the near-infrared band.
+
+    Returns:
+        The calculated water index.
+
+    """
+    green = xr.green.where(
+        (xr.nir08 >= nir_cutoff) & (xr.green < nir_cutoff), nir_cutoff
+    )
+    tndwi = _normalized_ratio(green, xr.nir08)
+    return (1 - alpha) * mndwi(xr) + alpha * tndwi
 
 
 def nirwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
-    # Magic cutoff is from https://doi.org/10.1186/s42834-019-0016-5
-    # I make it an "index" so
-    # 1. Directionality is the same as other indices and
-    # 2. The scales are similarly comprable
+    """Calculates a water index by thresholding the near-infrared band.
+
+    Mondejar and Tongco (2019) defined a water index for Landsat 8 data
+    by applying a threshold to the near-infrared band. This function
+    implements that operation as a normalized ratio, to maintain
+    the same directionality and scale as MNDWI & NDWI, with negative
+    values indicating land and positive water. The index is calculated as
+
+    (cutoff - near infrared band) / (cutoff + near infrared band)
+
+    See https://doi.org/10.1186/s42834-019-0016-5 for more details on the
+    cutoff value
+
+    Args:
+        xr: A dataset with a variable named `nir08` containing the fractional
+            (0-1) near-infrared Landsat (or other similar band).
+        cutoff: The cutoff value, above which is land.
+
+    Returns:
+        The water index. Negative values indicate land, positive water.
+    """
     return _normalized_ratio(cutoff, xr.nir08).rename("nirwi")
-
-
-def tndwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
-    green = xr.green.where((xr.nir08 >= cutoff) & (xr.green < cutoff), cutoff)
-    return _normalized_ratio(green, xr.nir08)
-
-
-def stndwi(xr: Dataset, cutoff: float = 0.128) -> DataArray:
-    values_are_high = (xr.green > cutoff) & (xr.nir08 > cutoff)
-    land = xr.green < xr.nir08
-    super_green = xr.green.where(values_are_high | land, cutoff)
-    return _normalized_ratio(super_green, xr.nir08)
-
-
-def tmndwi(xr: Dataset, cutoff: float = 0.081) -> DataArray:
-    green = xr.green.where((xr.swir16 >= cutoff) & (xr.green < cutoff), cutoff)
-    return _normalized_ratio(green, xr.swir16)
-
-
-def awei(xr: Dataset) -> DataArray:
-    awei = 4 * (xr.green - xr.swir22) - (0.25 * xr.nir08 + 2.75 * xr.swir16)
-    return awei.rename("awei")
 
 
 def _normalized_ratio(band1: DataArray | float, band2: DataArray | float) -> DataArray:
