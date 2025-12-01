@@ -8,6 +8,7 @@ so things may move around / get renamed some in the coming weeks.
 Please refer to raster_cleaning.py for specific functions.
 """
 
+from pathlib import Path
 from typing import Tuple
 
 import geohash
@@ -31,8 +32,10 @@ from joblib import load
 from numpy import isfinite
 from odc.algo import mask_cleanup
 from xarray import DataArray, Dataset
+from xarray.core.resample import DataArrayResample
 
 from dep_coastlines.cloud_model.predictor import ModelPredictor
+from dep_coastlines.cloud_model import SavedModel
 from dep_coastlines.config import CLOUD_MODEL_FILE
 from dep_coastlines.raster.cleaning import (
     fill_with_nearby_dates,
@@ -43,13 +46,18 @@ from dep_coastlines.raster.cleaning import (
 )
 
 
-def calculate_roc_stats(ratesofchange_gdf, initial_year, minimum_valid_observations=15):
+def calculate_roc_stats(
+    ratesofchange: gpd.GeoDataFrame,
+    initial_year: int,
+    minimum_valid_observations: int = 15,
+):
     stats_list = ["valid_obs", "valid_span", "sce", "nsm", "max_year", "min_year"]
-    ratesofchange_gdf[stats_list] = ratesofchange_gdf.apply(
+    ratesofchange[stats_list] = ratesofchange.apply(
         lambda x: all_time_stats(x, initial_year=initial_year), axis=1
     )
 
-    ratesofchange_gdf["certainty"] = "good"
+    # Initialize certainty column.
+    ratesofchange["certainty"] = "good"
     # for now, leaving out "offshore_islands" category, as most of the study
     # area would be in there. However, consider (if available) breakdowns
     # like "atolls", "volcanic", etc
@@ -63,34 +71,43 @@ def calculate_roc_stats(ratesofchange_gdf, initial_year, minimum_valid_observati
     # tidal flats
     # reefs
 
-    ratesofchange_gdf.loc[ratesofchange_gdf.rate_time.abs() > 200, "certainty"] = (
+    ratesofchange.loc[ratesofchange.rate_time.abs() > 200, "certainty"] = (
         "extreme value (> 200 m)"
     )
 
-    ratesofchange_gdf.loc[ratesofchange_gdf.angle_std > 30, "certainty"] = (
+    ratesofchange.loc[ratesofchange.angle_std > 30, "certainty"] = (
         "high angular variability"
     )
-    ratesofchange_gdf.loc[
-        ratesofchange_gdf.valid_obs < minimum_valid_observations, "certainty"
+    ratesofchange.loc[
+        ratesofchange.valid_obs < minimum_valid_observations, "certainty"
     ] = "insufficient observations"
-    return ratesofchange_gdf
-
-
-# def calculate_consensus_land(ds: Dataset) -> DataArray:
-#     """Returns true for areas for which the all-years medians of mndwi,
-#     ndwi and nirwi are less than zero. (nirwi
-#     is negative where the nir08 band is greater than 0.128.)"""
-#     return ds.twndwi_all < 0
-#     # return (ds.nirwi_all < 0) & (ds.mndwi_all < 0) & (ds.ndwi_all < 0)
+    return ratesofchange
 
 
 def calculate_rates_of_change(
-    contours, water_index, water_index_name, baseline_year, initial_year
+    contours: gpd.GeoDataFrame,
+    water_index: DataArray,
+    water_index_name: str,
+    initial_year: int,
 ):
-    """Calculate rates of change points from coastline contours and water index."""
+    """Calculate rates of change points for the given contours.
+
+    This is a wrapper around :func:`coastlines.annual_movements`. The most
+    recent year in the water_index "year" is passed as the baseline year.
+
+    Args:
+        contours: Coastlines for all years.
+        water_index: The water index used to derive coastlines. This is used
+            to determine directionality of rates of change points.
+        water_index_name: The name of the water index.
+        initial_year:
+
+    Returns:
+
+    """
     water_index["year"] = water_index.year.astype(int)
     contours.year = contours.year.astype(str)
-    contours = contours.set_index("year")
+    contours = contours.set_index("year")  # pyright: ignore[reportAssignmentType]
 
     baseline_year = contours.index.astype(int).max().astype(str)
     # Define points at 30-m intervals
@@ -130,18 +147,20 @@ def define_analysis_zone(
 
     Common water indices applied to Landsat data are sensitive to noise at
     low values, which can create false positive land detections in ocean. This
-    pattern is particularly problematic around small islands. This function
-    is used to define an analysis zone around known land areas which includes
-    as little ocean as possible (some ocean is needed to perform coastline
-    delineation correctly). This is accomplished by iteratively expanding
-    land areas only, as defined by the water index.
+    pattern is often noticable is ocean areas near coasts, particularly around
+    small islands. This function is used to define an analysis zone around
+    known land areas which includes as little ocean as possible (some ocean
+    is needed to perform coastline delineation correctly). This is
+    accomplished by iteratively expanding land areas only, as defined by the
+    water index.
 
     Args:
-        core_land: The starting land mask for each year. This should be as conservative
-            as possible, while including all islands, etc.
+        core_land: The starting land mask for each year. This should be as
+            conservative as possible, while including all islands, etc.
         water_index: The water index used to determine whether a pixel is land or
             water. As is convention, negative values indicate land, positive water.
-        number_of_expansions: The number of times to expand land areas.
+        number_of_expansions: The number of dilations to perform when extending land
+            areas.
         return_max_cap: Depending on the number of expansions and how conservatively
             defined core land is, the mask may not expand into water in all places.
             This returns areas which would continue to expand if expansion continued.
@@ -171,7 +190,9 @@ def define_analysis_zone(
     return analysis_zone
 
 
-def add_attributes(coastlines, roc_points):
+def add_attributes(
+    coastlines: gpd.GeoDataFrame, roc_points: gpd.GeoDataFrame
+) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
     """Add other attributes to coastlines and rates of change points.
 
     Currently the only attribute added is the three-letter country code
@@ -185,19 +206,46 @@ def add_attributes(coastlines, roc_points):
         .clip(coastlines.buffer(250).to_crs(3832).total_bounds)
         .to_crs(coastlines.crs)
     )
-    coastlines = region_atttributes(
+    output_coastlines = region_atttributes(
         coastlines.set_index("year"),
         these_areas,
         attribute_col="ISO_Ter1",
         rename_col="eez_territory",  # pyright: ignore[reportArgumentType]
     )
-    roc_points = region_atttributes(
+    output_roc_points = region_atttributes(
         roc_points,
         these_areas,
         attribute_col="ISO_Ter1",
         rename_col="eez_territory",  # pyright: ignore[reportArgumentType]
     )
-    return coastlines, roc_points
+    return output_coastlines, output_roc_points
+
+
+def map_inland_water(consensus_ocean: DataArray, water_index: DataArray) -> DataArray:
+    """Map inland water bodies based on their lack of connection to ocean.
+
+    Args:
+        consensus_ocean: A boolean DataArray indicating areas that are definitely
+            ocean all the time.
+        water_index: The continuous water index for each year, where positive
+            values indicate water and negative indicate land. Has dims x, y &
+            year.
+
+    Returns:
+        A boolean DataArray with dims x, y and year indiciating areas of inland
+        water for each year.
+    """
+    # First create an annual water map. It is places where the water index
+    # is non-negative, but also places where it is null that we know aren't land.
+    annual_water = (water_index >= 0) | consensus_ocean & water_index.isnull()
+
+    # Define core ocean areas as places that are not always land, eroded by 60-m
+    core_ocean = mask_cleanup(consensus_ocean, mask_filters=[("erosion", 2)])
+
+    # Define ocean for each year by removing water that is not connected to ocean
+    annual_ocean = remove_disconnected_areas(core_ocean, annual_water)
+
+    return annual_water & ~annual_ocean
 
 
 class Cleaner(Processor):
@@ -206,20 +254,29 @@ class Cleaner(Processor):
     def __init__(
         self,
         water_index: str = "twndwi",
-        initial_year: str = "1999",
-        baseline_year: str = "2023",
-        model_file=CLOUD_MODEL_FILE,
+        initial_year: int = 1999,
+        model_file: Path | str | None = CLOUD_MODEL_FILE,
     ):
+        """Initialize a :class:`Processor` to clean mosaics and derive coastlines.
+
+        Args:
+            water_index: The name of the water index variable to use.
+            initial_year: Passed to :func:`all_time_stats`, used to calculate
+                `nsm` variable in rates of change calculates.
+            model_file: An optional file containing a :class:`BaseEstimator`
+                object, used to perform cloud masking on the annual mosaics.
+        """
         super().__init__()
         self.water_index_name = water_index
         self.initial_year = initial_year  # for points
-        self.baseline_year = baseline_year  #
-        self.model = ModelPredictor(load(model_file))
+        self.model = (
+            ModelPredictor(load(model_file)) if model_file is not None else None
+        )
 
     def process(
         self, input: list[Dataset]
     ) -> Tuple[Dataset, GeoDataFrame, GeoDataFrame | None]:
-        """
+        """Clean the input mosaics and perform coastline extraction.
 
         Args:
             input: An :class:`xarray.Dataset` with coordinates "x", "y" and
@@ -229,31 +286,37 @@ class Cleaner(Processor):
                 contained in `model_file`.
 
         Returns:
-
+            A tuple containing the (masked) water index, coastlines, and
+            rates of change points.
 
         Raises:
             NoOutputError: If there is determined to be no land in the area.
         """
         # Apply cloud mask
-        output, mask = self.model.apply_mask(input)
+        if self.model is not None:
+            output, _ = self.model.apply_mask(input)
+        else:
+            output = input
 
         # Fill missing data
         output = fill_with_nearby_dates(output)
 
-        # filter variables and load data into memory
+        # Remove variables we no longer need and load data into memory.
         variation_var = self.water_index_name + "_mad"
-        variables_to_keep = [
-            self.water_index_name,
-            variation_var,
-            "count",
-            "ndwi",
-            "mndwi",
-            "nirwi",
-        ]
+        variables_to_keep = set(
+            [
+                self.water_index_name,
+                variation_var,
+                "count",
+                "ndwi",
+                "mndwi",
+                "nirwi",
+            ]
+        )
         output = output[variables_to_keep].compute()
 
         # Remove any infinite values from water index and apply smoothing.
-        output[self.water_index_name] = (
+        water_index = (
             output[self.water_index_name]
             .where(lambda wi: isfinite(wi))
             .groupby("year")
@@ -265,11 +328,12 @@ class Cleaner(Processor):
         # This is most important when we are detecting inland water below.
         gadm_land = load_gadm_land(output)
 
-        # places missed likely because they were ephemeral (like volcanos)
-        land_additions = load_land_additions(output.twndwi)
+        # places missed likely because they only appeared in portions
+        # of the time period (like e.g. volcanos).
+        land_additions = load_land_additions(water_index)
 
-        # Erode gadm land significantly to ensure land which may be mismapped
-        # is not included.
+        # Erode gadm land significantly to ensure land-ocean boundaries which are
+        # mismapped (include too much land) is not included.
         core_land = (
             mask_cleanup(gadm_land, mask_filters=[("erosion", 60)]) | land_additions
         )
@@ -284,7 +348,7 @@ class Cleaner(Processor):
         # Define candidate land as areas identified as land in this year's data.
         # This contains land, but also likely some areas misidentified due to
         # clouds that were not masked, etc. These areas will be further filtered.
-        candidate_land = output[self.water_index_name] < 0
+        candidate_land = water_index < 0
 
         # Identify land areas connected in some way to consensus areas.
         connected_areas = remove_disconnected_areas(consensus_land, candidate_land)
@@ -297,39 +361,27 @@ class Cleaner(Processor):
         # the coastline extraction can work. This is accomplished by iteratively
         # dilating land.
         analysis_zone = define_analysis_zone(
-            core_land=annual_consensus_land,  # pyright: ignore[reportArgumentType]
-            water_index=output[self.water_index_name],
+            core_land=annual_consensus_land,
+            water_index=water_index,
         )
 
         # Mask areas outside the analysis zone
-        self.water_index = output[self.water_index_name].where(analysis_zone)
+        water_index = water_index.where(analysis_zone)
 
         # Now remove inland water, defined as places not connected to the ocean.
 
-        # First create an annual water map. It is places where the water index
-        # is non-negative, but also places where it is null that we know aren't land.
-        consensus_water = ~(consensus_land | gadm_land)
-        annual_water = (
-            self.water_index > 0
-        ) | consensus_water & self.water_index.isnull()
-
-        # Define core ocean areas as places that are not always land, eroded by 60-m
-        # all_time_land = core_land | consensus_land
-        core_ocean = mask_cleanup(consensus_water, mask_filters=[("erosion", 2)])
-
-        # Define ocean for each year by removing water that is not connected to ocean
-        annual_ocean = remove_disconnected_areas(core_ocean, annual_water)
-
-        # Define inland water for each year as places defined as water that are
-        # not ocean.
-        annual_inland_water = annual_water & ~annual_ocean
-
-        # Mask out inland water
-        self.water_index = self.water_index.where(~annual_inland_water)
+        # First, define consensus ocean as the inverse of a liberal definition of land.
+        # We use gadm as it doesn't generally include inland water bodies,
+        # (though sometimes it includes rivers (PNG & Fiji) as they are connected
+        # to the ocean, and will be handled during certainty masking)
+        # We also include consensus land, which may include areas not in gadm.
+        consensus_ocean = ~(consensus_land | gadm_land)
+        annual_inland_water = map_inland_water(consensus_ocean, water_index)
+        water_index = water_index.where(~annual_inland_water)
 
         # Perform coastline delineation.
         coastlines = subpixel_contours(
-            self.water_index,
+            water_index,
             dim="year",
             min_vertices=5,
         )
@@ -337,27 +389,28 @@ class Cleaner(Processor):
         if len(coastlines) == 0:
             raise NoOutputError("no coastlines created; water index may be empty")
 
+        # Now post-process coastlines. Add certainty attributes, calculate
+        # rates of change, and add any other attributes.
         certainty_masks = certainty_masking(
             output.rename({variation_var: "stdev"}), stdev_threshold=0.3
         )
         coastlines = contour_certainty(
             coastlines.set_index("year"), certainty_masks
         ).reset_index()
+
         roc_points = calculate_rates_of_change(
             contours=coastlines,
             water_index=output[self.water_index_name],
             water_index_name=self.water_index_name,
-            baseline_year=self.baseline_year,
             initial_year=self.initial_year,
         )
 
         coastlines, roc_points = add_attributes(coastlines, roc_points)
 
-        self.water_index["year"] = self.water_index.year.astype(str)
+        water_index["year"] = water_index.year.astype(str)
+        water_index = water_index.to_dataset("year")
         return (
-            # water_index.to_dataset("year"),
-            self.water_index.to_dataset("year"),
-            mask,
+            water_index,
             coastlines,
             roc_points,
         )

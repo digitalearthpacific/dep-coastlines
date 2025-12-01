@@ -84,16 +84,14 @@ class MultiyearMosaicLoader(Loader):
 
         """
         if not isinstance(self._years_per_composite, list):
-            #           return _add_deviations(
             return self._load_composite_set(area, self._years_per_composite)
-            # )
         else:
             composite_sets = [
                 self._load_composite_set(area, years_per_composite)
                 for years_per_composite in self._years_per_composite
             ]
 
-            return composite_sets  # [_add_deviations(composite_set) for composite_set in composite_sets]
+            return composite_sets
 
 
 class MosaicLoader(Loader):
@@ -106,15 +104,6 @@ class MosaicLoader(Loader):
         self._add_deviations = add_deviations
 
     def load(self, area):
-        #        if self._add_deviations:
-        #            all_time = (
-        #                MultiyearMosaicLoader(
-        #                    start_year=1999, end_year=2023, version=self._itempath.version
-        #                )
-        #                .load(area)
-        #                .median(dim="year")
-        #            )
-        #
         item_id = area.index.to_numpy()[0]
         stac_path = self._itempath.stac_path(item_id)
         try:
@@ -133,7 +122,7 @@ class MosaicLoader(Loader):
             ]
         ] /= 10_000
 
-        return output  # _add_deviations(output, all_time) if self._add_deviations else output
+        return output
 
 
 def _set_year_to_middle_year(ds: xr.Dataset) -> xr.Dataset:
@@ -144,12 +133,3 @@ def _set_year_to_middle_year(ds: xr.Dataset) -> xr.Dataset:
     middle_years = [str(int(mean([int(y[0]), int(y[1])]))) for y in edge_years]
     ds["year"] = middle_years
     return ds
-
-
-# def _add_deviations(xr, all_time=None):
-#     if all_time is None:
-#         all_time = xr.median(dim="year")
-#     deviation = xr - all_time
-#     deviation = deviation.rename({k: k + "_dev" for k in list(deviation.keys())})
-#     all_time = all_time.rename({k: k + "_all" for k in list(all_time.keys())})
-#     return xr.merge(deviation).merge(all_time).chunk(xr.chunks)
