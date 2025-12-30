@@ -19,8 +19,8 @@ OVERWRITE = False
 def make_grid(grid_buffer: int | float = 250) -> gpd.GeoDataFrame:
     """Create the analysis grid.
 
-    The output is a GeoDataFrame which contains a 0.018018... decimal
-    degree buffer around the land-water boundary, as defined by
+    The output is a GeoDataFrame which contains an approximately
+    2-km buffer around the land-water boundary as defined by
     GADM.
 
     Args:
@@ -30,7 +30,7 @@ def make_grid(grid_buffer: int | float = 250) -> gpd.GeoDataFrame:
 
     Returns:
         The analysis grid. It is indexed by the DE Pacific grid index
-        in a (column, row) format.
+        (see :func:`dep_tools.grids.grid` ) in a (column, row) format.
     """
     aoi = _full_aoi()
     aoi = _remove_inland_borders(aoi)
@@ -112,14 +112,16 @@ def _remove_inland_borders(aoi: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 def _assign_crs(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Assign an appropriate CRS to each grid cell.
 
-    Using the "most common" zone among loaded Landsat data works fine except
-    in some years in some areas the most common zone differs, due to
-    differing data availability. Here we determine which UTM zone has the
+    :func:`odc.stac.load` can determine the best output grid for a given
+    set of STAC items based on which CRS is most common among them. The
+    issue is the most common CRS can vary across years for the same location
+    when an area contains multiple Landsat tiles in different projections
+    and the most common one can differ. Here we determine which UTM zone has the
     greatest area of the buffered gadm for each cell.
 
-    Alternatively, we would need to determine which Landsat scene has the
+    Alternatively, we would need to determine which Landsat tile has the
     most area within the buffered gadm for each cell, then determine the
-    projection of that scene. I couldn't find such a crosswalk (a table of
+    projection of that tile. I couldn't find such a crosswalk (a table of
     which projection each landsat scene has).
 
     Args:
@@ -174,7 +176,7 @@ def _full_aoi() -> gpd.GeoDataFrame:
     return pd.concat([padm, hawaii]).dissolve()[["geometry"]]
 
 
-remote_fs = S3FileSystem(anon=True)
+_remote_fs = S3FileSystem(anon=True)
 
 buffered_grid_name = "buffered_coastline_grid.gpkg"
 local_buffered_grid_blob_path = (
@@ -188,7 +190,7 @@ aoi_raster_name = "coastlines_aoi.tif"
 local_aoi_raster_path = Path(__file__).parent / f"../data/raw/{aoi_raster_name}"
 remote_aoi_raster_path = f"{config.BUCKET}/dep_ls_coastlines/raw/{aoi_raster_name}"
 
-if not remote_fs.exists(remote_aoi_raster_path) or OVERWRITE:
+if not _remote_fs.exists(remote_aoi_raster_path) or OVERWRITE:
     aoi = _full_aoi()
 
     opts = gdal.RasterizeOptions(
@@ -209,7 +211,7 @@ if not remote_fs.exists(remote_aoi_raster_path) or OVERWRITE:
     rw_fs.put_file(local_aoi_raster_path, remote_aoi_raster_path)
 
 
-if not remote_fs.exists(buffered_grid_bucket_path) or OVERWRITE:
+if not _remote_fs.exists(buffered_grid_bucket_path) or OVERWRITE:
     rw_fs = S3FileSystem(anon=False)
     coastline_grid = make_grid(250)
     coastline_grid.to_file(local_buffered_grid_blob_path)
@@ -217,7 +219,7 @@ if not remote_fs.exists(buffered_grid_bucket_path) or OVERWRITE:
 
 
 buffered_grid = gpd.read_file(
-    remote_fs.open(f"s3://{buffered_grid_bucket_path}")
+    _remote_fs.open(f"s3://{buffered_grid_bucket_path}")
 ).set_index(["column", "row"])
 
 

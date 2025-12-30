@@ -4,6 +4,7 @@ import rioxarray as rx
 import xarray as xr
 import xrspatial as xs
 from geocube.api.core import make_geocube
+from odc.algo import mask_cleanup
 from rasterio.warp import transform_bounds
 from scipy.ndimage import gaussian_filter
 from shapely.geometry import box
@@ -11,6 +12,59 @@ from skimage.measure import label
 from xarray import DataArray, Dataset, apply_ufunc
 
 from dep_coastlines.grid import remote_aoi_raster_path as AOI_RASTER_PATH
+
+
+def define_analysis_zone(
+    core_land: DataArray,
+    water_index: DataArray,
+    number_of_expansions: int = 64,
+    return_max_cap: bool = False,
+) -> DataArray | tuple[DataArray, DataArray]:
+    """Define the analysis zone for coastline extraction.
+
+    Common water indices applied to Landsat data are sensitive to noise at
+    low values, which can create false positive land detections in ocean. This
+    pattern is often noticable is ocean areas near coasts, particularly around
+    small islands. This function is used to define an analysis zone around
+    known land areas which includes as little ocean as possible (some ocean
+    is needed to perform coastline delineation correctly). This is
+    accomplished by iteratively expanding land areas only, as defined by the
+    water index.
+
+    Args:
+        core_land: The starting land mask for each year. This should be as
+            conservative as possible, while including all islands, etc.
+        water_index: The water index used to determine whether a pixel is land or
+            water. As is convention, negative values indicate land, positive water.
+        number_of_expansions: The number of dilations to perform when extending land
+            areas.
+        return_max_cap: Depending on the number of expansions and how conservatively
+            defined core land is, the mask may not expand into water in all places.
+            This returns areas which would continue to expand if expansion continued.
+    Returns:
+        An analysis mask.
+
+    """
+    # Only expand where there's an edge that's land. Do it multiple times
+    # to fill between larger areas.
+    # We do 2 because the last expansion needs 2 to fill in corners.
+    analysis_zone = core_land.copy()
+
+    def expand_once(analysis_zone):
+        return analysis_zone | mask_cleanup(
+            water_index.where(analysis_zone) < 0,
+            mask_filters=[("dilation", 2)],
+        )
+
+    for _ in range(number_of_expansions):
+        analysis_zone = expand_once(analysis_zone)
+
+    if return_max_cap:
+        last_expansion = expand_once(analysis_zone)
+        max_cap = last_expansion & ~analysis_zone
+        return analysis_zone, max_cap
+
+    return analysis_zone
 
 
 def smooth_gaussian(da: DataArray, sigma: float = 0.799) -> DataArray:
@@ -54,9 +108,6 @@ def smooth_gaussian(da: DataArray, sigma: float = 0.799) -> DataArray:
         .dot(weights)
     )
     return (total / divisor).where(~da.isnull())
-
-
-# def find_disconnected_areas(core, candidate):
 
 
 def remove_disconnected_areas(core_areas: DataArray, candidate_areas: DataArray):
@@ -139,23 +190,31 @@ def remove_disconnected_land(
     return candidate_land.where(zones.isin(connected_zones)) == 1
 
 
-def find_inland_areas(water_bool_da, ocean_bool_da) -> DataArray:
-    ocean_10 = ocean_bool_da.astype("int8").compute()
+def map_inland_water(consensus_ocean: DataArray, water_index: DataArray) -> DataArray:
+    """Map inland water bodies based on their lack of connection to ocean.
 
-    def _find_inland_2d(bool_da_2d: DataArray) -> DataArray:
-        water_zones = xr.full_like(bool_da_2d, 0, dtype="int16")
-        water_zones.values = label(bool_da_2d.astype("int8"), background=0)
-        location_by_zone = xs.zonal_stats(
-            water_zones.where(water_zones > 0), ocean_10, stats_funcs=["max"]
-        )
-        inland_zones = location_by_zone["zone"][location_by_zone["max"] == 0]
-        return water_zones.isin(inland_zones)
+    Args:
+        consensus_ocean: A boolean DataArray indicating areas that are definitely
+            ocean all the time.
+        water_index: The continuous water index for each year, where positive
+            values indicate water and negative indicate land. Has dims x, y &
+            year.
 
-    # Can't do this in chunks because the labels would be repeated across chunks.
-    # but could parallelize across years I think
-    return water_bool_da.groupby("year").apply(
-        lambda da: _find_inland_2d(da.squeeze(drop=True))
-    )
+    Returns:
+        A boolean DataArray with dims x, y and year indiciating areas of inland
+        water for each year.
+    """
+    # First create an annual water map. It is places where the water index
+    # is non-negative, but also places where it is null that we know aren't land.
+    annual_water = (water_index >= 0) | consensus_ocean & water_index.isnull()
+
+    # Define core ocean areas as places that are not always land, eroded by 60-m
+    core_ocean = mask_cleanup(consensus_ocean, mask_filters=[("erosion", 2)])
+
+    # Define ocean for each year by removing water that is not connected to ocean
+    annual_ocean = remove_disconnected_areas(core_ocean, annual_water)
+
+    return annual_water & ~annual_ocean
 
 
 def fill_with_nearby_dates(xarr: DataArray | Dataset) -> DataArray | Dataset:
