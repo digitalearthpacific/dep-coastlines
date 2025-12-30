@@ -118,7 +118,7 @@ def generate_lines_of_difference(validation_lines, coastlines):
 
     coastlines_raster = load_coastlines_raster_for_geometry(
         lines.geometry, validation_lines.year.iloc[0]
-    ).rio.reproject(3832, resolution=5, resampling=Resampling.bilinear)
+    ).rio.reproject(3832, resolution=10, resampling=Resampling.bilinear)
 
     def direction(line, coastlines_raster):
         return (

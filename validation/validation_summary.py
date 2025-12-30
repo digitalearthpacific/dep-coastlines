@@ -21,7 +21,7 @@ def calculate_roc_stats(sets):
 
         plot = (
             pn.ggplot(d, pn.aes(x=d.val_rate_time, y=d.cl_rate_time))
-            # + pn.geom_abline(slope=1, color="blue")
+            + pn.geom_abline(slope=1, color="blue")
             + pn.geom_point(size=0.5)
             + pn.theme_bw()
             + pn.labs(x="Validation ROC (m/yr)", y="DEP Coastlines ROC (m/yr)")
@@ -103,6 +103,9 @@ def calculate_length_of_validation_lines():
 
 def main():
     roc_data = gpd.read_file("data/validation/rates_of_change_validation.gpkg")
+    roc_data = roc_data[
+        ~roc_data.cl_sig_time.isnull() & ~roc_data.val_sig_time.isnull()
+    ]
     roc_sets = dict(
         all_transects=roc_data, significant_trends=roc_data[roc_data.cl_sig_time < 0.01]
     )
