@@ -17,15 +17,9 @@ class CoastlineWriter(Writer):
         self._rasterWriter = _CompositeWriter(itempath, use_odc_writer=False, **kwargs)
         self._vectorWriter = _CompositeWriter(itempath, driver="GPKG", **kwargs)
 
-    def write(
-        self, output: Tuple[Dataset, Dataset, GeoDataFrame, GeoDataFrame], item_id: str
-    ):
-        water_index, mask, contours, rates_of_change = output
+    def write(self, output: Tuple[Dataset, GeoDataFrame, GeoDataFrame], item_id: str):
+        water_index, contours, rates_of_change = output
         self._rasterWriter.write(water_index, item_id)
-        #        self._rasterWriter.write(mask.Predictions, item_id, ext="_mask_prediction.tif")
-        #        self._rasterWriter.write(
-        #            mask.Probabilities, item_id, ext="_mask_probabilities.tif"
-        #        )
         self._vectorWriter.kwargs["layer"] = f"lines_{item_id}"
         self._vectorWriter.kwargs["engine"] = "fiona"
         contour_schema = vector_schema(contours)

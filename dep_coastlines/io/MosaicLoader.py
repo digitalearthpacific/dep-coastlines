@@ -1,7 +1,6 @@
 import warnings
 
 from numpy import mean
-import odc.geo.xr
 import odc.stac
 from pystac import Item
 import xarray as xr
