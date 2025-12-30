@@ -4,7 +4,9 @@ import pandas as pd
 from rasterio.enums import Resampling
 import xarray as xr
 
-from utils import load_coastlines_raster_for_geometry
+from dep_coastlines.config import NEXT_GEN_COASTLINES_OUTPUT as coastlines_file
+from dep_coastlines.vector import calculate_rates_of_change
+from util import load_coastlines_raster_for_geometry
 
 
 def compare_roc(validation_contours):
@@ -13,14 +15,17 @@ def compare_roc(validation_contours):
         distance=100, cap_style="flat"
     ).unary_union.buffer(distance=-30)
 
-    limited_years_coastlines_file = "data/processed/0.8.3/dep_ls_coastlines_0.8.3.gpkg"
-    points_gdf = gpd.read_file(
-        limited_years_coastlines_file,
-        layer="rates_of_change",
+    shorelines_gdf = gpd.read_file(
+        coastlines_file,
+        layer="shorelines_annual",
         bbox=aoi.bounds,
         engine="pyogrio",
         use_arrow=True,
     ).clip(aoi)
+    # need to sort here or all_time_stats doesn't always get all data
+    validation_shorelines = shorelines_gdf[shorelines_gdf.year >= 2017].sort_values(
+        by="year"
+    )
 
     water_for_contours = (
         xr.concat(
@@ -36,6 +41,13 @@ def compare_roc(validation_contours):
         .fillna(1)
         .rio.reproject(3832, resolution=5, resamplng=Resampling.bilinear)
     )
+
+    points_gdf = calculate_rates_of_change(
+        validation_shorelines,
+        water_index=water_for_contours.twndwi,
+        water_index_name="twndwi",
+        initial_year=2017,
+    ).reset_index()
 
     val_points_gdf = annual_movements(
         points_gdf[["uid", "geometry"]],

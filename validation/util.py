@@ -1,3 +1,5 @@
+"""Utility functions."""
+
 import geopandas as gpd
 import netCDF4  # see note in calculate_tides.py
 from odc.geo import Resolution
@@ -7,6 +9,7 @@ from odc.geo.xr import xr_zeros
 from retry import retry
 import rioxarray as rx
 from rioxarray.merge import merge_arrays
+from xarray import DataArray
 
 from dep_coastlines.common import coastlineItemPath
 from dep_coastlines.config import (
@@ -50,26 +53,26 @@ def load_coastlines(
 
 
 @retry(tries=3)
-def load_coastlines_raster_for_geometry(geometry, year, grid=GRID):
+def load_coastlines_raster_for_geometry(geometry, year, grid=GRID) -> DataArray:
     # get index of grid cells for geometry
     indices = grid[grid.intersects(geometry.union_all())].index
     itemPath = coastlineItemPath(
         dataset_id=VECTOR_DATASET_ID, version=VECTOR_VERSION, time=VECTOR_DATETIME
     )
 
-    def load_file(path, year):
+    def load_file(path, year) -> DataArray:
         da = rx.open_rasterio(path, chunks=True)
         da_year = da.isel(band=da.attrs["long_name"].index(str(year)))
         da_year.attrs["long_name"] = None
-        return da_year
+        return da_year  # .rio.clip([geometry.to_crs(da_year.rio.crs).union_all()])
 
     if len(indices) > 1:
-        return merge_arrays(
-            [
-                load_file(f"{HTTPS_PREFIX}/{itemPath.path(item_id)}", year)
-                for item_id in indices
-            ]
-        )
+        arrays = [
+            load_file(f"{HTTPS_PREFIX}/{itemPath.path(item_id)}", year)
+            for item_id in indices
+        ]
+        return merge_arrays(arrays)
+
     return load_file(f"{HTTPS_PREFIX}/{itemPath.path(indices[0])}", year)
 
 
