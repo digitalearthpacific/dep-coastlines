@@ -57,7 +57,6 @@ def process_id(
     processor = Cleaner(
         water_index=water_index,
         initial_year=str(start_year),
-        baseline_year=str(end_year),
     )
     writer = CoastlineWriter(
         namer,
