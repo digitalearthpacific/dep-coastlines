@@ -8,6 +8,7 @@ import geopandas as gpd
 from dask.distributed import Client
 from dep_tools.exceptions import EmptyCollectionError, NoOutputError
 from dep_tools.namers import GenericItemPath
+from dep_tools.parsers import datetime_parser
 from dep_tools.processors import XrPostProcessor
 from dep_tools.searchers import LandsatPystacSearcher, Searcher
 from dep_tools.stac_utils import use_alternate_s3_href
@@ -28,7 +29,6 @@ from dep_coastlines.common import (
 from dep_coastlines.config import MOSAIC_DATASET_ID
 from dep_coastlines.grid import buffered_grid as grid
 from dep_coastlines.io import ProjOdcLoader
-from dep_coastlines.parsers import datetime_parser
 from dep_coastlines.raster.mosaic import MosaicProcessor
 from dep_coastlines.tide_utils import tides_for_items
 from dep_coastlines.time_utils import (
