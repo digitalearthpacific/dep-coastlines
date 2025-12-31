@@ -25,9 +25,9 @@ spec:
     - name: code-file
       value: "src/create_coastlines.py"
     - name: version
-      value: "0.8.4dev1"
+      value: "0.8.4dev4"
     - name: image-tag
-      value: "v0.8.4dev1"
+      value: "v0.8.4dev4"
     - name: dataset-id
       value: "coastlines/interim/coastlines"
     - name: start-year
