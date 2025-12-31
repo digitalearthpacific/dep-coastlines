@@ -22,7 +22,7 @@ spec:
   arguments:
     parameters:
     - name: image-tag
-      value: "v0.8.2dev2"
+      value: "v0.8.4.dev3"
   templates:
   - name: workflow-entrypoint
     container:
@@ -34,8 +34,6 @@ spec:
           cpu: 4 
       command: [ python ]
       args:
-        - dep_coastlines/continental.py
+        - src/continental.py
         - --vector_version
-        - "0.8.3"
-        - --continental_version
-        - "0.8.3"
+        - "0.8.4.dev3"
