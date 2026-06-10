@@ -27,7 +27,7 @@ from dep_coastlines.common import (
     coastlineLogger,
     use_alternate_s3_href,
 )
-from dep_coastlines.config import MOSAIC_DATASET_ID
+from dep_coastlines.config import MOSAIC_DATASET_ID, STAC_CATALOG_URL, STAC_COLLECTIONS
 from dep_coastlines.grid import buffered_grid as grid
 from dep_coastlines.io import ProjOdcLoader
 from dep_coastlines.tide_utils import filter_by_tides, tides_for_items
@@ -39,9 +39,11 @@ from dep_coastlines.time_utils import (
 from dep_coastlines.task_utils import bool_parser
 from dep_coastlines.water_indices import twndwi
 
+modifier = use_alternate_s3_href if STAC_CATALOG_URL == "https://landsatlook.usgs.gov/stac-server" else None
+
 client = PystacClient.open(
-    "https://landsatlook.usgs.gov/stac-server",
-    modifier=use_alternate_s3_href,
+    STAC_CATALOG_URL,
+    modifier=modifier,
 )
 
 
@@ -52,7 +54,7 @@ def process_all_years(area, all_time: str, itempath, **kwargs):
         search_intersecting_pathrows=True,
         datetime=all_time,
         client=client,
-        collections=["landsat-c2l2-sr"],
+        collections=STAC_COLLECTIONS,
     ).search(area)
     tides = tides_for_items(items, area)
     processor = MosaicProcessor(
