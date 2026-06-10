@@ -56,7 +56,7 @@ jobs:
       - name: Get version number for tagging the image
         id: get_version
         run: |
-          git fetch --all --tags
+          git fetch --all --tags --force
           echo "VERSION=$(git describe --tags)" >> $GITHUB_OUTPUT
 
       - name: Build and push
