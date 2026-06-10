@@ -8,7 +8,7 @@ spec:
   podGC:
     strategy: OnWorkflowSuccess
     deleteDelayDuration: 600s
-  parallelism: 600
+  parallelism: 1
   podMetadata:
     labels:
       app: coastlines
@@ -33,13 +33,10 @@ spec:
     - name: start-year
       value: "1999"
     - name: end-year
-      value: "2024"
+      value: "2025"
 
   templates:
   - name: workflow-entrypoint
-    retryStrategy:
-      limit: "3"
-      retryPolicy: "Always"
     podSpecPatch: |
       containers:
         - name: main
@@ -98,6 +95,9 @@ spec:
         - "{{ inputs.parameters.filter-existing-stac-items }}"
 
   - name: process
+    retryStrategy:
+      limit: "3"
+      retryPolicy: "Always"
     inputs:
       parameters:
       - name: column
@@ -114,7 +114,7 @@ spec:
           memory: 64Gi
       command: [ python ]
       args:
-        - "{{ workflow.parameters.code-file  }}"
+        - "{{ workflow.parameters.code-file }}"
         - --column
         - "{{ inputs.parameters.column }}"
         - --row
