@@ -135,6 +135,8 @@ spec:
         - "{{ inputs.parameters.row }}"
         - --version
         - "{{ inputs.parameters.version }}"
+        - --date-range
+        - "{{ workflow.parameters.datetime }}"
         - --load-before-write
         - "{{ inputs.parameters.load-before-write }}"
         - --fail-on-read-error

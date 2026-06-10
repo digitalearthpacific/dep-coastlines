@@ -199,10 +199,11 @@ def mad(da, median_da):
 def process_id(
     task_id: Tuple | list[Tuple] | None,
     version: str,
-    datetime: str = "1984/2024",
+    datetime: str = "1984/2025",
     dataset_id: str = MOSAIC_DATASET_ID,
     load_before_write: bool = True,
     fail_on_read_error: bool = True,
+    overwrite: bool = False,
 ) -> None:
     loader = ProjOdcLoader(
         chunks=dict(band=1, time=1, x=8192, y=8192),
@@ -224,7 +225,7 @@ def process_id(
     )
 
     writer = AwsDsCogWriter(
-        itempath=namer, overwrite=False, load_before_write=load_before_write
+        itempath=namer, overwrite=overwrite, load_before_write=load_before_write
     )
 
     try:
@@ -249,8 +250,10 @@ def main(
     row: Annotated[str, Option()],
     column: Annotated[str, Option()],
     version: Annotated[str, Option()],
+    date_range: Annotated[str, Option()] = "1984/2025",
     load_before_write: Annotated[str, Option(parser=bool_parser)] = "True",
     fail_on_read_error: Annotated[str, Option(parser=bool_parser)] = "True",
+    overwrite: Annotated[str, Option(parser=bool_parser)] = "False",
 ):
     configure_s3_access(cloud_defaults=True, requester_pays=True)
     boto3.setup_default_session()
@@ -258,8 +261,10 @@ def main(
         process_id(
             (int(column), int(row)),
             version,
+            datetime=date_range,
             load_before_write=load_before_write,
             fail_on_read_error=fail_on_read_error,
+            overwrite=overwrite,
         )
 
 
