@@ -1,26 +1,28 @@
-from pathlib import Path
 from typing import Tuple
 
-from dea_tools.coastal import pixel_tides
+from eo_tides import pixel_tides
 from dep_tools.searchers import LandsatPystacSearcher
 from odc.geo.geobox import AnchorEnum
 from pystac_client import Client as PystacClient
 from xarray import DataArray, Dataset
+
+from dep_coastlines.config import STAC_CATALOG_URL, STAC_COLLECTIONS
 
 from dep_coastlines.io import ProjOdcLoader
 from dep_coastlines.common import use_alternate_s3_href
 
 
 def tides_for_area(area, datetime="1984/2024", **kwargs):
+    modifier = use_alternate_s3_href if STAC_CATALOG_URL == "https://landsatlook.usgs.gov/stac-server" else None
     client = PystacClient.open(
-        "https://landsatlook.usgs.gov/stac-server",
-        modifier=use_alternate_s3_href,
+        STAC_CATALOG_URL,
+        modifier=modifier,
     )
     items = LandsatPystacSearcher(
         search_intersecting_pathrows=True,
         datetime=datetime,
         client=client,
-        collections=["landsat-c2l2-sr"],
+        collections=STAC_COLLECTIONS,
     ).search(area)
     return tides_for_items(items, area, **kwargs)
 

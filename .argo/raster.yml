@@ -8,7 +8,7 @@ spec:
   podGC:
     strategy: OnWorkflowSuccess
     deleteDelayDuration: 600s
-  parallelism: 250
+  parallelism: 100
   podMetadata:
     labels:
       app: coastlines
@@ -17,7 +17,7 @@ spec:
   nodeSelector:
     karpenter.sh/capacity-type: "spot"
   hostAliases:
-    - ip: "13.227.74.109"
+    - ip: "18.239.199.126"
       hostnames:
         - "landsatlook.usgs.gov"
   arguments:
@@ -31,18 +31,9 @@ spec:
     - name: dataset-id
       value: "coastlines/interim/mosaic"
     - name: datetime
-      value: "1984/2024"
+      value: "1984/2025"
   templates:
   - name: workflow-entrypoint
-    retryStrategy:
-      limit: "3"
-      retryPolicy: "Always"
-    podSpecPatch: |
-      containers:
-        - name: main
-          resources:
-            limits:
-              memory: "{{=(sprig.int(retries) + 1) * 32}}Gi"
     dag:
       tasks:
         - name: generate-ids
@@ -109,6 +100,15 @@ spec:
         - "{{ inputs.parameters.filter-existing-stac-items }}"
 
   - name: process
+    retryStrategy:
+      limit: "3"
+      retryPolicy: "Always"
+    podSpecPatch: |
+      containers:
+        - name: main
+          resources:
+            limits:
+              memory: "{{=(sprig.int(retries) + 1) * 96}}Gi"
     inputs:
       parameters:
       - name: column
@@ -121,10 +121,10 @@ spec:
       imagePullPolicy: IfNotPresent
       resources:
         requests: 
-          memory: 32Gi
+          memory: 48Gi
           cpu: 4
         limits:
-          memory: 64Gi
+          memory: 96Gi
           cpu: 8
       command: [ python ]
       args:
@@ -135,6 +135,8 @@ spec:
         - "{{ inputs.parameters.row }}"
         - --version
         - "{{ inputs.parameters.version }}"
+        - --date-range
+        - "{{ workflow.parameters.datetime }}"
         - --load-before-write
         - "{{ inputs.parameters.load-before-write }}"
         - --fail-on-read-error

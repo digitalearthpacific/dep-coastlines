@@ -1,3 +1,5 @@
+import os
+
 BUCKET = "dep-public-staging"
 OUTPUT_CRS = 3832
 _region = "us-west-2"
@@ -16,3 +18,6 @@ CLOUD_MODEL_FILE = (
 VECTOR_VERSION = "0-8-1"
 VECTOR_DATASET_ID = "coastlines/interim/coastlines"
 VECTOR_DATETIME = "1984/2024"
+
+STAC_CATALOG_URL = os.getenv("STAC_CATALOG_URL", "https://landsatlook.usgs.gov/stac-server")
+STAC_COLLECTIONS = os.getenv("STAC_COLLECTIONS", "landsat-c2l2-sr").split(",")
