@@ -45,7 +45,7 @@ def tides_lowres(xr: Dataset, tide_directory="data/raw/tidal_models") -> Dataset
     tides_lowres = pixel_tides(
         xr,
         resample=False,
-        model="FES2022",
+        model="FES2022_load",
         directory=tide_directory,
         resolution=3300,
         parallel=False,  # not doing parallel since it seemed to be slower
