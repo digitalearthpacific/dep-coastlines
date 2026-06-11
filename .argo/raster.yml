@@ -27,11 +27,13 @@ spec:
     - name: version
       value: "0.8.1"
     - name: image-tag
-      value: "mosaic.0.8.1.dev2"
+      value: "mosaic.0.8.1.dev3"
     - name: dataset-id
       value: "coastlines/interim/mosaic"
     - name: datetime
       value: "1984/2025"
+    - name: overwrite
+      value: "False"
   templates:
   - name: workflow-entrypoint
     dag:
@@ -141,6 +143,8 @@ spec:
         - "{{ inputs.parameters.load-before-write }}"
         - --fail-on-read-error
         - "{{ inputs.parameters.fail-on-read-error }}"
+        - --overwrite
+        - "{{ workflow.parameters.overwrite }}"
       env:
         - name: DASK_ARRAY__RECHUNK__METHOD
           value: "tasks"

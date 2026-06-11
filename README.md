@@ -19,6 +19,10 @@ writeup is in process.
 
 The product is visible on the [Digital Earth Pacific](https://digitalearthpacific.org) [map interface](https://maps.digitalearthpacific.org).
 
+## Notes for running for recent years
+
+Configure the raster analysis to overwrite, and run for three years (like, for 2025, use 2024/2026).
+
 ## Command Line Tools
 
 The coastlines process runs as a three-stage pipeline (raster → vector →
