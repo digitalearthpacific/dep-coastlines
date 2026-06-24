@@ -1,15 +1,24 @@
+"""Functions used in more than one place."""
+
 import re
-from typing import Optional
 
 from cloud_logger import CsvLogger
 from dep_tools.namers import S3ItemPath
-import pystac
-import pystac_client
 
 import dep_coastlines.config as config
 
 
 def coastlineItemPath(dataset_id: str, version: str, time: str) -> S3ItemPath:
+    """Get the :class:`ItemPath` used to name coastlines data.
+
+    Args:
+        dataset_id: The dataset id. Typically a subfolder definition, for
+            instance "coastlines/interim/mosaic
+        version: The version.
+        time: The time, e.g. "1999/2024"
+
+    Returns: An :class:`ItemPath` ready to name output files.
+    """
     namer = S3ItemPath(
         bucket=config.BUCKET,
         sensor="ls",
@@ -24,45 +33,25 @@ def coastlineItemPath(dataset_id: str, version: str, time: str) -> S3ItemPath:
 
 def coastlineLogger(
     itempath: S3ItemPath,
-    dataset_id,
-    delete_existing_log=False,
+    dataset_id: str,
+    delete_existing_log: bool = False,
 ) -> CsvLogger:
+    """Get a logger.
+
+    This is a wrapper around :func:`CsvLogger.__init__`.
+
+    Args:
+        itempath: The ItemPath used to define the log path.
+        dataset_id: The dataset id.
+        delete_existing_log: Whether to delete the existing log.
+
+    Returns:
+        The logger.
+
+    """
     return CsvLogger(
         name=dataset_id,
         path=f"{itempath.bucket}/{itempath.log_path()}",
         overwrite=delete_existing_log,
         header="time|index|status|paths|comment\n",
     )
-
-
-# These are parsers for use with typer and argo (since argo can only use
-# strings), and doesn't allow missing parameters, etc.
-def int_or_none(raw: str) -> Optional[int]:
-    return None if raw == "None" else int(raw)
-
-
-def cs_list_of_ints(raw: str) -> list[int] | int:
-    return [int(s) for s in raw.split(",")] if "," in raw else int(raw)
-
-
-def bool_parser(raw: str):
-    return False if raw == "False" else True
-
-
-def use_alternate_s3_href(modifiable: pystac_client.Modifiable) -> None:
-    if isinstance(modifiable, dict):
-        if modifiable["type"] == "FeatureCollection":
-            new_features = list()
-            for item_dict in modifiable["features"]:
-                use_alternate_s3_href(item_dict)
-                new_features.append(item_dict)
-            modifiable["features"] = new_features
-        else:
-            stac_object = pystac.read_dict(modifiable)
-            use_alternate_s3_href(stac_object)
-            modifiable.update(stac_object.to_dict())
-    else:
-        for _, asset in modifiable.assets.items():
-            asset_dict = asset.to_dict()
-            if "alternate" in asset_dict.keys():
-                asset.href = asset.to_dict()["alternate"]["s3"]["href"]

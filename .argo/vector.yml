@@ -8,7 +8,7 @@ spec:
   podGC:
     strategy: OnWorkflowSuccess
     deleteDelayDuration: 600s
-  parallelism: 600
+  parallelism: 100
   podMetadata:
     labels:
       app: coastlines
@@ -16,27 +16,23 @@ spec:
       karpenter.sh/do-not-disrupt: "true"
   nodeSelector:
     karpenter.sh/capacity-type: "spot"
-  hostAliases:
-    - ip: "52.92.184.90"
-      hostnames:
-        - "dep-public-staging.s3.us-west-2.amazonaws.com"
   arguments:
     parameters:
     - name: code-file
-      value: "dep_coastlines/vector.py"
+      value: "src/create_coastlines.py"
     - name: version
-      value: "0.8.1"
+      value: "0.8.4dev4"
     - name: image-tag
-      value: "cl.0.8.1d"
+      value: "v0.8.4dev4"
     - name: dataset-id
       value: "coastlines/interim/coastlines"
-    - name: datetime
-      value: "1984/2024"
+    - name: start-year
+      value: "1999"
+    - name: end-year
+      value: "2025"
+
   templates:
   - name: workflow-entrypoint
-    retryStrategy:
-      limit: "3"
-      retryPolicy: "Always"
     podSpecPatch: |
       containers:
         - name: main
@@ -49,10 +45,6 @@ spec:
           template: generate
           arguments:
             parameters:
-              - name: limit
-                value: "None"
-              - name: version
-                value: "{{ workflow.parameters.version }}"
               - name: overwrite-logs
                 value: "False"
               - name: filter-using-log
@@ -68,13 +60,10 @@ spec:
               value: "{{item.column}}"
             - name: row
               value: "{{item.row}}"
-            - name: version
-              value: "{{ workflow.parameters.version }}"
           withParam: "{{ tasks.generate-ids.outputs.result }}"
   - name: generate
     inputs:
       parameters:
-      - name: version
       - name: overwrite-logs
       - name: filter-using-log
       - name: filter-existing-stac-items
@@ -87,13 +76,13 @@ spec:
           cpu: 2
       command: [ python ]
       args:
-        - dep_coastlines/task_utils.py
+        - src/print_tasks.py
         - --dataset-id
         - "{{ workflow.parameters.dataset-id }}"
         - --datetime
-        - "{{ workflow.parameters.datetime }}"
+        - "{{ workflow.parameters.start-year }}/{{ workflow.parameters.end-year }}"
         - --version
-        - "{{ inputs.parameters.version }}"
+        - "{{ workflow.parameters.version }}"
         - --overwrite-logs
         - "{{ inputs.parameters.overwrite-logs }}"
         - --filter-using-log
@@ -102,12 +91,13 @@ spec:
         - "{{ inputs.parameters.filter-existing-stac-items }}"
 
   - name: process
+    retryStrategy:
+      limit: "3"
+      retryPolicy: "Always"
     inputs:
       parameters:
       - name: column
       - name: row
-      - name: version
-      - name: datetime
     container:
       image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
@@ -120,15 +110,17 @@ spec:
           memory: 64Gi
       command: [ python ]
       args:
-        - "{{ workflow.parameters.code-file  }}"
+        - "{{ workflow.parameters.code-file }}"
         - --column
         - "{{ inputs.parameters.column }}"
         - --row
         - "{{ inputs.parameters.row }}"
         - --version
-        - "{{ inputs.parameters.version }}"
-        - --datetime
-        - "{{ workflow.parameters.datetime }}"
+        - "{{ workflow.parameters.version }}"
+        - --start-year
+        - "{{ workflow.parameters.start-year }}"
+        - --end-year
+        - "{{ workflow.parameters.end-year }}"
       env:
         - name: DASK_ARRAY__RECHUNK__METHOD
           value: "tasks"
