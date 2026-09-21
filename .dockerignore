@@ -1,4 +1,6 @@
 coastlines-local
 data
+# but the tide model URL list must reach the build; the Dockerfile wgets it
+!data/tide_data_urls.txt
 notebooks
 *.tif
