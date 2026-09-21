@@ -1,30 +1,15 @@
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from coastlines.raster import tide_cutoffs
 import geopandas as gpd
 import numpy as np
 from odc.geo.geom import box
-from xarray import concat
+import xarray as xr
 
+from dep_tools.namers import DepItemPath
 from dep_coastlines.io.TideLoader import TideLoader
-from dep_coastlines.validation.util import make_tides
-
-
-def load_tides(gdf):
-    tide_loader = TideLoader(TIDES_NAMER)
-    mins = []
-    maxes = []
-    for _, row in gdf.iterrows():
-        # First arg is not used
-        amin, amax = tide_cutoffs(
-            ds=None, tides_da=tide_loader.load((row.column, row.row))
-        )
-        mins.append(amin.expand_dims(id=1))
-        maxes.append(amax.expand_dims(id=1))
-
-    # I assume that areas won't overlap, but we might need to consider that
-    return concat(mins, dim="id").mean(dim="id"), concat(maxes, dim="id").mean(dim="id")
+from dep_coastlines.tide_utils import tide_cutoffs_lr
+from dep_coastlines.validation.util import load_tides, make_tides
 
 
 def prep_xml():

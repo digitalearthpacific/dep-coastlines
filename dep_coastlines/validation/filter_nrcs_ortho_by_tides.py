@@ -2,13 +2,13 @@ from pathlib import Path
 import requests
 
 from dea_tools.spatial import xr_vectorize
-from coastlines.raster import tide_cutoffs
 import geopandas as gpd
 import pandas as pd
 from timezonefinder import TimezoneFinder
 from xarray import concat
 
 from dep_coastlines.config import CURRENT_COASTLINES_OUTPUT
+from dep_coastlines.tide_utils import tide_cutoffs_lr, tides_for_area
 from dep_coastlines.validation.util import make_tides
 from dep_coastlines.grid import buffered_grid as grid
 
@@ -59,7 +59,7 @@ def areas_near_mean_tide(gdf):
         agdf = gpd.GeoDataFrame([row], crs=gdf.crs)
         all_time = pd.date_range(start="1984", end="2025", freq="16d").tolist()
         tides = make_tides(agdf, crs=3832, time=all_time)
-        amin, amax = tide_cutoffs(ds=None, tides_da=tides)
+        amin, amax = tide_cutoffs_lr(tides)
         mins.append(amin.expand_dims(id=1))
         maxes.append(amax.expand_dims(id=1))
 
@@ -114,11 +114,11 @@ def process_layer(name):
 
 if __name__ == "__main__":
     names = [
-        "american_samoa_vivid_2022_30cm",
-        "cnmi_vivid_2022_30cm",
-        "guam_vivid_2022_30cm",
-        "guam_vivid",
-        "marshall_islands_vivid2021",
+        # "american_samoa_vivid_2022_30cm",
+        # "cnmi_vivid_2022_30cm",
+        # "guam_vivid_2022_30cm",
+        #        "guam_vivid",
+        # "marshall_islands_vivid2021",
         "marshall_islands_vivid_2023_30cm",
         "micronesia2021",
         "micronesia_vivid_2023_30cm",

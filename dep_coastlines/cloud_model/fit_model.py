@@ -1,18 +1,21 @@
-"""Train the cloud model."""
-
+from dataclasses import dataclass
 from joblib import dump
 
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.base import BaseEstimator
 
 from dep_coastlines.config import CLOUD_MODEL_FILE
-from dep_coastlines.cloud_model import SavedModel
-from src.cloud_model.prep_training_data import TRAINING_DATA_FILE
+from dep_coastlines.cloud_model.prep_training_data import TRAINING_DATA_FILE
 
 
-def main():
-    output = train(TRAINING_DATA_FILE)
-    dump(output, CLOUD_MODEL_FILE)
+@dataclass
+class SavedModel:
+    model: BaseEstimator
+    training_data: pd.DataFrame
+    predictor_columns: list[str]
+    response_column: str
+    codes: pd.DataFrame
 
 
 def train(training_data):
@@ -72,4 +75,5 @@ def train(training_data):
 
 
 if __name__ == "__main__":
-    main()
+    output = train(TRAINING_DATA_FILE)
+    dump(output, CLOUD_MODEL_FILE)

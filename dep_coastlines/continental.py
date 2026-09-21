@@ -14,10 +14,7 @@
 # https://github.com/digitalearthafrica/deafrica-coastlines/blob/main/coastlines/continental.py
 # by Jesse Anderson for Digital Earth Pacific.
 # Original authors: Robbi Bishop-Taylor, Alex Leith, Indiphile Ngqambuza
-# Major changes:
-#    * Read and write to s3
-#    * Create pmtiles output using tippecanoe
-#
+
 
 import os
 from pathlib import Path
@@ -36,7 +33,6 @@ from shapely.geometry.point import Point
 
 from dep_coastlines.common import coastlineItemPath
 from dep_coastlines.config import (
-    BUCKET,
     HTTPS_PREFIX,
     VECTOR_DATASET_ID,
     VECTOR_DATETIME,
@@ -44,32 +40,6 @@ from dep_coastlines.config import (
 )
 
 STYLES_FILE = "dep_coastlines/styles.csv"
-
-
-def calculate_roc_stats(ratesofchange, initial_year, minimum_valid_observations=15):
-    """Recalculate rates of change statistics at continental scale.
-
-    Thin wrapper around coastlines.vector.all_time_stats that avoids
-    importing dep_coastlines.vector (which pulls in heavy C extensions
-    that cause segfaults in long-running processes).
-    """
-    from coastlines.vector import all_time_stats
-
-    stats_list = ["valid_obs", "valid_span", "sce", "nsm", "max_year", "min_year"]
-    ratesofchange[stats_list] = ratesofchange.apply(
-        lambda x: all_time_stats(x, initial_year=initial_year), axis=1
-    )
-    ratesofchange["certainty"] = "good"
-    ratesofchange.loc[ratesofchange.rate_time.abs() > 200, "certainty"] = (
-        "extreme value (> 200 m)"
-    )
-    ratesofchange.loc[ratesofchange.angle_std > 30, "certainty"] = (
-        "high angular variability"
-    )
-    ratesofchange.loc[
-        ratesofchange.valid_obs < minimum_valid_observations, "certainty"
-    ] = "insufficient observations"
-    return ratesofchange
 
 
 def wms_fields(gdf):
@@ -102,7 +72,7 @@ def wms_fields(gdf):
 
 @click.command()
 @click.option(
-    "--vector-version",
+    "--vector_version",
     type=str,
     required=True,
     default=VECTOR_VERSION,
@@ -113,7 +83,7 @@ def wms_fields(gdf):
     "scale layers.",
 )
 @click.option(
-    "--continental-version",
+    "--continental_version",
     type=str,
     help="A unique string proving a name that will be used "
     "for output continental-scale layers. This allows "
@@ -121,25 +91,34 @@ def wms_fields(gdf):
     "generated from the same input vector data, e.g. for "
     "testing different hotspot of coastal change summary "
     "layers. If not provided, this will default to the "
-    'string provided to "--vector-version".',
+    'string provided to "--vector_version".',
 )
 @click.option(
-    "--skip-merge",
-    is_flag=True,
-    default=False,
-    help="Skip the slow S3 merge steps for shorelines and rates of "
-    "change. Assumes the GeoPackage already contains these layers "
-    "from a previous run.",
-)
-@click.option(
-    "--hotspots/--no-hotspots",
-    is_flag=True,
+    "--shorelines",
+    type=bool,
     default=True,
-    help="Whether to generate continental-scale hotspots of "
-    "coastal change summary layer.",
+    help="A boolean indicating whether to combine tiled "
+    "annual shorelines layers into a single continental-"
+    "scale annual shorelines layer.",
 )
 @click.option(
-    "--hotspots-radius",
+    "--ratesofchange",
+    type=bool,
+    default=True,
+    help="A boolean indicating whether to combine tiled "
+    "rates of change statistics layers into a single "
+    "continental-scale rates of change statistics layer.",
+)
+@click.option(
+    "--hotspots",
+    type=bool,
+    default=True,
+    help="A boolean indicating whether to generate a "
+    "continental-scale hotspots of coastal change summary "
+    "layer.",
+)
+@click.option(
+    "--hotspots_radius",
     default=[15000, 5000, 1000],
     multiple=True,
     help="The distance (in metres) used to generate coastal "
@@ -149,10 +128,10 @@ def wms_fields(gdf):
     "The default generates three hotspot layers with radii "
     "15000 m, 5000 m and 1000 m. To specify multiple custom "
     "radii, repeat this argument, e.g. "
-    "`--hotspots-radius 1000 --hotspots-radius 5000`.",
+    "`--hotspots_radius 1000 --hotspots_radius 5000`.",
 )
 @click.option(
-    "--baseline-year",
+    "--baseline_year",
     type=int,
     default=2024,
     help="The annual shoreline used to generate the hotspot "
@@ -171,23 +150,21 @@ def wms_fields(gdf):
     default=True,
     help="Set this to indicate whether to produce tiles.",
 )
-@click.option(
-    "--filter-to-pacific/--no-filter-to-pacific",
-    is_flag=True,
-    default=False,
-    help="Filter out data north of 18.5° latitude to exclude Hawaii.",
-)
 def continental_cli(
     vector_version,
     continental_version,
-    skip_merge,
+    shorelines,
+    ratesofchange,
     hotspots,
     hotspots_radius,
     baseline_year,
     include_styles,
     include_tiles,
-    filter_to_pacific,
 ):
+    #################
+    # Merge vectors #
+    #################
+
     log = configure_logging("Continental layers and hotspots generation")
 
     # If no continental version is provided, copy this from vector
@@ -198,51 +175,44 @@ def continental_cli(
     output_dir.mkdir(exist_ok=True, parents=True)
     log.info(f"Writing data to {output_dir}")
 
+    def input_paths(vector_version):
+        vectorItemPath = coastlineItemPath(
+            dataset_id=VECTOR_DATASET_ID, version=vector_version, time=VECTOR_DATETIME
+        )
+        fs = S3FileSystem(anon=False)
+        shoreline_paths = " ".join(
+            [
+                f"'/vsicurl?max_retry=3&url={HTTPS_PREFIX}/{path.split('/',1)[1]}'"
+                for path in fs.glob(
+                    f"{vectorItemPath.bucket}/{vectorItemPath._folder_prefix}/**/*{vectorItemPath.time}.gpkg"
+                )
+                if path.endswith("gpkg")
+            ]
+        )
+        ratesofchange_paths = " ".join(
+            [
+                f"'/vsicurl?max_retry=3&url={HTTPS_PREFIX}/{path.split('/',1)[1]}'"
+                for path in fs.glob(
+                    f"{vectorItemPath.bucket}/{vectorItemPath._folder_prefix}/**/*{vectorItemPath.time}_roc.gpkg"
+                )
+                if path.endswith("gpkg")
+            ]
+        )
+        return shoreline_paths, ratesofchange_paths
+
+    # Setup input and output file paths
+    shoreline_paths, ratesofchange_paths = input_paths(vector_version)
+
     # Output path for geopackage and zipped shapefiles
     OUTPUT_GPKG = output_dir / f"dep_ls_coastlines_{continental_version}.gpkg"
     OUTPUT_SHPS = output_dir / f"dep_ls_coastlines_{continental_version}.shp.zip"
 
-    #################
-    # Merge vectors #
-    #################
+    # If shapefile zip exists, delete it first
+    if OUTPUT_SHPS.exists():
+        OUTPUT_SHPS.unlink()
 
-    if not skip_merge:
-        def input_paths(vector_version):
-            vectorItemPath = coastlineItemPath(
-                dataset_id=VECTOR_DATASET_ID, version=vector_version, time=VECTOR_DATETIME
-            )
-            fs = S3FileSystem(anon=False)
-            shoreline_paths = " ".join(
-                [
-                    f"'/vsicurl?max_retry=3&url={HTTPS_PREFIX}/{path.split('/',1)[1]}'"
-                    for path in fs.glob(
-                        f"{vectorItemPath.bucket}/{vectorItemPath._folder_prefix}/**/*{vectorItemPath.time}.gpkg"
-                    )
-                    if path.endswith("gpkg")
-                ]
-            )
-            ratesofchange_paths = " ".join(
-                [
-                    f"'/vsicurl?max_retry=3&url={HTTPS_PREFIX}/{path.split('/',1)[1]}'"
-                    for path in fs.glob(
-                        f"{vectorItemPath.bucket}/{vectorItemPath._folder_prefix}/**/*{vectorItemPath.time}_roc.gpkg"
-                    )
-                    if path.endswith("gpkg")
-                ]
-            )
-            return shoreline_paths, ratesofchange_paths
-
-        # Setup input and output file paths
-        shoreline_paths, ratesofchange_paths = input_paths(vector_version)
-
-        log.info(f"Found {len(shoreline_paths.split())} shoreline files to merge")
-        log.info(f"Found {len(ratesofchange_paths.split())} rates of change files to merge")
-
-        # If shapefile zip exists, delete it first
-        if OUTPUT_SHPS.exists():
-            OUTPUT_SHPS.unlink()
-
-        # Combine annual shorelines into a single continental layer
+    # Combine annual shorelines into a single continental layer
+    if shorelines:
         from tempfile import NamedTemporaryFile
 
         TMP_GPKG = NamedTemporaryFile(suffix=".gpkg").name
@@ -257,9 +227,14 @@ def continental_cli(
             f"-dialect sqlite -nln shorelines_annual "
             f'-sql "select * from shorelines_annual order by year"'
         )
+
         log.info("Merging annual shorelines complete")
 
-        # Combine rates of change stats points into single continental layer
+    else:
+        log.info("Not writing shorelines")
+
+    # Combine rates of change stats points into single continental layer
+    if ratesofchange:
         os.system(
             f"ogrmerge.py "
             f"-o {OUTPUT_GPKG} {ratesofchange_paths} "
@@ -269,49 +244,7 @@ def continental_cli(
         log.info("Merging rates of change points complete")
 
     else:
-        log.info("Skipping merge steps, using existing GeoPackage")
-
-    ################################
-    # Load GeoPackage vector data  #
-    ################################
-
-    log.info("Loading continental vector data from GeoPackage")
-    try:
-        ratesofchange_gdf = gpd.read_file(
-            OUTPUT_GPKG, layer="rates_of_change", engine="pyogrio", use_arrow=True
-        ).set_index("uid")
-
-        ratesofchange_gdf = calculate_roc_stats(
-            ratesofchange_gdf,
-            initial_year=int(VECTOR_DATETIME[:4]),
-            minimum_valid_observations=18,
-        )
-
-        shorelines_gdf = gpd.read_file(
-            OUTPUT_GPKG, layer="shorelines_annual", engine="pyogrio", use_arrow=True
-        ).set_index("year")
-
-    except (fiona.errors.DriverError, ValueError):
-        raise FileNotFoundError(
-            "Continental-scale annual shoreline and rates of "
-            "change layers are required. Run without --skip-merge first."
-        )
-
-    if filter_to_pacific:
-        max_y = 2125000  # ~18.5°N in EPSG:3832
-        roc_mask = ratesofchange_gdf.geometry.y <= max_y
-        n_roc_removed = (~roc_mask).sum()
-        ratesofchange_gdf = ratesofchange_gdf[roc_mask]
-
-        sl_mask = shorelines_gdf.geometry.bounds["maxy"] <= max_y
-        n_sl_removed = (~sl_mask).sum()
-        shorelines_gdf = shorelines_gdf[sl_mask]
-
-        log.info(
-            f"Filtered to Pacific: removed {n_roc_removed} rates of change "
-            f"points and {n_sl_removed} shorelines north of {max_y} m "
-            f"(EPSG:3832)"
-        )
+        log.info("Not writing annual rates of change points")
 
     #####################
     # Generate hotspots #
@@ -320,7 +253,30 @@ def continental_cli(
     # Generate hotspot points that provide regional/continental summary
     # of hotspots of coastal erosion and growth
     if hotspots:
+        ###############################
+        # Load DEA CoastLines vectors #
+        ###############################
+
         log.info("Generating continental hotspots")
+
+        # Load continental shoreline and rates of change data
+        try:
+            # Use alt engines to speed up reading
+            ratesofchange_gdf = gpd.read_file(
+                OUTPUT_GPKG, layer="rates_of_change", engine="pyogrio", use_arrow=True
+            ).set_index("uid")
+
+            shorelines_gdf = gpd.read_file(
+                OUTPUT_GPKG, layer="shorelines_annual", engine="pyogrio", use_arrow=True
+            ).set_index("year")
+
+        except (fiona.errors.DriverError, ValueError):
+            raise FileNotFoundError(
+                "Continental-scale annual shoreline and rates of "
+                "change layers are required for hotspot generation. "
+                "Try re-running this analysis with the following "
+                "settings: `--shorelines True --ratesofchange True`."
+            )
 
         ######################
         # Calculate hotspots #
@@ -386,9 +342,9 @@ def continental_cli(
             # hotspots radius by 30 m along-shore rates of change point distance)
             hotspots_gdf["n"] = hotspot_grouped.size()
             hotspots_gdf["n"] = hotspots_gdf["n"].fillna(0)
-            hotspots_gdf.loc[hotspots_gdf.n < (radius / 30), "certainty"] = (
-                "insufficient points"
-            )
+            hotspots_gdf.loc[
+                hotspots_gdf.n < (radius / 30), "certainty"
+            ] = "insufficient points"
 
             # Generate a geohash UID for each point and set as index
             uids = (
@@ -439,35 +395,38 @@ def continental_cli(
     # Export zipped shapefiles #
     ############################
 
-    # Add rates of change points to shapefile zip
-    ratesofchange_shp = pd.concat(
-        [ratesofchange_gdf, wms_fields(gdf=ratesofchange_gdf)], axis=1
-    )
+    if ratesofchange:
+        # Add rates of change points to shapefile zip
+        # Add additional WMS fields and add to shapefile
+        ratesofchange_gdf = pd.concat(
+            [ratesofchange_gdf, wms_fields(gdf=ratesofchange_gdf)], axis=1
+        )
 
-    ratesofchange_shp.to_file(
-        OUTPUT_SHPS,
-        layer=f"coastlines_{continental_version}_rates_of_change",
-        schema={
-            "properties": vector_schema(ratesofchange_shp),
-            "geometry": "Point",
-        },
-        engine="fiona",
-    )
+        ratesofchange_gdf.to_file(
+            OUTPUT_SHPS,
+            layer=f"coastlines_{continental_version}_rates_of_change",
+            schema={
+                "properties": vector_schema(ratesofchange_gdf),
+                "geometry": "Point",
+            },
+            engine="fiona",
+        )
 
-    log.info("Writing rates of change points to zipped shapefiles complete")
+        log.info("Writing rates of change points to zipped shapefiles complete")
 
-    # Add annual shorelines to shapefile zip
-    shorelines_gdf.to_file(
-        OUTPUT_SHPS,
-        layer=f"coastlines_{continental_version}_shorelines_annual",
-        schema={
-            "properties": vector_schema(shorelines_gdf),
-            "geometry": ["MultiLineString", "LineString"],
-        },
-        engine="fiona",
-    )
+    if shorelines:
+        # Add annual shorelines to shapefile zip
+        shorelines_gdf.to_file(
+            OUTPUT_SHPS,
+            layer=f"coastlines_{continental_version}_shorelines_annual",
+            schema={
+                "properties": vector_schema(shorelines_gdf),
+                "geometry": ["MultiLineString", "LineString"],
+            },
+            engine="fiona",
+        )
 
-    log.info("Writing annual shorelines to zipped shapefiles complete")
+        log.info("Writing annual shorelines to zipped shapefiles complete")
 
     #########################
     # Add GeoPackage styles #
@@ -487,13 +446,10 @@ def continental_cli(
         log.info("Not writing styles to GeoPackage")
 
     if include_tiles:
-        log.info("Generating tiles with tippecanoe")
         OUTPUT_TILES = (
             Path(output_dir) / f"dep_ls_coastlines_{continental_version}.pmtiles"
         )
         build_tiles(OUTPUT_GPKG, OUTPUT_TILES)
-
-    upload_dir(output_dir, continental_version)
 
 
 def build_tiles(output_gpkg: Path, output_file: Path) -> None:
@@ -504,14 +460,12 @@ def build_tiles(output_gpkg: Path, output_file: Path) -> None:
         for layer_name in fiona.listlayers(output_gpkg)
         if layer_name != "layer_styles"
     }
-    tippecanoe_layers = ""
     for name, gdf in layers.items():
         gdf = gdf.to_crs(4326)
         gdf["geometry"] = gdf.geometry.apply(shift_negative_longitudes)
         output_geojson_path = output_file.parent / f"{output_file.stem}_{name}.geojson"
         output_pmtile_path = output_file.parent / f"{output_file.stem}_{name}.pmtiles"
         gdf.to_file(output_geojson_path)
-        tippecanoe_layers += f"{output_pmtile_path} "
         roc_opts = " -y sig_time -y rate_time -y certainty"
         opts = dict(
             hotspots_zoom_1=f"-B 0 {roc_opts}",
@@ -523,14 +477,6 @@ def build_tiles(output_gpkg: Path, output_file: Path) -> None:
         os.system(
             f"tippecanoe {opts} -pi -z13 -f -o {output_pmtile_path} -L {name}:{output_geojson_path}"
         )
-
-    os.system(f"tile-join -f -pk -o {output_file} {tippecanoe_layers}")
-
-
-def upload_dir(local_dir, version):
-    s3 = S3FileSystem()
-    s3_path = f"{BUCKET}/dep_ls_coastlines/processed/{version}/"
-    s3.put(local_dir, s3_path, recursive=True)
 
 
 if __name__ == "__main__":
