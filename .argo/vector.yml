@@ -8,7 +8,7 @@ spec:
   podGC:
     strategy: OnWorkflowSuccess
     deleteDelayDuration: 600s
-  parallelism: 600
+  parallelism: 100
   podMetadata:
     labels:
       app: coastlines
@@ -16,10 +16,6 @@ spec:
       karpenter.sh/do-not-disrupt: "true"
   nodeSelector:
     karpenter.sh/capacity-type: "spot"
-  hostAliases:
-    - ip: "3.5.87.18"
-      hostnames:
-        - "dep-public-staging.s3.us-west-2.amazonaws.com"
   arguments:
     parameters:
     - name: code-file
@@ -33,13 +29,10 @@ spec:
     - name: start-year
       value: "1999"
     - name: end-year
-      value: "2024"
+      value: "2025"
 
   templates:
   - name: workflow-entrypoint
-    retryStrategy:
-      limit: "3"
-      retryPolicy: "Always"
     podSpecPatch: |
       containers:
         - name: main
@@ -98,6 +91,9 @@ spec:
         - "{{ inputs.parameters.filter-existing-stac-items }}"
 
   - name: process
+    retryStrategy:
+      limit: "3"
+      retryPolicy: "Always"
     inputs:
       parameters:
       - name: column
@@ -114,7 +110,7 @@ spec:
           memory: 64Gi
       command: [ python ]
       args:
-        - "{{ workflow.parameters.code-file  }}"
+        - "{{ workflow.parameters.code-file }}"
         - --column
         - "{{ inputs.parameters.column }}"
         - --row
