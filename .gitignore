@@ -1,10 +1,3 @@
-# local data
-coastlines-local/
-data/
-
-# GIS leftovers
-*.aux.xml
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -111,10 +104,8 @@ celerybeat.pid
 # Environments
 .env
 .venv
-.envrc
 env/
 venv/
-venv*/
 ENV/
 env.bak/
 venv.bak/
@@ -143,6 +134,3 @@ dep_ls_coastlines
 
 # other
 .DS_Store
-pyvenv.cfg
-.vscode/
-.vim/
