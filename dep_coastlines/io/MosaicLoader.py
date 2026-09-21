@@ -6,7 +6,7 @@ from pystac import Item
 import xarray as xr
 
 from dep_tools.loaders import Loader
-from dep_tools.namers import DepItemPath
+from dep_tools.namers import GenericItemPath
 from dep_tools.parsers import datetime_parser
 
 from dep_coastlines.common import coastlineItemPath
@@ -17,9 +17,10 @@ from dep_coastlines.time_utils import composite_from_years
 
 class MultiyearMosaicLoader(Loader):
     """Load raster mosaics for multiple years and composite lengths."""
+
     def __init__(
         self,
-        start_year: str, 
+        start_year: str,
         end_year: str,
         years_per_composite: list[int] | int = [1, 3],
         version: str = MOSAIC_VERSION,
@@ -46,7 +47,9 @@ class MultiyearMosaicLoader(Loader):
 
     def _load_composite_set(self, area, years_per_composite) -> xr.Dataset:
         dss = []
-        for datetime in composite_from_years(datetime_parser(self._datetime), years_per_composite):
+        for datetime in composite_from_years(
+            datetime_parser(self._datetime), years_per_composite
+        ):
             itempath = coastlineItemPath(
                 dataset_id=MOSAIC_DATASET_ID,
                 version=self._version,
@@ -77,7 +80,7 @@ class MultiyearMosaicLoader(Loader):
             area (): Passed to :func:`MosaicLoader.load()`.
 
         Returns:
-            
+
         """
         if not isinstance(self._years_per_composite, list):
             return self._load_composite_set(area, self._years_per_composite)
