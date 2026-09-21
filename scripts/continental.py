@@ -14,7 +14,10 @@
 # https://github.com/digitalearthafrica/deafrica-coastlines/blob/main/coastlines/continental.py
 # by Jesse Anderson for Digital Earth Pacific.
 # Original authors: Robbi Bishop-Taylor, Alex Leith, Indiphile Ngqambuza
-
+# Major changes:
+#    * Read and write to s3
+#    * Create pmtiles output using tippecanoe
+#
 
 import os
 from pathlib import Path
@@ -33,11 +36,13 @@ from shapely.geometry.point import Point
 
 from dep_coastlines.common import coastlineItemPath
 from dep_coastlines.config import (
+    BUCKET,
     HTTPS_PREFIX,
     VECTOR_DATASET_ID,
     VECTOR_DATETIME,
     VECTOR_VERSION,
 )
+from dep_coastlines.vector import calculate_roc_stats
 
 STYLES_FILE = "dep_coastlines/styles.csv"
 
@@ -266,6 +271,12 @@ def continental_cli(
                 OUTPUT_GPKG, layer="rates_of_change", engine="pyogrio", use_arrow=True
             ).set_index("uid")
 
+            ratesofchange_gdf = calculate_roc_stats(
+                ratesofchange_gdf,
+                initial_year=int(VECTOR_DATETIME[:4]),
+                minimum_valid_observations=18,
+            )
+
             shorelines_gdf = gpd.read_file(
                 OUTPUT_GPKG, layer="shorelines_annual", engine="pyogrio", use_arrow=True
             ).set_index("year")
@@ -342,9 +353,9 @@ def continental_cli(
             # hotspots radius by 30 m along-shore rates of change point distance)
             hotspots_gdf["n"] = hotspot_grouped.size()
             hotspots_gdf["n"] = hotspots_gdf["n"].fillna(0)
-            hotspots_gdf.loc[
-                hotspots_gdf.n < (radius / 30), "certainty"
-            ] = "insufficient points"
+            hotspots_gdf.loc[hotspots_gdf.n < (radius / 30), "certainty"] = (
+                "insufficient points"
+            )
 
             # Generate a geohash UID for each point and set as index
             uids = (
@@ -451,6 +462,8 @@ def continental_cli(
         )
         build_tiles(OUTPUT_GPKG, OUTPUT_TILES)
 
+    upload_dir(output_dir, continental_version)
+
 
 def build_tiles(output_gpkg: Path, output_file: Path) -> None:
     layers = {
@@ -460,12 +473,14 @@ def build_tiles(output_gpkg: Path, output_file: Path) -> None:
         for layer_name in fiona.listlayers(output_gpkg)
         if layer_name != "layer_styles"
     }
+    tippecanoe_layers = ""
     for name, gdf in layers.items():
         gdf = gdf.to_crs(4326)
         gdf["geometry"] = gdf.geometry.apply(shift_negative_longitudes)
         output_geojson_path = output_file.parent / f"{output_file.stem}_{name}.geojson"
         output_pmtile_path = output_file.parent / f"{output_file.stem}_{name}.pmtiles"
         gdf.to_file(output_geojson_path)
+        tippecanoe_layers += f"{output_pmtile_path} "
         roc_opts = " -y sig_time -y rate_time -y certainty"
         opts = dict(
             hotspots_zoom_1=f"-B 0 {roc_opts}",
@@ -477,6 +492,14 @@ def build_tiles(output_gpkg: Path, output_file: Path) -> None:
         os.system(
             f"tippecanoe {opts} -pi -z13 -f -o {output_pmtile_path} -L {name}:{output_geojson_path}"
         )
+
+    os.system(f"tile-join -f -pk -o {output_file} {tippecanoe_layers}")
+
+
+def upload_dir(local_dir, version):
+    s3 = S3FileSystem()
+    s3_path = f"{BUCKET}/dep_ls_coastlines/processed/{version}/"
+    s3.put(local_dir, s3_path, recursive=True)
 
 
 if __name__ == "__main__":

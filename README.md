@@ -3,7 +3,11 @@
 This is a work-in-progress adaptation of [Digital Earth Australia (DEA)](https://github.com/GeoscienceAustralia/dea-coastlines) and [Digital Earth
 Africa
 Coastlines](https://github.com/digitalearthafrica/deafrica-coastlines) products
-for the Pacific nations. Please refer to the following for a description of the
+for 22 Pacific Island Countries and Territories, including American Samoa, Cook Islands,
+Federated States of Micronesia, Fiji, French Polynesia, Guam, Kiribati, Marshall Islands,
+Nauru, New Caledonia, Niue, Northern Mariana Islands, Palau, Papua New Guinea, Pitcairn Islands, Samoa, Solomon Islands, Tokelau, Tonga, Tuvalu, Vanuatu, and Wallis And Futuna.
+
+Please refer to the following for a description of the
 algorithms on which we based this work:
 
 > Bishop-Taylor, R., Nanson, R., Sagar, S., Lymburner, L. (2021). Mapping

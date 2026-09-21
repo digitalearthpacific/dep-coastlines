@@ -1,18 +1,31 @@
-from typing import Tuple
-
+from coastlines.raster import tide_cutoffs
 from eo_tides import pixel_tides
 from dep_tools.searchers import LandsatPystacSearcher
-from odc.geo.geobox import AnchorEnum
+from dep_tools.stac_utils import use_alternate_s3_href
+from geopandas import GeoDataFrame
+from odc.geo.geobox import AnchorEnum, GeoBox
+from pystac import Item, ItemCollection
 from pystac_client import Client as PystacClient
 from xarray import DataArray, Dataset
 
 from dep_coastlines.config import STAC_CATALOG_URL, STAC_COLLECTIONS
 
 from dep_coastlines.io import ProjOdcLoader
-from dep_coastlines.common import use_alternate_s3_href
 
 
-def tides_for_area(area, datetime="1984/2024", **kwargs):
+def tides_for_area(
+    area: GeoDataFrame, datetime: str = "1984/2024", **kwargs
+) -> Dataset:
+    """Calculate tides for all landsat scenes in the given area and time.
+
+    Args:
+        area: The area or areas in which to search.
+        datetime: The datetime string, passed to :func:`pystac_client.Client.search`.
+        **kwargs: Additional arguments passed to :func:`tides_for_items`.
+
+    Returns:
+
+    """
     modifier = use_alternate_s3_href if STAC_CATALOG_URL == "https://landsatlook.usgs.gov/stac-server" else None
     client = PystacClient.open(
         STAC_CATALOG_URL,
@@ -27,7 +40,9 @@ def tides_for_area(area, datetime="1984/2024", **kwargs):
     return tides_for_items(items, area, **kwargs)
 
 
-def tides_for_items(items, area, **kwargs):
+def tides_for_items(
+    items: ItemCollection | list[Item], area: GeoDataFrame | GeoBox, **kwargs
+) -> Dataset:
     ds = ProjOdcLoader(
         chunks=dict(band=1, time=1, x=8192, y=8192),
         resampling={"qa_pixel": "nearest", "*": "cubic"},
@@ -59,7 +74,10 @@ def tides_lowres(xr: Dataset, tide_directory="data/raw/tidal_models") -> Dataset
 
 def filter_by_tides(ds: Dataset, tides_lr: DataArray) -> Dataset:
     """Remove out of range tide values from a given dataset."""
-    tide_cutoff_min, tide_cutoff_max = tide_cutoffs_lr(tides_lr, tide_centre=0.0)
+    # first argument is not used
+    tide_cutoff_min, tide_cutoff_max = tide_cutoffs(
+        ds=None, tides_da=tides_lr, tide_centre=0.0
+    )
 
     tides_lr = tides_lr.sel(time=ds.time[ds.time.isin(tides_lr.time)])
 
@@ -86,20 +104,3 @@ def filter_by_tides(ds: Dataset, tides_lr: DataArray) -> Dataset:
 
     # Apply mask, and load in corresponding tide masked data
     return ds.where(tide_bool_hr)
-
-
-def tide_cutoffs_lr(
-    tides_lowres: DataArray, tide_centre=0.0
-) -> Tuple[DataArray, DataArray]:
-    """A replacement for coastlines.tide_cutoffs that is a little memory
-    friendlier"""
-    # Calculate min and max tides
-    tide_min = tides_lowres.min(dim="time")
-    tide_max = tides_lowres.max(dim="time")
-
-    # Identify cutoffs
-    tide_cutoff_buffer = (tide_max - tide_min) * 0.25
-    tide_cutoff_min = tide_centre - tide_cutoff_buffer
-    tide_cutoff_max = tide_centre + tide_cutoff_buffer
-
-    return tide_cutoff_min, tide_cutoff_max

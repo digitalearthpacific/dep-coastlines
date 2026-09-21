@@ -1,24 +1,64 @@
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "dep-coastlines"
-version = "0.6.0"
-description = "Coastlines mapping for Digital Earth Pacific"
-authors = [{"name" = "Jesse Anderson <jesse.anderson@gmail.com>"}]
-license = {file = "LICENSE"}
+authors = [{ name = "Jesse Anderson", email = "jesse.anderson@gmail.com" }]
+description = "Shoreline mapping for Digital Earth Pacific"
+dynamic = ["version"]
+license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.10"
-dynamic = ["dependencies"]
-
-[tool.setuptools]
-packages = [
-  "dep_coastlines",
-  "dep_coastlines.io",
-  "dep_coastlines.cloud_model",
-  "dep_coastlines.validation"
+dependencies = [
+    "click>=8.2.1",
+    "cloud-logger",
+    "dask[complete]>=2025.7.0",
+    "dea-coastlines",
+    "dea-tools>=0.4.1",
+    "dep-tools",
+    "eo-tides>=0.8.2",
+    "gdal==3.10.3",
+    "h5netcdf>=1.6.4",
+    "joblib>=1.5.2",
+    "llvmlite>=0.44.0",
+    "numba>=0.61.2",
+    "odc-geo>=0.4.10",
+    "pyarrow>=21.0.0",
+    "pyogrio>=0.11.1",
+    "rasterio==1.3.11",
+    "scikit-learn>=1.7.1",
+    "typer>=0.17.4",
+    "xarray-spatial>=0.4.0",
 ]
 
-[tool.setuptools.dynamic]
-dependencies = { file = ["requirements.txt"] }
+[tool.hatch.build.targets.wheel]
+packages = ["dep_coastlines"]
+
+[tool.hatch.version]
+path = "dep_coastlines/__init__.py"
+
+[tool.isort]
+profile = "black"
+line_length = 88 
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+combine_as_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv.sources]
+dep-tools = { git = "https://github.com/digitalearthpacific/dep-tools.git", tag = "v0.5.2" }
+dea-coastlines = { git = "https://github.com/GeoscienceAustralia/dea-coastlines.git", tag = "3.0.1" }
+cloud-logger = { git = "https://github.com/jessjaco/cloud-logger.git" }
+
+[dependency-groups]
+dev = [
+    "black>=25.9.0",
+    "isort>=7.0.0",
+    "plotnine>=0.15.0",
+    "pyright>=1.1.406",
+    "pytest>=8.4.2",
+]
