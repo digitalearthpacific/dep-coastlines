@@ -1,6 +1,9 @@
 FROM ghcr.io/osgeo/gdal:ubuntu-full-3.10.3
 
-RUN apt-get update && apt-get install -y \
+# The base GDAL image ships an Apache Arrow apt source whose repo is now signed
+# with a key no GDAL image includes; nothing here needs that repo, so drop it.
+RUN rm -f /etc/apt/sources.list.d/*arrow* \
+    && apt-get update && apt-get install -y \
     python3-pip \
     python3-dev \
     git \
