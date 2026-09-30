@@ -264,5 +264,10 @@ def load_land_additions(da: DataArray) -> Dataset:
         .to_crs(da.rio.crs)
         .clip(box(*da.rio.bounds()))
     )
+    # Most tiles have no additions, and make_geocube fails on an empty input,
+    # so return an all-False (y, x) mask instead.
+    if additions.empty:
+        other_dims = {dim: 0 for dim in da.dims if dim not in ("y", "x")}
+        return xr.full_like(da.isel(other_dims, drop=True), False, dtype=bool)
     additions["one"] = 1
     return make_geocube(additions, like=da, measurements=["one"]).one == 1
