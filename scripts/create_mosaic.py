@@ -136,7 +136,7 @@ def _process_all_years(
     )
 
     paths = []
-    years = composite_from_years(parse_datetime(all_time.replace("/", "_")), [1, 3])
+    years = composite_from_years(datetime_parser(all_time.replace("/", "_")), [1, 3])
     for year in years:
         print(year)
         configure_s3_access(cloud_defaults=True, requester_pays=True)
@@ -199,7 +199,7 @@ class ItemFilterer(Searcher):
                 datetime.strptime(item.properties["datetime"], format_string).year
             )
 
-            if item_year in datetime_parser(year, "/"):
+            if item_year in datetime_parser(year.replace("/", "_")):
                 self._items.append(item)
 
         if len(self._items) == 0:
