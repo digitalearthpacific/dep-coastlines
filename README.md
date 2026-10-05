@@ -23,6 +23,16 @@ writeup is in process.
 
 The product is visible on the [Digital Earth Pacific](https://digitalearthpacific.org) [map interface](https://maps.digitalearthpacific.org).
 
+## Data sources
+
+Land areas used to define where coastlines are mapped come from
+[GADM](https://gadm.org) 4.1, plus a small number of islands that GADM leaves
+out, taken from [OpenStreetMap](https://www.openstreetmap.org/copyright)
+(© OpenStreetMap contributors, [ODbL](https://opendatacommons.org/licenses/odbl/))
+via [Overture Maps](https://overturemaps.org). See `_osm_land_additions` in
+`dep_coastlines/grid.py`.
+
+
 ## Notes for running for recent years
 
 Configure the raster analysis to overwrite, and run for three years (like, for 2025, use 2024/2026).
@@ -123,3 +133,22 @@ that lines crossing the antimeridian render correctly.
 python dep_coastlines/fix_lines_across_antimeridian.py \
   input.gpkg output.gpkg
 ```
+
+### Other Operations
+
+#### (re-)Generating the grid and land raster
+
+The study area is defined by two files that are built once and cached on S3
+under `dep_ls_coastlines/raw/` in the project bucket:
+
+- `coastlines_aoi.tif`: the land raster used during cleaning
+- `buffered_coastline_grid.gpkg`: the grid of tiles to process
+
+`dep_coastlines/grid.py` builds these when they are missing or when
+`OVERWRITE = True` in that module. Changing the land areas (for example, adding to
+`_osm_land_additions`) has no effect until both files are rebuilt. To rebuild
+them, set `OVERWRITE = True` in `dep_coastlines/grid.py`, import the module
+once (`python -c "import dep_coastlines.grid"`) with write access to the bucket,
+then set it back to `False`. Rebuild both files in the same run so they use the
+same Overture release. Tiles that are new or changed then need to be run through
+the raster and vector stages.
