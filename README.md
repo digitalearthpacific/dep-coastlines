@@ -23,6 +23,15 @@ writeup is in process.
 
 The product is visible on the [Digital Earth Pacific](https://digitalearthpacific.org) [map interface](https://maps.digitalearthpacific.org).
 
+## Data sources
+
+Land areas used to define where coastlines are mapped come from
+[GADM](https://gadm.org) 4.1, plus a small number of islands that GADM leaves
+out, taken from [OpenStreetMap](https://www.openstreetmap.org/copyright)
+(© OpenStreetMap contributors, [ODbL](https://opendatacommons.org/licenses/odbl/))
+via [Overture Maps](https://overturemaps.org). See `_osm_land_additions` in
+`dep_coastlines/grid.py`.
+
 ## Notes for running for recent years
 
 Configure the raster analysis to overwrite, and run for three years (like, for 2025, use 2024/2026).

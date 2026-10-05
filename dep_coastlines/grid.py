@@ -3,13 +3,13 @@
 from pathlib import Path
 
 import geopandas as gpd
-from osgeo import gdal, gdalconst
 import pandas as pd
-from shapely import make_valid
-from s3fs import S3FileSystem
-
-from dep_tools.grids import grid, PACIFIC_EPSG, gadm
+from dep_tools.grids import PACIFIC_EPSG, gadm, grid
 from dep_tools.utils import fix_winding
+from osgeo import gdal, gdalconst
+from pyarrow import fs
+from s3fs import S3FileSystem
+from shapely import make_valid
 
 import dep_coastlines.config as config
 
@@ -161,7 +161,8 @@ def _full_aoi() -> gpd.GeoDataFrame:
 
     Currently this contains all areas defined by :func:`dep_tools.grids.gadm`
     plus the US state of Hawaii, which was included when testing some
-    validation data only available there.
+    validation data only available there, plus land that GADM is missing
+    (see :func:`_osm_land_additions`).
     """
     padm = gadm()
     hawaii = (
@@ -173,7 +174,49 @@ def _full_aoi() -> gpd.GeoDataFrame:
         .loc[["US-HI"]]
         .reset_index()
     )
-    return pd.concat([padm, hawaii]).dissolve()[["geometry"]]
+    return pd.concat([padm, hawaii, _osm_land_additions()]).dissolve()[["geometry"]]
+
+
+def _osm_land_additions() -> gpd.GeoDataFrame:
+    """Load land that GADM is missing from the Overture Maps copy of OSM land.
+
+    GADM leaves out some small islands (for example southern Jaluit Atoll and
+    Kili Island in the Marshall Islands, see issue #58). Without them, those
+    areas fall outside the processing grid and are never mapped. To add
+    another area, append it to `areas`.
+
+    Overture only keeps recent releases, so the latest one is used. The
+    release is recorded in the `source` column.
+
+    This function does not accommodate areas that cross the antimeridian.
+    """
+    # name: (xmin, ymin, xmax, ymax) in EPSG:4326
+    areas = {
+        "Jaluit Atoll, MHL": (169.40, 5.70, 169.80, 6.35),
+        "Kili Island, MHL": (169.08, 5.60, 169.16, 5.68),
+    }
+    overture_bucket = "overturemaps-us-west-2/release"
+    # Release folders are named by date, so the last one is the latest
+    release = sorted(_remote_fs.ls(overture_bucket))[-1].split("/")[-1]
+    additions = pd.concat(
+        [
+            # Only the `land` class of the `land` subtype is kept. These are
+            # the polygons built from OSM coastlines. Other classes (island,
+            # islet, archipelago) overlap them, and reefs are not land.
+            gpd.read_parquet(
+                f"{overture_bucket}/{release}/theme=base/type=land/",
+                filesystem=fs.S3FileSystem(anonymous=True, region="us-west-2"),
+                bbox=bounds,
+                columns=["id", "geometry"],
+                filters=[("subtype", "==", "land"), ("class", "==", "land")],
+            ).assign(name=name)
+            for name, bounds in areas.items()
+        ]
+    )
+    additions["source"] = f"OpenStreetMap via Overture Maps {release}, ODbL"
+    # GeoParquet labels the data OGC:CRS84, which is the same as EPSG:4326 in
+    # lon/lat order, but geopandas won't concatenate the two with GADM.
+    return additions.set_crs(4326, allow_override=True)
 
 
 _remote_fs = S3FileSystem(anon=True)
