@@ -7,7 +7,6 @@ import pandas as pd
 from dep_tools.grids import PACIFIC_EPSG, gadm, grid
 from dep_tools.utils import fix_winding
 from osgeo import gdal, gdalconst
-from pyarrow import fs
 from s3fs import S3FileSystem
 from shapely import make_valid
 
@@ -205,9 +204,9 @@ def _osm_land_additions() -> gpd.GeoDataFrame:
             # islet, archipelago) overlap them, and reefs are not land.
             gpd.read_parquet(
                 f"{overture_bucket}/{release}/theme=base/type=land/",
-                filesystem=fs.S3FileSystem(anonymous=True, region="us-west-2"),
+                filesystem=_remote_fs,
                 bbox=bounds,
-                columns=["id", "geometry"],
+                columns=["geometry"],
                 filters=[("subtype", "==", "land"), ("class", "==", "land")],
             ).assign(name=name)
             for name, bounds in areas.items()

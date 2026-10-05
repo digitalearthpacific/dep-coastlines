@@ -1,16 +1,16 @@
 import geopandas as gpd
 import pandas as pd
 import pytest
+from dep_tools.grids import gadm
 
 from dep_coastlines.grid import _osm_land_additions
 
 
 @pytest.fixture(scope="module")
 def mhl_gadm() -> gpd.GeoDataFrame:
-    return gpd.read_file(
-        "https://geodata.ucdavis.edu/gadm/gadm4.1/gpkg/gadm41_MHL.gpkg",
-        layer="ADM_ADM_0",
-    )
+    # Use the same GADM copy the grid is built from
+    padm = gadm()
+    return padm.loc[padm.GID_0 == "MHL"]
 
 
 @pytest.fixture(scope="module")
