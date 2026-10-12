@@ -8,7 +8,7 @@ from pystac import Item, ItemCollection
 from pystac_client import Client as PystacClient
 from xarray import DataArray, Dataset
 
-from dep_coastlines.config import STAC_CATALOG_URL, STAC_COLLECTIONS
+from dep_coastlines.config import STAC_CATALOG_URL, STAC_COLLECTIONS, TIDE_MODEL
 
 from dep_coastlines.io import ProjOdcLoader
 
@@ -60,12 +60,12 @@ def tides_lowres(xr: Dataset, tide_directory="data/raw/tidal_models") -> Dataset
     tides_lowres = pixel_tides(
         xr,
         resample=False,
-        model="FES2022_load",
+        model=TIDE_MODEL,
         directory=tide_directory,
         resolution=3300,
         parallel=False,  # not doing parallel since it seemed to be slower
-        extrapolate=True,  # we are likely using the fes2022 extrapolated tide
-        # data but there are still some areas which are mis-masked as lakes
+        # Even the extrapolated data leaves some coastal areas masked as lakes
+        extrapolate=True,
     ).transpose("time", "y", "x")
 
     tides_lowres.coords["time"] = tides_lowres.coords["time"].astype("str")
