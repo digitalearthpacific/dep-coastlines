@@ -258,7 +258,20 @@ def load_gadm_land(ds: Dataset | DataArray) -> DataArray:
 
 
 def load_land_additions(da: DataArray) -> Dataset:
+    """Make a land mask from the polygons in data/land_areas_to_add.gpkg.
 
+    The polygons mark land that the GADM land raster is missing, such as
+    newly formed islands. They are added to the known land areas.
+
+    Args:
+        da: A DataArray with `"x"` & `"y"` dimensions and a CRS. The mask is
+            made on its grid.
+
+    Returns:
+        A boolean (y, x) DataArray with the same coordinates as `da`, true
+        where a polygon covers the pixel. It is all false when no polygons
+        fall within the bounds of `da`.
+    """
     additions = (
         gpd.read_file("data/land_areas_to_add.gpkg")
         .to_crs(da.rio.crs)

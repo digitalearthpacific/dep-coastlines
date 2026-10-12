@@ -1,5 +1,7 @@
+import geopandas as gpd
 import numpy as np
 import xarray as xr
+from shapely.geometry import box
 from dep_coastlines.raster.cleaning import (
     fill_with_nearby_dates,
     load_land_additions,
@@ -218,5 +220,14 @@ def test_load_land_additions_with_additions():
     # Hunga Tonga-Hunga Ha'apai, where the file has a polygon
     water_index = _water_index_around(3_852_700, -2_322_600)
     result = load_land_additions(water_index)
-    assert result.shape == (100, 100)
-    assert result.any()
+    xr.testing.assert_equal(result.x, water_index.x)
+    xr.testing.assert_equal(result.y, water_index.y)
+
+    # The mask should be True where the polygon is, so it isn't flipped
+    additions = (
+        gpd.read_file("data/land_areas_to_add.gpkg")
+        .to_crs(water_index.rio.crs)
+        .clip(box(*water_index.rio.bounds()))
+    )
+    inside_point = additions.geometry.iloc[0].representative_point()
+    assert result.sel(x=inside_point.x, y=inside_point.y, method="nearest")
