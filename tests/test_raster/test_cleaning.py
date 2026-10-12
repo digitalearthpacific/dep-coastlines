@@ -1,7 +1,10 @@
+import geopandas as gpd
 import numpy as np
 import xarray as xr
+from shapely.geometry import box
 from dep_coastlines.raster.cleaning import (
     fill_with_nearby_dates,
+    load_land_additions,
     smooth_gaussian,
     remove_disconnected_land,
 )
@@ -192,3 +195,39 @@ def test_fill_with_nearby_dates_dataarray():
     )
 
     xr.testing.assert_equal(fill_with_nearby_dates(data), expected_output)
+
+
+def _water_index_around(x_center: float, y_center: float) -> xr.DataArray:
+    """A small (year, y, x) array in EPSG:3832 with 30 m pixels."""
+    offsets = np.arange(-50, 50) * 30.0
+    water_index = xr.DataArray(
+        np.zeros((2, 100, 100)),
+        dims=("year", "y", "x"),
+        coords=dict(year=["2020", "2021"], y=y_center - offsets, x=x_center + offsets),
+    )
+    return water_index.rio.write_crs(3832)
+
+
+def test_load_land_additions_without_additions():
+    # Jaluit Atoll, where the file has no polygons
+    water_index = _water_index_around(2_180_000, 660_000)
+    result = load_land_additions(water_index)
+    assert result.dims == ("y", "x")
+    assert not result.any()
+
+
+def test_load_land_additions_with_additions():
+    # Hunga Tonga-Hunga Ha'apai, where the file has a polygon
+    water_index = _water_index_around(3_852_700, -2_322_600)
+    result = load_land_additions(water_index)
+    xr.testing.assert_equal(result.x, water_index.x)
+    xr.testing.assert_equal(result.y, water_index.y)
+
+    # The mask should be True where the polygon is, so it isn't flipped
+    additions = (
+        gpd.read_file("data/land_areas_to_add.gpkg")
+        .to_crs(water_index.rio.crs)
+        .clip(box(*water_index.rio.bounds()))
+    )
+    inside_point = additions.geometry.iloc[0].representative_point()
+    assert result.sel(x=inside_point.x, y=inside_point.y, method="nearest")

@@ -2,5 +2,7 @@ coastlines-local
 data
 # but the tide model URL list must reach the build; the Dockerfile wgets it
 !data/tide_data_urls.txt
+# and the land additions are read at runtime by load_land_additions
+!data/land_areas_to_add.gpkg
 notebooks
 *.tif
