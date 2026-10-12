@@ -30,5 +30,9 @@ VECTOR_VERSION = "0.8.4dev4"
 VECTOR_DATASET_ID = "coastlines/interim/coastlines"
 VECTOR_DATETIME = "1999/2025"
 
+TIDE_MODEL = "FES2022_extrapolated"
+"""str: The pyTMD tide model name. The extrapolated FES2022 ocean tide fills
+gaps along coastlines that the standard version leaves empty."""
+
 STAC_CATALOG_URL = os.getenv("STAC_CATALOG_URL", "https://landsatlook.usgs.gov/stac-server")
 STAC_COLLECTIONS = os.getenv("STAC_COLLECTIONS", "landsat-c2l2-sr").split(",")

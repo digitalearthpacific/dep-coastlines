@@ -19,7 +19,7 @@ import rioxarray
 from shapely import box
 import typer
 
-
+from dep_coastlines.config import TIDE_MODEL
 from validation.util import make_tides
 
 CHUNK_SIZE = 8192
@@ -74,7 +74,7 @@ def filter_by_tides(ds):
         resample=False,
         resolution=3300,
         directory="data/raw/tidal_models",
-        model="FES2022_load",
+        model=TIDE_MODEL,
     )
     # 1st argument not used
     tide_cutoff_min, tide_cutoff_max = tide_cutoffs(ds=None, tides_da=all_tides)
@@ -93,7 +93,7 @@ def filter_by_tides(ds):
         dask_chunks=(CHUNK_SIZE, CHUNK_SIZE),
         dask_compute=False,
         directory="data/raw/tidal_models",
-        model="FES2022_load",
+        model=TIDE_MODEL,
     )
 
     tide_bool = (ds_tides >= tide_cutoff_min_hr) & (ds_tides <= tide_cutoff_max_hr)
