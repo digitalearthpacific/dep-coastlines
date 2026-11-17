@@ -11,7 +11,7 @@ from typer import Option, run
 from dep_coastlines.cloud_model import SavedModel  # noqa
 from dep_coastlines.common import coastlineItemPath, coastlineLogger
 from dep_coastlines.config import MOSAIC_VERSION
-from dep_coastlines.grid import buffered_grid as GRID
+from dep_coastlines.grid import buffered_grid
 from dep_coastlines.io import CoastlineWriter, MultiyearMosaicLoader
 from dep_coastlines.vector import Cleaner
 
@@ -64,7 +64,7 @@ def process_id(
     )
 
     ErrorCategoryAreaTask(
-        task_id, GRID.loc[[task_id]], loader, processor, writer, logger
+        task_id, buffered_grid().loc[[task_id]], loader, processor, writer, logger
     ).run()
 
 

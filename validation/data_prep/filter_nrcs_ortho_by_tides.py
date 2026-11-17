@@ -10,7 +10,7 @@ from xarray import concat
 
 from dep_coastlines.config import CURRENT_COASTLINES_OUTPUT
 from dep_coastlines.validation.util import make_tides
-from dep_coastlines.grid import buffered_grid as grid
+from dep_coastlines.grid import buffered_grid
 
 VALID_AREAS_OUTPUT_DIR = Path("data/validation/valid_areas/nrcs_ortho")
 VALIDATION_LINES_OUTPUT_DIR = Path("data/validation/validation_lines/nrcs_ortho")
@@ -32,7 +32,7 @@ def load_metadata(name):
     gjson = resp.json()
 
     features = gpd.GeoDataFrame.from_features(gjson, crs=crs)
-    return features.overlay(grid.to_crs(features.crs).reset_index(), how="intersection")
+    return features.overlay(buffered_grid().to_crs(features.crs).reset_index(), how="intersection")
 
 
 def set_timestamp(gdf):

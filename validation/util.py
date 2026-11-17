@@ -20,7 +20,7 @@ from dep_coastlines.config import (
     CURRENT_COASTLINES_OUTPUT,
     NEXT_GEN_COASTLINES_OUTPUT,
 )
-from dep_coastlines.grid import buffered_grid as GRID
+from dep_coastlines.grid import buffered_grid
 from dep_coastlines.tide_utils import tides_lowres
 
 
@@ -53,7 +53,9 @@ def load_coastlines(
 
 
 @retry(tries=3)
-def load_coastlines_raster_for_geometry(geometry, year, grid=GRID) -> DataArray:
+def load_coastlines_raster_for_geometry(geometry, year, grid=None) -> DataArray:
+    if grid is None:
+        grid = buffered_grid()
     # get index of grid cells for geometry
     indices = grid[grid.intersects(geometry.union_all())].index
     itemPath = coastlineItemPath(

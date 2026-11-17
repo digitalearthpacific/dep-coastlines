@@ -27,7 +27,7 @@ from dep_coastlines.common import (
     coastlineLogger,
 )
 from dep_coastlines.config import MOSAIC_DATASET_ID
-from dep_coastlines.grid import buffered_grid as grid
+from dep_coastlines.grid import buffered_grid
 from dep_coastlines.io import ProjOdcLoader
 from dep_coastlines.raster.mosaic import MosaicProcessor
 from dep_coastlines.tide_utils import tides_for_items
@@ -69,7 +69,7 @@ def process_id(
         anchor=AnchorEnum.CENTER,
     )
 
-    area = grid.loc[[task_id]]
+    area = buffered_grid().loc[[task_id]]
 
     namer = coastlineItemPath(dataset_id, version, datetime)
     logger = coastlineLogger(namer, dataset_id=dataset_id)
