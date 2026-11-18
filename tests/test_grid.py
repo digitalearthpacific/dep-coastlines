@@ -1,9 +1,38 @@
 import geopandas as gpd
 import pandas as pd
 import pytest
-from dep_tools.grids import gadm
+from dep_tools.grids import PACIFIC_EPSG, gadm
+from shapely.geometry import box
 
-from dep_coastlines.grid import _osm_land_additions
+from dep_coastlines.grid import (
+    _full_aoi,
+    _osm_land_additions,
+    buffered_grid,
+    debug_grid,
+)
+
+
+def test_buffered_grid_loads():
+    grid = buffered_grid()
+    assert not grid.empty
+    assert grid.index.names == ["column", "row"]
+    assert {"id", "tile_id", "epsg"} <= set(grid.columns)
+    assert grid.crs == PACIFIC_EPSG
+    assert grid.epsg.notna().all()
+
+
+def test_debug_tiles_are_in_grid():
+    # Raises a KeyError if any debugging tile is missing from the grid
+    assert not debug_grid().empty
+
+
+def test_aoi_excludes_hawaii():
+    # Covers the main and northwestern Hawaiian islands. A plain latitude
+    # cutoff would also catch the northern Mariana Islands.
+    hawaii = gpd.GeoSeries([box(-179, 18.5, -154, 29)], crs=4326)
+    # Compare in the Pacific CRS so the antimeridian doesn't split shapes
+    aoi = _full_aoi().to_crs(PACIFIC_EPSG)
+    assert not aoi.intersects(hawaii.to_crs(PACIFIC_EPSG).iloc[0]).any()
 
 
 @pytest.fixture(scope="module")

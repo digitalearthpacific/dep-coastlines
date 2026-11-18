@@ -64,7 +64,7 @@ def buffered_grid(overwrite: bool = False) -> gpd.GeoDataFrame:
     )
 
 
-def test_buffered_grid() -> gpd.GeoDataFrame:
+def debug_grid() -> gpd.GeoDataFrame:
     """Select tiles which have been useful in debugging outputs."""
     test_tiles = [
         (123, 11),
