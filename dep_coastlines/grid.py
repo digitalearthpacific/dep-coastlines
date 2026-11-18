@@ -11,11 +11,13 @@ from typing import cast
 
 import geopandas as gpd
 import pandas as pd
+import rioxarray as rx
 from dep_tools.grids import PACIFIC_EPSG, gadm, grid
 from dep_tools.utils import fix_winding
 from osgeo import gdal, gdalconst
 from s3fs import S3FileSystem
 from shapely import make_valid
+from xarray import DataArray
 
 import dep_coastlines.config as config
 
@@ -29,31 +31,18 @@ remote_aoi_raster_path = f"{config.BUCKET}/dep_ls_coastlines/raw/{aoi_raster_nam
 
 
 @cache
-def buffered_grid(overwrite: bool = False) -> gpd.GeoDataFrame:
+def buffered_grid() -> gpd.GeoDataFrame:
     """Load the analysis grid, indexed by (column, row).
 
     The grid is read from S3 once and reused on later calls.
 
-    Args:
-        overwrite: Whether to rebuild the area of interest raster and the
-            grid, and upload them to S3, before loading. This needs S3
-            write access.
-
     Raises:
-        FileNotFoundError: If the grid is not on S3 and `overwrite` is
-            `False`. The grid is never rebuilt without being asked, so
-            existing outputs always match the grid they were made with.
+        FileNotFoundError: If the grid is not on S3. The grid is never
+            rebuilt without being asked, so existing outputs always match
+            the grid they were made with.
     """
-    if overwrite:
-        _write_aoi_raster()
-        _write_grid()
-
     anon_fs = S3FileSystem(anon=True)
-    if not anon_fs.exists(buffered_grid_bucket_path):
-        raise FileNotFoundError(
-            f"No grid at s3://{buffered_grid_bucket_path}. "
-            "Run `python -m dep_coastlines.grid` to build it."
-        )
+    _check_on_s3(anon_fs, buffered_grid_bucket_path)
     # set_index keeps the GeoDataFrame at runtime, but pyright types its
     # result as a plain DataFrame
     return cast(
@@ -62,6 +51,29 @@ def buffered_grid(overwrite: bool = False) -> gpd.GeoDataFrame:
             ["column", "row"]
         ),
     )
+
+
+def aoi_raster() -> DataArray:
+    """Open the area of interest raster (1 for land) from S3.
+
+    Raises:
+        FileNotFoundError: If the raster is not on S3.
+    """
+    _check_on_s3(S3FileSystem(anon=True), remote_aoi_raster_path)
+    return cast(
+        DataArray, rx.open_rasterio(f"s3://{remote_aoi_raster_path}", chunks=True)
+    )
+
+
+def rebuild() -> None:
+    """Rebuild the area of interest raster and the grid and upload them to S3.
+
+    Both are built from the same area of interest, so they always match.
+    This needs S3 write access.
+    """
+    aoi = _full_aoi()
+    _write_aoi_raster(aoi)
+    _write_grid(aoi)
 
 
 def debug_grid() -> gpd.GeoDataFrame:
@@ -153,14 +165,16 @@ def debug_grid() -> gpd.GeoDataFrame:
     return buffered_grid().loc[test_tiles]
 
 
-def make_grid(grid_buffer: int | float = 250) -> gpd.GeoDataFrame:
+def make_grid(
+    aoi: gpd.GeoDataFrame, grid_buffer: int | float = 250
+) -> gpd.GeoDataFrame:
     """Create the analysis grid.
 
     The output is a GeoDataFrame which contains an approximately
-    2-km buffer around the land-water boundary as defined by
-    GADM.
+    2-km buffer around the land-water boundary of the area of interest.
 
     Args:
+        aoi: The area of interest, as returned by `_full_aoi()`.
         grid_buffer: An amount in meters by which to buffer each grid cell.
             Doing this maintains consistency in coastlines across tile
             bounds.
@@ -169,7 +183,6 @@ def make_grid(grid_buffer: int | float = 250) -> gpd.GeoDataFrame:
         The analysis grid. It is indexed by the DE Pacific grid index
         (see :func:`dep_tools.grids.grid` ) in a (column, row) format.
     """
-    aoi = _full_aoi()
     aoi = _remove_inland_borders(aoi)
 
     # Buffer the country boundaries enough to be sure to capture the coastline.
@@ -210,6 +223,15 @@ def make_grid(grid_buffer: int | float = 250) -> gpd.GeoDataFrame:
     )
     coastline_grid["geometry"] = coastline_grid.geometry.apply(fix_winding)
     return _assign_crs(cast(gpd.GeoDataFrame, coastline_grid))
+
+
+def _check_on_s3(fs: S3FileSystem, path: str) -> None:
+    """Raise a clear error if a file built by `rebuild()` is missing."""
+    if not fs.exists(path):
+        raise FileNotFoundError(
+            f"Nothing at s3://{path}. "
+            "Run `python -m dep_coastlines.grid` to build it."
+        )
 
 
 def _remove_inland_borders(aoi: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -317,8 +339,9 @@ def _osm_land_additions() -> gpd.GeoDataFrame:
     areas fall outside the processing grid and are never mapped. To add
     another area, append it to `areas`.
 
-    Overture only keeps recent releases, so the latest one is used. The
-    release is recorded in the `source` column.
+    The Overture release is pinned in `config.OVERTURE_RELEASE` so a rebuild
+    gives the same land each time. Overture only keeps recent releases, so a
+    rebuild fails if the pinned one has been removed.
 
     This function does not accommodate areas that cross the antimeridian.
     """
@@ -328,9 +351,13 @@ def _osm_land_additions() -> gpd.GeoDataFrame:
         "Kili Island, MHL": (169.08, 5.60, 169.16, 5.68),
     }
     overture_bucket = "overturemaps-us-west-2/release"
-    # Release folders are named by date, so the last one is the latest
+    release = config.OVERTURE_RELEASE
     anon_fs = S3FileSystem(anon=True)
-    release = sorted(anon_fs.ls(overture_bucket))[-1].split("/")[-1]
+    if not anon_fs.exists(f"{overture_bucket}/{release}"):
+        raise FileNotFoundError(
+            f"Overture release {release} is no longer available. "
+            "Update config.OVERTURE_RELEASE to a current release."
+        )
     additions = pd.concat(
         [
             # Only the `land` class of the `land` subtype is kept. These are
@@ -352,7 +379,7 @@ def _osm_land_additions() -> gpd.GeoDataFrame:
     return additions.set_crs(4326, allow_override=True)
 
 
-def _write_aoi_raster() -> None:
+def _write_aoi_raster(aoi: gpd.GeoDataFrame) -> None:
     """Rasterize the area of interest at 30 m and upload it to S3."""
     local_aoi_raster_path = Path(__file__).parent / f"../data/raw/{aoi_raster_name}"
     opts = gdal.RasterizeOptions(
@@ -366,18 +393,18 @@ def _write_aoi_raster() -> None:
     )
     gdal.Rasterize(
         local_aoi_raster_path,
-        gdal.OpenEx(_full_aoi().to_crs(PACIFIC_EPSG).to_json()),
+        gdal.OpenEx(aoi.to_crs(PACIFIC_EPSG).to_json()),
         options=opts,
     )
     S3FileSystem(anon=False).put_file(local_aoi_raster_path, remote_aoi_raster_path)
 
 
-def _write_grid() -> None:
+def _write_grid(aoi: gpd.GeoDataFrame) -> None:
     """Build the buffered analysis grid and upload it to S3."""
     local_grid_path = Path(__file__).parent / f"../data/raw/{buffered_grid_name}"
-    make_grid(250).to_file(local_grid_path)
+    make_grid(aoi, 250).to_file(local_grid_path)
     S3FileSystem(anon=False).put_file(local_grid_path, buffered_grid_bucket_path)
 
 
 if __name__ == "__main__":
-    buffered_grid(overwrite=True)
+    rebuild()

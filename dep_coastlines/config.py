@@ -34,5 +34,10 @@ TIDE_MODEL = "FES2022_extrapolated"
 """str: The pyTMD tide model name. The extrapolated FES2022 ocean tide fills
 gaps along coastlines that the standard version leaves empty."""
 
+OVERTURE_RELEASE = "2026-10-21.0"
+"""str: The Overture Maps release that missing land is read from when the
+grid is rebuilt. Overture only keeps recent releases, so this may need to be
+moved forward before a rebuild."""
+
 STAC_CATALOG_URL = os.getenv("STAC_CATALOG_URL", "https://landsatlook.usgs.gov/stac-server")
 STAC_COLLECTIONS = os.getenv("STAC_COLLECTIONS", "landsat-c2l2-sr").split(",")

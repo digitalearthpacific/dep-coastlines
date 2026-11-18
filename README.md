@@ -144,11 +144,17 @@ under `dep_ls_coastlines/raw/` in the project bucket:
 - `coastlines_aoi.tif`: the land raster used during cleaning
 - `buffered_coastline_grid.gpkg`: the grid of tiles to process
 
-`dep_coastlines/grid.py` builds these when they are missing or when
-`OVERWRITE = True` in that module. Changing the land areas (for example, adding to
-`_osm_land_additions`) has no effect until both files are rebuilt. To rebuild
-them, set `OVERWRITE = True` in `dep_coastlines/grid.py`, import the module
-once (`python -c "import dep_coastlines.grid"`) with write access to the bucket,
-then set it back to `False`. Rebuild both files in the same run so they use the
-same Overture release. Tiles that are new or changed then need to be run through
-the raster and vector stages.
+They are never built automatically. Changing the land areas (for example,
+adding to `_osm_land_additions` in `dep_coastlines/grid.py`) has no effect
+until both files are rebuilt. To rebuild them, run this with write access to
+the bucket:
+
+```bash
+python -m dep_coastlines.grid
+```
+
+This builds both files from the same area of interest. Missing land is read
+from the Overture Maps release set in `OVERTURE_RELEASE` in
+`dep_coastlines/config.py`. Overture only keeps recent releases, so update it
+if the rebuild says the release is no longer available. Tiles that are new or
+changed then need to be run through the raster and vector stages.

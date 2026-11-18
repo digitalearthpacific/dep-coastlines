@@ -53,7 +53,9 @@ def missing_land_points(osm_additions) -> gpd.GeoSeries:
     kili = osm_additions.loc[osm_additions.name == "Kili Island, MHL"]
     jaluit = osm_additions.loc[osm_additions.name == "Jaluit Atoll, MHL"]
     southern_jaluit = jaluit.loc[jaluit.representative_point().y < 6.0]
-    largest_southern = southern_jaluit.loc[[southern_jaluit.to_crs(3832).area.idxmax()]]
+    largest_southern = southern_jaluit.loc[
+        [southern_jaluit.to_crs(PACIFIC_EPSG).area.idxmax()]
+    ]
     return pd.concat([kili, largest_southern]).representative_point()
 
 

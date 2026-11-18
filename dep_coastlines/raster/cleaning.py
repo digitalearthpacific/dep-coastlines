@@ -11,7 +11,7 @@ from shapely.geometry import box
 from skimage.measure import label
 from xarray import DataArray, Dataset, apply_ufunc
 
-from dep_coastlines.grid import remote_aoi_raster_path as AOI_RASTER_PATH
+from dep_coastlines.grid import aoi_raster
 
 
 def define_analysis_zone(
@@ -252,7 +252,7 @@ def fill_with_nearby_dates(xarr: DataArray | Dataset) -> DataArray | Dataset:
 def load_gadm_land(ds: Dataset | DataArray) -> DataArray:
     # This is a rasterized version of gadm. It seems better than any ESA product
     # at defining land (see for instance Vanuatu).
-    land = rx.open_rasterio(f"s3://{AOI_RASTER_PATH}", chunks=True)
+    land = aoi_raster()
     bounds = list(transform_bounds(ds.rio.crs, land.rio.crs, *ds.rio.bounds()))
     return land.rio.clip_box(*bounds).squeeze().rio.reproject_match(ds).astype(bool)
 
