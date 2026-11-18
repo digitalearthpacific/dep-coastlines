@@ -136,25 +136,20 @@ python dep_coastlines/fix_lines_across_antimeridian.py \
 
 ### Other Operations
 
-#### (re-)Generating the grid and land raster
+#### Generating the grid and land raster
 
 The study area is defined by two files that are built once and cached on S3
 under `dep_ls_coastlines/raw/` in the project bucket:
 
+- `buffered_coastline_grid.gpkg`: the study area split into tiles
 - `coastlines_aoi.tif`: the land raster used during cleaning
-- `buffered_coastline_grid.gpkg`: the grid of tiles to process
 
-They are never built automatically. Changing the land areas (for example,
-adding to `_osm_land_additions` in `dep_coastlines/grid.py`) has no effect
-until both files are rebuilt. To rebuild them, run this with write access to
-the bucket:
+These are not built automatically, but probably already exist. 
+They can be built or re-built by running:
 
 ```bash
 python -m dep_coastlines.grid
 ```
 
-This builds both files from the same area of interest. Missing land is read
-from the Overture Maps release set in `OVERTURE_RELEASE` in
-`dep_coastlines/config.py`. Overture only keeps recent releases, so update it
-if the rebuild says the release is no longer available. Tiles that are new or
-changed then need to be run through the raster and vector stages.
+Changing the land areas (for example, adding to `_osm_land_additions` in 
+`dep_coastlines/grid.py`) has no effect until both files are rebuilt.

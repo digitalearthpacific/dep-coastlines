@@ -18,6 +18,11 @@ AOI_URL = f"{HTTPS_PREFIX}/aoi/aoi.gpkg"
 CURRENT_COASTLINES_OUTPUT = "data/processed/0-7-0-54/dep_ls_coastlines_0-7-0-54.gpkg"
 NEXT_GEN_COASTLINES_OUTPUT = "data/processed/0.8.2/dep_ls_coastlines_0.8.2.gpkg"
 
+GRID_VERSION = "0.9"
+"""str: The version of the analysis grid and area of interest raster. It
+follows the minor version of the product. A built version is never changed,
+so changing the area of interest means a new version."""
+
 MOSAIC_VERSION = "0.8.1"
 MOSAIC_DATASET_ID = "coastlines/interim/mosaic"
 

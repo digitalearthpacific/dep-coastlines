@@ -1,7 +1,8 @@
 """Build and load the analysis grid.
 
-The grid and the area of interest raster are stored on S3. Loading the grid
-reads it from there. To rebuild both after changing the area of interest, run
+The grid and the area of interest raster are stored on S3 under
+`config.GRID_VERSION`. Loading the grid reads it from there. To build both
+after changing the area of interest, bump `config.GRID_VERSION` and run
 `python -m dep_coastlines.grid`.
 """
 
@@ -21,13 +22,17 @@ from xarray import DataArray
 
 import dep_coastlines.config as config
 
-buffered_grid_name = "buffered_coastline_grid.gpkg"
-buffered_grid_bucket_path = (
-    f"{config.BUCKET}/dep_ls_coastlines/raw/{buffered_grid_name}"
+# Dashes match how other outputs write versions in S3 paths, e.g. 0-8-1
+_grid_folder = (
+    f"{config.BUCKET}/dep_ls_coastlines/raw/grid/"
+    f"{config.GRID_VERSION.replace('.', '-')}"
 )
 
+buffered_grid_name = "buffered_coastline_grid.gpkg"
+buffered_grid_bucket_path = f"{_grid_folder}/{buffered_grid_name}"
+
 aoi_raster_name = "coastlines_aoi.tif"
-remote_aoi_raster_path = f"{config.BUCKET}/dep_ls_coastlines/raw/{aoi_raster_name}"
+remote_aoi_raster_path = f"{_grid_folder}/{aoi_raster_name}"
 
 
 @cache
@@ -65,12 +70,30 @@ def aoi_raster() -> DataArray:
     )
 
 
-def rebuild() -> None:
-    """Rebuild the area of interest raster and the grid and upload them to S3.
+def build() -> None:
+    """Build the area of interest raster and the grid and upload them to S3.
 
     Both are built from the same area of interest, so they always match.
     This needs S3 write access.
+
+    Raises:
+        FileExistsError: If either file already exists for
+            `config.GRID_VERSION`. Outputs were made with that version, so
+            it must not change.
     """
+    anon_fs = S3FileSystem(anon=True)
+    existing = [
+        path
+        for path in (remote_aoi_raster_path, buffered_grid_bucket_path)
+        if anon_fs.exists(path)
+    ]
+    if existing:
+        raise FileExistsError(
+            f"Grid version {config.GRID_VERSION} already exists at "
+            f"{', '.join(f's3://{path}' for path in existing)}. "
+            "Bump config.GRID_VERSION to build a new one."
+        )
+
     aoi = _full_aoi()
     _write_aoi_raster(aoi)
     _write_grid(aoi)
@@ -226,11 +249,11 @@ def make_grid(
 
 
 def _check_on_s3(fs: S3FileSystem, path: str) -> None:
-    """Raise a clear error if a file built by `rebuild()` is missing."""
+    """Raise a clear error if a file built by `build()` is missing."""
     if not fs.exists(path):
         raise FileNotFoundError(
-            f"Nothing at s3://{path}. "
-            "Run `python -m dep_coastlines.grid` to build it."
+            f"Nothing at s3://{path}. Run `python -m dep_coastlines.grid` "
+            f"to build grid version {config.GRID_VERSION}."
         )
 
 
@@ -407,4 +430,4 @@ def _write_grid(aoi: gpd.GeoDataFrame) -> None:
 
 
 if __name__ == "__main__":
-    rebuild()
+    build()
