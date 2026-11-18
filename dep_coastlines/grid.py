@@ -35,27 +35,18 @@ aoi_raster_name = "coastlines_aoi.tif"
 remote_aoi_raster_path = f"{_grid_folder}/{aoi_raster_name}"
 
 
-@cache
 def buffered_grid() -> gpd.GeoDataFrame:
     """Load the analysis grid, indexed by (column, row).
 
-    The grid is read from S3 once and reused on later calls.
+    The grid is read from S3 once and reused on later calls. Each call
+    returns a copy, so changes made by one caller don't reach others.
 
     Raises:
         FileNotFoundError: If the grid is not on S3. The grid is never
             rebuilt without being asked, so existing outputs always match
             the grid they were made with.
     """
-    anon_fs = S3FileSystem(anon=True)
-    _check_on_s3(anon_fs, buffered_grid_bucket_path)
-    # set_index keeps the GeoDataFrame at runtime, but pyright types its
-    # result as a plain DataFrame
-    return cast(
-        gpd.GeoDataFrame,
-        gpd.read_file(anon_fs.open(f"s3://{buffered_grid_bucket_path}")).set_index(
-            ["column", "row"]
-        ),
-    )
+    return _load_buffered_grid().copy()
 
 
 def aoi_raster() -> DataArray:
@@ -64,7 +55,7 @@ def aoi_raster() -> DataArray:
     Raises:
         FileNotFoundError: If the raster is not on S3.
     """
-    _check_on_s3(S3FileSystem(anon=True), remote_aoi_raster_path)
+    _check_on_s3(remote_aoi_raster_path)
     return cast(
         DataArray, rx.open_rasterio(f"s3://{remote_aoi_raster_path}", chunks=True)
     )
@@ -94,9 +85,14 @@ def build() -> None:
             "Bump config.GRID_VERSION to build a new one."
         )
 
+    # Build both locally first, so a failure leaves nothing half-built on S3
     aoi = _full_aoi()
-    _write_aoi_raster(aoi)
-    _write_grid(aoi)
+    local_aoi_raster_path = _write_aoi_raster(aoi)
+    local_grid_path = _write_grid(aoi)
+
+    write_fs = S3FileSystem(anon=False)
+    write_fs.put_file(local_aoi_raster_path, remote_aoi_raster_path)
+    write_fs.put_file(local_grid_path, buffered_grid_bucket_path)
 
 
 def debug_grid() -> gpd.GeoDataFrame:
@@ -248,9 +244,26 @@ def make_grid(
     return _assign_crs(cast(gpd.GeoDataFrame, coastline_grid))
 
 
-def _check_on_s3(fs: S3FileSystem, path: str) -> None:
+@cache
+def _load_buffered_grid() -> gpd.GeoDataFrame:
+    """Read the grid from S3. Cached, so callers must not change the result."""
+    _check_on_s3(buffered_grid_bucket_path)
+    # set_index keeps the GeoDataFrame at runtime, but pyright types its
+    # result as a plain DataFrame
+    return cast(
+        gpd.GeoDataFrame,
+        gpd.read_file(
+            S3FileSystem(anon=True).open(f"s3://{buffered_grid_bucket_path}")
+        ).set_index(["column", "row"]),
+    )
+
+
+# Cached because the raster is opened once per tile. A failed check raises,
+# and raised errors are not cached, so it is retried on the next call.
+@cache
+def _check_on_s3(path: str) -> None:
     """Raise a clear error if a file built by `build()` is missing."""
-    if not fs.exists(path):
+    if not S3FileSystem(anon=True).exists(path):
         raise FileNotFoundError(
             f"Nothing at s3://{path}. Run `python -m dep_coastlines.grid` "
             f"to build grid version {config.GRID_VERSION}."
@@ -318,7 +331,9 @@ def _assign_crs(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     # types their result as a plain DataFrame
     utm_zones = cast(
         gpd.GeoDataFrame,
-        gpd.read_file("data/World_UTM_Grid_-8777149898303524843.gpkg")[
+        gpd.read_file(
+            Path(__file__).parent / "../data/World_UTM_Grid_-8777149898303524843.gpkg"
+        )[
             # bad stuff here I think from reprojection
             lambda x: x["ZONE"]
             != 25
@@ -402,8 +417,8 @@ def _osm_land_additions() -> gpd.GeoDataFrame:
     return additions.set_crs(4326, allow_override=True)
 
 
-def _write_aoi_raster(aoi: gpd.GeoDataFrame) -> None:
-    """Rasterize the area of interest at 30 m and upload it to S3."""
+def _write_aoi_raster(aoi: gpd.GeoDataFrame) -> Path:
+    """Rasterize the area of interest at 30 m and return the local path."""
     local_aoi_raster_path = Path(__file__).parent / f"../data/raw/{aoi_raster_name}"
     opts = gdal.RasterizeOptions(
         creationOptions=dict(
@@ -419,14 +434,14 @@ def _write_aoi_raster(aoi: gpd.GeoDataFrame) -> None:
         gdal.OpenEx(aoi.to_crs(PACIFIC_EPSG).to_json()),
         options=opts,
     )
-    S3FileSystem(anon=False).put_file(local_aoi_raster_path, remote_aoi_raster_path)
+    return local_aoi_raster_path
 
 
-def _write_grid(aoi: gpd.GeoDataFrame) -> None:
-    """Build the buffered analysis grid and upload it to S3."""
+def _write_grid(aoi: gpd.GeoDataFrame) -> Path:
+    """Build the buffered analysis grid and return the local path."""
     local_grid_path = Path(__file__).parent / f"../data/raw/{buffered_grid_name}"
     make_grid(aoi, 250).to_file(local_grid_path)
-    S3FileSystem(anon=False).put_file(local_grid_path, buffered_grid_bucket_path)
+    return local_grid_path
 
 
 if __name__ == "__main__":

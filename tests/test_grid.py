@@ -4,12 +4,7 @@ import pytest
 from dep_tools.grids import PACIFIC_EPSG, gadm
 from shapely.geometry import box
 
-from dep_coastlines.grid import (
-    _full_aoi,
-    _osm_land_additions,
-    buffered_grid,
-    debug_grid,
-)
+from dep_coastlines.grid import _osm_land_additions, buffered_grid, debug_grid
 
 
 def test_buffered_grid_loads():
@@ -26,13 +21,13 @@ def test_debug_tiles_are_in_grid():
     assert not debug_grid().empty
 
 
-def test_aoi_excludes_hawaii():
+def test_grid_excludes_hawaii():
     # Covers the main and northwestern Hawaiian islands. A plain latitude
     # cutoff would also catch the northern Mariana Islands.
     hawaii = gpd.GeoSeries([box(-179, 18.5, -154, 29)], crs=4326)
-    # Compare in the Pacific CRS so the antimeridian doesn't split shapes
-    aoi = _full_aoi().to_crs(PACIFIC_EPSG)
-    assert not aoi.intersects(hawaii.to_crs(PACIFIC_EPSG).iloc[0]).any()
+    # The grid is in the Pacific CRS, so the antimeridian doesn't split shapes
+    grid = buffered_grid()
+    assert not grid.intersects(hawaii.to_crs(grid.crs).iloc[0]).any()
 
 
 @pytest.fixture(scope="module")

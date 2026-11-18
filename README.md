@@ -138,18 +138,22 @@ python dep_coastlines/fix_lines_across_antimeridian.py \
 
 #### Generating the grid and land raster
 
-The study area is defined by two files that are built once and cached on S3
-under `dep_ls_coastlines/raw/` in the project bucket:
+The study area is defined by two files that are built once and stored on S3
+under `dep_ls_coastlines/raw/grid/<version>/` in the project bucket, where
+`<version>` is `GRID_VERSION` in `dep_coastlines/config.py` with dots replaced
+by dashes (e.g. `0-9`):
 
 - `buffered_coastline_grid.gpkg`: the study area split into tiles
 - `coastlines_aoi.tif`: the land raster used during cleaning
 
-These are not built automatically, but probably already exist. 
-They can be built or re-built by running:
+These are not built automatically, but probably already exist for the current
+version. A built version is never replaced, because existing outputs were made
+with it. To build a new one (for example, after adding to `_osm_land_additions`
+in `dep_coastlines/grid.py`), bump `GRID_VERSION` and run:
 
 ```bash
 python -m dep_coastlines.grid
 ```
 
-Changing the land areas (for example, adding to `_osm_land_additions` in 
-`dep_coastlines/grid.py`) has no effect until both files are rebuilt.
+This needs S3 write access. Changes to the land areas have no effect until a
+new version is built.
