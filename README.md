@@ -136,19 +136,24 @@ python dep_coastlines/fix_lines_across_antimeridian.py \
 
 ### Other Operations
 
-#### (re-)Generating the grid and land raster
+#### Generating the grid and land raster
 
-The study area is defined by two files that are built once and cached on S3
-under `dep_ls_coastlines/raw/` in the project bucket:
+The study area is defined by two files that are built once and stored on S3
+under `dep_ls_coastlines/raw/grid/<version>/` in the project bucket, where
+`<version>` is `GRID_VERSION` in `dep_coastlines/config.py` with dots replaced
+by dashes (e.g. `0-9`):
 
+- `buffered_coastline_grid.gpkg`: the study area split into tiles
 - `coastlines_aoi.tif`: the land raster used during cleaning
-- `buffered_coastline_grid.gpkg`: the grid of tiles to process
 
-`dep_coastlines/grid.py` builds these when they are missing or when
-`OVERWRITE = True` in that module. Changing the land areas (for example, adding to
-`_osm_land_additions`) has no effect until both files are rebuilt. To rebuild
-them, set `OVERWRITE = True` in `dep_coastlines/grid.py`, import the module
-once (`python -c "import dep_coastlines.grid"`) with write access to the bucket,
-then set it back to `False`. Rebuild both files in the same run so they use the
-same Overture release. Tiles that are new or changed then need to be run through
-the raster and vector stages.
+These are not built automatically, but probably already exist for the current
+version. A built version is never replaced, because existing outputs were made
+with it. To build a new one (for example, after adding to `_osm_land_additions`
+in `dep_coastlines/grid.py`), bump `GRID_VERSION` and run:
+
+```bash
+python -m dep_coastlines.grid
+```
+
+This needs S3 write access. Changes to the land areas have no effect until a
+new version is built.

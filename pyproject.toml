@@ -26,7 +26,6 @@ dependencies = [
     "odc-geo>=0.4.10",
     "pyarrow>=21.0.0",
     "pyogrio>=0.11.1",
-    "pytmd>=2.1.7",
     "rasterio==1.3.11",
     "scikit-learn>=1.7.1",
     "typer>=0.17.4",
@@ -62,4 +61,5 @@ dev = [
     "plotnine>=0.15.0",
     "pyright>=1.1.406",
     "pytest>=8.4.2",
+    "pytmd>=2.1.7",
 ]

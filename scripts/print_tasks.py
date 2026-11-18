@@ -13,7 +13,7 @@ from dep_coastlines.common import (
     coastlineItemPath,
     coastlineLogger,
 )
-from dep_coastlines.grid import buffered_grid as GRID
+from dep_coastlines.grid import buffered_grid
 
 def print_ids(
     dataset_id: Annotated[str, Option()],
@@ -60,11 +60,13 @@ def _get_ids(
     version,
     dataset_id,
     retry_errors=True,
-    grid=GRID,
+    grid=None,
     delete_existing_log: bool = False,
     filter_existing_stac_items: bool = False,
     filter_using_log: bool = True,
 ) -> list:
+    if grid is None:
+        grid = buffered_grid()
     namer = coastlineItemPath(dataset_id=dataset_id, version=version, time=datetime)
     logger = coastlineLogger(
         namer,

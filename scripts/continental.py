@@ -171,12 +171,6 @@ def wms_fields(gdf):
     default=True,
     help="Set this to indicate whether to produce tiles.",
 )
-@click.option(
-    "--filter-to-pacific/--no-filter-to-pacific",
-    is_flag=True,
-    default=False,
-    help="Filter out data north of 18.5° latitude to exclude Hawaii.",
-)
 def continental_cli(
     vector_version,
     continental_version,
@@ -186,7 +180,6 @@ def continental_cli(
     baseline_year,
     include_styles,
     include_tiles,
-    filter_to_pacific,
 ):
     log = configure_logging("Continental layers and hotspots generation")
 
@@ -295,22 +288,6 @@ def continental_cli(
         raise FileNotFoundError(
             "Continental-scale annual shoreline and rates of "
             "change layers are required. Run without --skip-merge first."
-        )
-
-    if filter_to_pacific:
-        max_y = 2125000  # ~18.5°N in EPSG:3832
-        roc_mask = ratesofchange_gdf.geometry.y <= max_y
-        n_roc_removed = (~roc_mask).sum()
-        ratesofchange_gdf = ratesofchange_gdf[roc_mask]
-
-        sl_mask = shorelines_gdf.geometry.bounds["maxy"] <= max_y
-        n_sl_removed = (~sl_mask).sum()
-        shorelines_gdf = shorelines_gdf[sl_mask]
-
-        log.info(
-            f"Filtered to Pacific: removed {n_roc_removed} rates of change "
-            f"points and {n_sl_removed} shorelines north of {max_y} m "
-            f"(EPSG:3832)"
         )
 
     #####################
