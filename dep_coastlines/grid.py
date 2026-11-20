@@ -18,6 +18,7 @@ from dep_tools.utils import fix_winding
 from osgeo import gdal, gdalconst
 from s3fs import S3FileSystem
 from shapely import make_valid
+from shapely.geometry import box
 from xarray import DataArray
 
 import dep_coastlines.config as config
@@ -330,23 +331,7 @@ def _assign_crs(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         The input with an additional column `"epsg"` which contains the
         EPSG code for the identified "best" UTM zone.
     """
-    # These pandas methods keep the GeoDataFrame at runtime, but pyright
-    # types their result as a plain DataFrame
-    utm_zones = cast(
-        gpd.GeoDataFrame,
-        gpd.read_file(
-            Path(__file__).parent / "../data/World_UTM_Grid_-8777149898303524843.gpkg"
-        )[
-            # bad stuff here I think from reprojection
-            lambda x: x["ZONE"]
-            != 25
-        ]
-        .to_crs(config.OUTPUT_CRS)
-        .dissolve(by="ZONE")
-        .reset_index()
-        # makes e.g. 55 32655
-        .assign(epsg=lambda d: "326" + d.ZONE.astype("Int64").astype(str).str.zfill(2)),
-    )
+    utm_zones = _utm_zones()
 
     zone_lookup = (
         gdf.overlay(utm_zones, how="intersection")
@@ -361,6 +346,30 @@ def _assign_crs(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         gpd.GeoDataFrame,
         gdf.set_index(["row", "column"]).join(zone_lookup).reset_index(),
     )
+
+
+def _utm_zones() -> gpd.GeoDataFrame:
+    """Make the 60 UTM zones, with the EPSG code Landsat uses for each.
+
+    Each zone is a 6 degree band of longitude, with zone 1 starting at 180 W
+    (see https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system).
+    The irregular zones around Norway are left out, since they are outside
+    the area of interest. Landsat Collection 2 uses northern hemisphere codes
+    (326xx) everywhere, so southern ones (327xx) are not used.
+    """
+    # Zone 25 ends at 30 W, opposite the center of the output CRS (150 E), so
+    # it wraps around the whole map when reprojected. It's in the Atlantic,
+    # so it's left out.
+    zone_numbers = [zone for zone in range(1, 61) if zone != 25]
+    # UTM is only defined from 80 S to 84 N
+    zones = [
+        box(-180 + (zone - 1) * 6, -80, -180 + zone * 6, 84) for zone in zone_numbers
+    ]
+    return gpd.GeoDataFrame(
+        dict(epsg=[f"326{zone:02d}" for zone in zone_numbers]),
+        geometry=zones,
+        crs=4326,
+    ).to_crs(config.OUTPUT_CRS)
 
 
 def _full_aoi() -> gpd.GeoDataFrame:
