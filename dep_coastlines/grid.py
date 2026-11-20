@@ -68,20 +68,16 @@ def build() -> None:
     This needs S3 write access.
 
     Raises:
-        FileExistsError: If either file already exists for
+        FileExistsError: If the grid already exists for
             `config.GRID_VERSION`. Outputs were made with that version, so
             it must not change.
     """
-    anon_fs = S3FileSystem(anon=True)
-    existing = [
-        path
-        for path in (remote_aoi_raster_path, buffered_grid_bucket_path)
-        if anon_fs.exists(path)
-    ]
-    if existing:
+    # The grid is uploaded last, so it only exists once a build has finished.
+    # A raster left by a failed upload is overwritten instead of blocking.
+    if S3FileSystem(anon=True).exists(buffered_grid_bucket_path):
         raise FileExistsError(
             f"Grid version {config.GRID_VERSION} already exists at "
-            f"{', '.join(f's3://{path}' for path in existing)}. "
+            f"s3://{buffered_grid_bucket_path}. "
             "Bump config.GRID_VERSION to build a new one."
         )
 
@@ -90,6 +86,7 @@ def build() -> None:
     local_aoi_raster_path = _write_aoi_raster(aoi)
     local_grid_path = _write_grid(aoi)
 
+    # Upload the grid last; its presence marks the version as complete
     write_fs = S3FileSystem(anon=False)
     write_fs.put_file(local_aoi_raster_path, remote_aoi_raster_path)
     write_fs.put_file(local_grid_path, buffered_grid_bucket_path)
