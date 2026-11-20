@@ -1,0 +1,31 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main, release/next]
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      # The hooks install their own environments, so the project itself
+      # does not need to be installed for this job
+      - name: Run pre-commit
+        run: uvx pre-commit run --all-files --show-diff-on-failure
+
+  type-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        # Match the Python in the Docker image; numba has no 3.14 support
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --locked --no-install-package pygeos
+      # Report only until the existing type errors are fixed
+      - name: Run pyright
+        run: uv run pyright
+        continue-on-error: true

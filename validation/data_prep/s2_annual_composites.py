@@ -1,23 +1,23 @@
-from itertools import product
 import json
-from pathlib import Path
 import sys
+from itertools import product
+from pathlib import Path
 from typing import Annotated
 
+import geopandas as gpd
+import odc.stac
+import pandas as pd
+import rioxarray
+import typer
 from coastlines.raster import tide_cutoffs
 from dask.distributed import Client as DaskClient
 from dep_tools.aws import object_exists, write_to_s3
 from dep_tools.parsers import bool_parser
 from dep_tools.s2_utils import mask_clouds
 from eo_tides import pixel_tides as eo_pixel_tides
-import geopandas as gpd
 from numpy.dtypes import DateTime64DType
-import odc.stac
-import pandas as pd
 from pystac_client import Client
-import rioxarray
 from shapely import box
-import typer
 
 from dep_coastlines.config import TIDE_MODEL
 from validation.util import make_tides

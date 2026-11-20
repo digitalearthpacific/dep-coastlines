@@ -2,23 +2,23 @@
 
 import geopandas as gpd
 import netCDF4  # see note in calculate_tides.py
+import rioxarray as rx
 from odc.geo import Resolution
-from odc.geo.geom import Geometry
 from odc.geo.geobox import GeoBox
+from odc.geo.geom import Geometry
 from odc.geo.xr import xr_zeros
 from retry import retry
-import rioxarray as rx
 from rioxarray.merge import merge_arrays
 from xarray import DataArray
 
 from dep_coastlines.common import coastlineItemPath
 from dep_coastlines.config import (
-    VECTOR_VERSION,
+    CURRENT_COASTLINES_OUTPUT,
+    HTTPS_PREFIX,
+    NEXT_GEN_COASTLINES_OUTPUT,
     VECTOR_DATASET_ID,
     VECTOR_DATETIME,
-    HTTPS_PREFIX,
-    CURRENT_COASTLINES_OUTPUT,
-    NEXT_GEN_COASTLINES_OUTPUT,
+    VECTOR_VERSION,
 )
 from dep_coastlines.grid import buffered_grid
 from dep_coastlines.tide_utils import tides_lowres

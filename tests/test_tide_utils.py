@@ -1,10 +1,10 @@
-from eo_tides.model import model_tides
 import geopandas as gpd
 import pandas as pd
-from pyproj import CRS
 import pyTMD.io
-from shapely.geometry import box
 import xarray as xr
+from eo_tides.model import model_tides
+from pyproj import CRS
+from shapely.geometry import box
 
 from dep_coastlines.config import TIDE_MODEL
 from dep_coastlines.tide_utils import tides_for_area

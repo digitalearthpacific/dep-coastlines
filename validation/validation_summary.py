@@ -1,11 +1,10 @@
-from coastlines.validation import deacl_val_stats
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 import plotnine as pn
-from sklearn.metrics import r2_score
-
 from annual_validation import load_validation_data
+from coastlines.validation import deacl_val_stats
+from sklearn.metrics import r2_score
 
 
 def calculate_roc_stats(sets):

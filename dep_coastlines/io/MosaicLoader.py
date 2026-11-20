@@ -1,17 +1,16 @@
 import warnings
 
-from numpy import mean
 import odc.stac
-from pystac import Item
 import xarray as xr
-
 from dep_tools.loaders import Loader
 from dep_tools.namers import GenericItemPath
 from dep_tools.parsers import datetime_parser
+from numpy import mean
+from pystac import Item
 
 from dep_coastlines.common import coastlineItemPath
-from dep_coastlines.config import MOSAIC_DATASET_ID, MOSAIC_VERSION, HTTPS_PREFIX
-from dep_coastlines.raster.water_indices import twndwi, mndwi, ndwi, nirwi
+from dep_coastlines.config import HTTPS_PREFIX, MOSAIC_DATASET_ID, MOSAIC_VERSION
+from dep_coastlines.raster.water_indices import mndwi, ndwi, nirwi, twndwi
 from dep_coastlines.time_utils import composite_from_years
 
 

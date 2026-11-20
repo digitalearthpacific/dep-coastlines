@@ -20,17 +20,17 @@
 #
 
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import click
-from coastlines.utils import configure_logging
-from coastlines.vector import points_on_line, change_regress, vector_schema
-from dep_tools.utils import shift_negative_longitudes
 import fiona
 import geohash as gh
 import geopandas as gpd
 import pandas as pd
+from coastlines.utils import configure_logging
+from coastlines.vector import change_regress, points_on_line, vector_schema
+from dep_tools.utils import shift_negative_longitudes
 from s3fs import S3FileSystem
 from shapely.geometry.point import Point
 
@@ -200,9 +200,12 @@ def continental_cli(
     #################
 
     if not skip_merge:
+
         def input_paths(vector_version):
             vectorItemPath = coastlineItemPath(
-                dataset_id=VECTOR_DATASET_ID, version=vector_version, time=VECTOR_DATETIME
+                dataset_id=VECTOR_DATASET_ID,
+                version=vector_version,
+                time=VECTOR_DATETIME,
             )
             fs = S3FileSystem(anon=False)
             shoreline_paths = " ".join(
@@ -229,7 +232,9 @@ def continental_cli(
         shoreline_paths, ratesofchange_paths = input_paths(vector_version)
 
         log.info(f"Found {len(shoreline_paths.split())} shoreline files to merge")
-        log.info(f"Found {len(ratesofchange_paths.split())} rates of change files to merge")
+        log.info(
+            f"Found {len(ratesofchange_paths.split())} rates of change files to merge"
+        )
 
         # If shapefile zip exists, delete it first
         if OUTPUT_SHPS.exists():

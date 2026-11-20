@@ -59,6 +59,7 @@ dev = [
     "black>=25.9.0",
     "isort>=7.0.0",
     "plotnine>=0.15.0",
+    "pre-commit>=4.6.2",
     "pyright>=1.1.406",
     "pytest>=8.4.2",
     "pytmd>=2.1.7",

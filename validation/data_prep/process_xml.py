@@ -1,9 +1,9 @@
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from coastlines.raster import tide_cutoffs
 import geopandas as gpd
 import numpy as np
+from coastlines.raster import tide_cutoffs
 from odc.geo.geom import box
 from xarray import concat
 

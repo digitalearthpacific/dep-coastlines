@@ -1,10 +1,10 @@
 """Clip tide data in order to save space."""
 
-from pathlib import Path
+import lzma
 import warnings
+from pathlib import Path
 
 import boto3
-import lzma
 import typer
 import xarray as xr
 

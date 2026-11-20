@@ -1,12 +1,12 @@
-from coastlines.vector import annual_movements, calculate_regressions
 import geopandas as gpd
 import pandas as pd
-from rasterio.enums import Resampling
 import xarray as xr
+from coastlines.vector import annual_movements, calculate_regressions
+from rasterio.enums import Resampling
+from util import load_coastlines_raster_for_geometry
 
 from dep_coastlines.config import NEXT_GEN_COASTLINES_OUTPUT as coastlines_file
 from dep_coastlines.vector import calculate_rates_of_change
-from util import load_coastlines_raster_for_geometry
 
 
 def compare_roc(validation_contours):

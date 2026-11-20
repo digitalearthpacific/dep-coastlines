@@ -37,10 +37,10 @@ from dep_coastlines.cloud_model.predictor import ModelPredictor
 from dep_coastlines.config import CLOUD_MODEL_FILE
 from dep_coastlines.raster.cleaning import (
     define_analysis_zone,
-    map_inland_water,
     fill_with_nearby_dates,
     load_gadm_land,
     load_land_additions,
+    map_inland_water,
     remove_disconnected_areas,
     smooth_gaussian,
 )
