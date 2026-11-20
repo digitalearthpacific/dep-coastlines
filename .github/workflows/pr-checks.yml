@@ -37,3 +37,7 @@ jobs:
       - name: Run pyright
         run: uv run pyright
         continue-on-error: true
+      # The tide tests need about 4 GB of tide model files, so they run
+      # locally only
+      - name: Run tests
+        run: uv run pytest --ignore=tests/test_tide_utils.py

@@ -4,30 +4,7 @@ import pytest
 from dep_tools.grids import PACIFIC_EPSG, gadm
 from shapely.geometry import box
 
-from dep_coastlines.grid import _osm_land_additions, buffered_grid, debug_grid
-
-
-def test_buffered_grid_loads():
-    grid = buffered_grid()
-    assert not grid.empty
-    assert grid.index.names == ["column", "row"]
-    assert {"id", "tile_id", "epsg"} <= set(grid.columns)
-    assert grid.crs == PACIFIC_EPSG
-    assert grid.epsg.notna().all()
-
-
-def test_debug_tiles_are_in_grid():
-    # Raises a KeyError if any debugging tile is missing from the grid
-    assert not debug_grid().empty
-
-
-def test_grid_excludes_hawaii():
-    # Covers the main and northwestern Hawaiian islands. A plain latitude
-    # cutoff would also catch the northern Mariana Islands.
-    hawaii = gpd.GeoSeries([box(-179, 18.5, -154, 29)], crs=4326)
-    # The grid is in the Pacific CRS, so the antimeridian doesn't split shapes
-    grid = buffered_grid()
-    assert not grid.intersects(hawaii.to_crs(grid.crs).iloc[0]).any()
+from dep_coastlines.grid import _coastline_outline, _osm_land_additions, make_grid
 
 
 @pytest.fixture(scope="module")
@@ -35,6 +12,26 @@ def mhl_gadm() -> gpd.GeoDataFrame:
     # Use the same GADM copy the grid is built from
     padm = gadm()
     return padm.loc[padm.GID_0 == "MHL"]
+
+
+def test_make_grid(mhl_gadm):
+    # The Marshall Islands have no land borders, so the PNG border step
+    # (and its download) isn't needed
+    grid = make_grid(_coastline_outline(mhl_gadm.dissolve()))
+    assert not grid.empty
+    assert {"column", "row", "id", "tile_id", "epsg"} <= set(grid.columns)
+    assert grid.crs == PACIFIC_EPSG
+    assert grid.epsg.notna().all()
+
+
+def test_gadm_excludes_hawaii():
+    # Covers the main and northwestern Hawaiian islands. A plain latitude
+    # cutoff would also catch the northern Mariana Islands. The OSM
+    # additions are only in the Marshall Islands, so GADM alone decides this.
+    hawaii = gpd.GeoSeries([box(-179, 18.5, -154, 29)], crs=4326)
+    # Compare in the Pacific CRS, so the antimeridian doesn't split shapes
+    padm = gadm().to_crs(PACIFIC_EPSG)
+    assert not padm.intersects(hawaii.to_crs(PACIFIC_EPSG).iloc[0]).any()
 
 
 @pytest.fixture(scope="module")

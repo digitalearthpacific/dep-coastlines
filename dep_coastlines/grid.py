@@ -182,7 +182,7 @@ def debug_grid() -> gpd.GeoDataFrame:
 
 
 def make_grid(
-    aoi: gpd.GeoDataFrame, grid_buffer: int | float = 250
+    outline: gpd.GeoDataFrame, grid_buffer: int | float = 250
 ) -> gpd.GeoDataFrame:
     """Create the analysis grid.
 
@@ -190,7 +190,8 @@ def make_grid(
     2-km buffer around the land-water boundary of the area of interest.
 
     Args:
-        aoi: The area of interest, as returned by `_full_aoi()`.
+        outline: A thin band along the coast, as returned by
+            `_coastline_outline()`, with any land borders removed.
         grid_buffer: An amount in meters by which to buffer each grid cell.
             Doing this maintains consistency in coastlines across tile
             bounds.
@@ -199,8 +200,6 @@ def make_grid(
         The analysis grid. It is indexed by the DE Pacific grid index
         (see :func:`dep_tools.grids.grid` ) in a (column, row) format.
     """
-    aoi = _remove_inland_borders(aoi)
-
     # Buffer the country boundaries enough to be sure to capture the coastline.
     # Approx 2km at equator, other CRSes did not work (horizontal stripes that
     # spanned the globe).
@@ -209,15 +208,17 @@ def make_grid(
     buffer_distance_dd = 0.018018018018018018
     tiny_buffer = 0.0001
     coast_buffer = make_valid(
-        aoi.buffer(buffer_distance_dd - tiny_buffer).to_crs(PACIFIC_EPSG).unary_union
+        outline.buffer(buffer_distance_dd - tiny_buffer)
+        .to_crs(PACIFIC_EPSG)
+        .unary_union
     )
 
     full_grid = cast(gpd.GeoSeries, grid(return_type="GeoSeries"))
-    # limit to cells which overlap the aoi (this prevents including cells
+    # limit to cells which overlap the outline (this prevents including cells
     # that are just buffer)
     full_grid = full_grid.iloc[
         full_grid.to_crs(4326).sindex.query(
-            aoi.geometry.iloc[0], predicate="intersects"
+            outline.geometry.iloc[0], predicate="intersects"
         )
     ]
 
@@ -267,21 +268,15 @@ def _check_on_s3(path: str) -> None:
         )
 
 
-def _remove_inland_borders(aoi: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Remove land-land country borders.
-
-    The only inland border is between Papua New-Guinea & Indonesia.
-    Removing it prevents unecessary processing of areas which don't
-    contain coasts.
+def _coastline_outline(aoi: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Turn land polygons into a thin band along their edges.
 
     Args:
         aoi: The country boundaries.
 
     Returns:
-        The input with the border between PNG & Indonesia removed.
-
+        A thin outline around each polygon.
     """
-
     # A buffer of the exterior line created weird interior gaps,
     # (See https://github.com/locationtech/jts/issues/876)
     # so I buffer the polygons by a positive then negative buffer
@@ -289,17 +284,28 @@ def _remove_inland_borders(aoi: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     # the boundary between PNG & Indonesia without pulling out any of
     # western PNG.
     tiny_buffer = 0.0001
-    aoi_buffer = aoi.buffer(tiny_buffer)
-    aoi_negative_buffer = aoi.buffer(-tiny_buffer)
-    # Keeps only a thin outline around each polygon
-    borders = aoi_buffer.difference(aoi_negative_buffer)
+    return gpd.GeoDataFrame(
+        geometry=aoi.buffer(tiny_buffer).difference(aoi.buffer(-tiny_buffer))
+    )
 
-    # remove border of PNG & Indonesia
+
+def _remove_png_border(outline: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Remove the land border between Papua New Guinea and Indonesia.
+
+    It is the only land border in the area. Removing it prevents
+    unnecessary processing of areas which don't contain coasts.
+
+    Args:
+        outline: The output of `_coastline_outline()`.
+
+    Returns:
+        The outline without the border.
+    """
     indonesia = gpd.read_file(
         f"https://geodata.ucdavis.edu/gadm/gadm4.1/gpkg/gadm41_IDN.gpkg"
     )
     indonesia.geometry = indonesia.buffer(0.01)
-    return gpd.GeoDataFrame(geometry=borders).overlay(indonesia, how="difference")
+    return outline.overlay(indonesia, how="difference")
 
 
 def _assign_crs(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -437,7 +443,8 @@ def _write_aoi_raster(aoi: gpd.GeoDataFrame) -> Path:
 def _write_grid(aoi: gpd.GeoDataFrame) -> Path:
     """Build the buffered analysis grid and return the local path."""
     local_grid_path = Path(__file__).parent / f"../data/raw/{buffered_grid_name}"
-    make_grid(aoi, 250).to_file(local_grid_path)
+    outline = _remove_png_border(_coastline_outline(aoi))
+    make_grid(outline, 250).to_file(local_grid_path)
     return local_grid_path
 
 
