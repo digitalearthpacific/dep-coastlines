@@ -1,4 +1,5 @@
 """Configuration information"""
+
 import os
 
 BUCKET = "dep-public-staging"
@@ -44,5 +45,7 @@ OVERTURE_RELEASE = "2026-10-21.0"
 grid is rebuilt. Overture only keeps recent releases, so this may need to be
 moved forward before a rebuild."""
 
-STAC_CATALOG_URL = os.getenv("STAC_CATALOG_URL", "https://landsatlook.usgs.gov/stac-server")
+STAC_CATALOG_URL = os.getenv(
+    "STAC_CATALOG_URL", "https://landsatlook.usgs.gov/stac-server"
+)
 STAC_COLLECTIONS = os.getenv("STAC_COLLECTIONS", "landsat-c2l2-sr").split(",")

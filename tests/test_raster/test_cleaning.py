@@ -1,9 +1,10 @@
 import numpy as np
 import xarray as xr
+
 from dep_coastlines.raster.cleaning import (
     fill_with_nearby_dates,
-    smooth_gaussian,
     remove_disconnected_land,
+    smooth_gaussian,
 )
 
 

@@ -4,9 +4,9 @@ import geopandas as gpd
 import pandas as pd
 import xarray as xr
 
-from dep_coastlines.io import MosaicLoader
 from dep_coastlines.common import coastlineItemPath
 from dep_coastlines.config import MOSAIC_DATASET_ID, MOSAIC_VERSION
+from dep_coastlines.io import MosaicLoader
 
 TRAINING_DATA_FILE = f"data/cloud_model_training_data_{MOSAIC_VERSION}.csv"
 

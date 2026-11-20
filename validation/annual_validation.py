@@ -1,15 +1,13 @@
 from pathlib import Path
 
-from coastlines.validation import generate_transects
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from coastlines.validation import generate_transects
 from rasterio.enums import Resampling
-from shapely.geometry import Point, MultiPoint
 from shapely import Geometry
-from shapely.geometry import LineString
+from shapely.geometry import LineString, MultiPoint, Point
 from shapely.ops import nearest_points
-
 from util import load_coastlines, load_coastlines_raster_for_geometry
 
 

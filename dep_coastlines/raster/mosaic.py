@@ -9,8 +9,8 @@ from dep_tools.processors import LandsatProcessor
 from dep_tools.utils import scale_to_int16
 from xarray import DataArray, Dataset
 
-from dep_coastlines.tide_utils import filter_by_tides
 from dep_coastlines.raster.water_indices import twndwi
+from dep_coastlines.tide_utils import filter_by_tides
 
 
 class MosaicProcessor(LandsatProcessor):

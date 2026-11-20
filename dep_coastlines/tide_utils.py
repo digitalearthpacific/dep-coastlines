@@ -1,7 +1,7 @@
 from coastlines.raster import tide_cutoffs
-from eo_tides import pixel_tides
 from dep_tools.searchers import LandsatPystacSearcher
 from dep_tools.stac_utils import use_alternate_s3_href
+from eo_tides import pixel_tides
 from geopandas import GeoDataFrame
 from odc.geo.geobox import AnchorEnum, GeoBox
 from pystac import Item, ItemCollection
@@ -9,7 +9,6 @@ from pystac_client import Client as PystacClient
 from xarray import DataArray, Dataset
 
 from dep_coastlines.config import STAC_CATALOG_URL, STAC_COLLECTIONS, TIDE_MODEL
-
 from dep_coastlines.io import ProjOdcLoader
 
 
@@ -26,7 +25,11 @@ def tides_for_area(
     Returns:
 
     """
-    modifier = use_alternate_s3_href if STAC_CATALOG_URL == "https://landsatlook.usgs.gov/stac-server" else None
+    modifier = (
+        use_alternate_s3_href
+        if STAC_CATALOG_URL == "https://landsatlook.usgs.gov/stac-server"
+        else None
+    )
     client = PystacClient.open(
         STAC_CATALOG_URL,
         modifier=modifier,

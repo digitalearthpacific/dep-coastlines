@@ -3,12 +3,11 @@
 from typing import Tuple
 
 from coastlines.vector import vector_schema
-from geopandas import GeoDataFrame
-from xarray import Dataset
-
 from dep_tools.aws import write_to_s3
 from dep_tools.namers import S3ItemPath
 from dep_tools.writers import Writer
+from geopandas import GeoDataFrame
+from xarray import Dataset
 
 
 class CoastlineWriter(Writer):

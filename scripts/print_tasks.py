@@ -15,6 +15,7 @@ from dep_coastlines.common import (
 )
 from dep_coastlines.grid import buffered_grid
 
+
 def print_ids(
     dataset_id: Annotated[str, Option()],
     version: Annotated[str, Option()],
@@ -41,8 +42,10 @@ def print_ids(
     Returns: Nothing. A list of dictionaries with keys `column`, `row`, and `datetime` is
         sent to stdout.
     """
-    params = [{"column": id[0], "row": id[1], "datetime": year} for year in datetime for id in 
-        _get_ids(
+    params = [
+        {"column": id[0], "row": id[1], "datetime": year}
+        for year in datetime
+        for id in _get_ids(
             datetime=year,
             version=version,
             dataset_id=dataset_id,
@@ -50,7 +53,8 @@ def print_ids(
             delete_existing_log=bool(overwrite_logs),
             filter_using_log=bool(filter_using_log),
             filter_existing_stac_items=bool(filter_existing_stac_items),
-        )]
+        )
+    ]
 
     json.dump(params, sys.stdout)
 

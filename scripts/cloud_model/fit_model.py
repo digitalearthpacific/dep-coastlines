@@ -1,13 +1,12 @@
 """Train the cloud model."""
 
-from joblib import dump
-
 import pandas as pd
+from joblib import dump
 from sklearn.ensemble import RandomForestClassifier
-
-from dep_coastlines.config import CLOUD_MODEL_FILE
-from dep_coastlines.cloud_model import SavedModel
 from src.cloud_model.prep_training_data import TRAINING_DATA_FILE
+
+from dep_coastlines.cloud_model import SavedModel
+from dep_coastlines.config import CLOUD_MODEL_FILE
 
 
 def main():
