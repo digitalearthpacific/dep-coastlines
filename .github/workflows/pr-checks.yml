@@ -15,7 +15,7 @@ jobs:
       - name: Run pre-commit
         run: uvx pre-commit run --all-files --show-diff-on-failure
 
-  type-check:
+  test:
     runs-on: ubuntu-latest
     # Same base image as the Dockerfile, so the gdal package can build
     # against the matching GDAL library
@@ -28,7 +28,6 @@ jobs:
           apt-get install -y git python3-dev build-essential
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-        # Use the image's Python 3.12; numba has no 3.14 support
         with:
           python-version: "3.12"
       - name: Install dependencies
