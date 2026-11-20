@@ -1,14 +1,11 @@
-FROM ghcr.io/osgeo/gdal:ubuntu-full-3.10.3
+FROM ghcr.io/osgeo/gdal:ubuntu-full-3.12.4
 
-# The base GDAL image ships an Apache Arrow apt source whose repo is now signed
-# with a key no GDAL image includes; nothing here needs that repo, so drop it.
-RUN rm -f /etc/apt/sources.list.d/*arrow* \
-    && apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y \
     python3-pip \
     python3-dev \
     git \
-    libpq-dev \
-    ca-certificates \
+    # Newer GDAL images no longer include wget; used for the tide data below
+    wget \
     build-essential \
     # These 2 needed for tippecanoe
     libsqlite3-dev \

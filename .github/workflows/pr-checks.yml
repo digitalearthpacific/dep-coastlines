@@ -17,10 +17,18 @@ jobs:
 
   type-check:
     runs-on: ubuntu-latest
+    # Same base image as the Dockerfile, so the gdal package can build
+    # against the matching GDAL library
+    container: ghcr.io/osgeo/gdal:ubuntu-full-3.12.4
     steps:
+      # Same apt packages as the Dockerfile
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install -y git python3-dev build-essential
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-        # Match the Python in the Docker image; numba has no 3.14 support
+        # Use the image's Python 3.12; numba has no 3.14 support
         with:
           python-version: "3.12"
       - name: Install dependencies
