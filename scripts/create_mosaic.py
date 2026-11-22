@@ -1,20 +1,19 @@
 """Calculate annual mosaics for the given areas and times and save to s3."""
 
-from datetime import datetime
-from typing import Tuple
+from collections.abc import Iterable
 
 import boto3
 import geopandas as gpd
 from dask.distributed import Client
 from dep_tools.exceptions import EmptyCollectionError, NoOutputError
-from dep_tools.namers import GenericItemPath
+from dep_tools.namers import S3ItemPath
 from dep_tools.parsers import datetime_parser
 from dep_tools.processors import XrPostProcessor
 from dep_tools.searchers import LandsatPystacSearcher, Searcher
 from dep_tools.stac_utils import use_alternate_s3_href
 from dep_tools.task import AwsStacTask
 from dep_tools.writers import AwsDsCogWriter
-from odc.geo.geobox import AnchorEnum
+from odc.geo.types import AnchorEnum
 from odc.stac import configure_s3_access
 from pystac import Item
 from pystac_client import Client as PystacClient
@@ -37,7 +36,7 @@ from dep_coastlines.time_utils import (
 
 
 def process_id(
-    task_id: Tuple | list[Tuple] | None,
+    task_id: tuple[int, int],
     version: str,
     datetime: str = "1984/2024",
     dataset_id: str = MOSAIC_DATASET_ID,
@@ -95,13 +94,13 @@ def process_id(
         )
     except Exception as e:
         logger.error([task_id, "error", f'"{e}"'])
-        raise e
+        raise
 
     logger.info([task_id, "complete", paths])
 
 
 def _process_all_years(
-    area: gpd.GeoDataFrame, all_time: str, itempath: GenericItemPath, **kwargs
+    area: gpd.GeoDataFrame, all_time: str, itempath: S3ItemPath, **kwargs
 ) -> list[str]:
     """Process all years of data & write the output to S3.
 
@@ -109,7 +108,7 @@ def _process_all_years(
         area: The target area.
         all_time: As for :func:`process_id`.
         itempath: The ItemPath for the output.
-        **kwargs: Passed to :class:`dep_tools.tasks.AwsStacTask`.
+        **kwargs: Passed to :class:`dep_tools.task.AwsStacTask`.
 
     Returns:
         A list of paths written to S3.
@@ -138,7 +137,6 @@ def _process_all_years(
     paths = []
     years = composite_from_years(datetime_parser(all_time.replace("/", "_")), [1, 3])
     for year in years:
-        print(year)
         configure_s3_access(cloud_defaults=True, requester_pays=True)
         itempath.time = year.replace("/", "_")
         try:
@@ -165,8 +163,10 @@ def _process_all_years(
     backoff=2,
     max_delay=480,
 )
-def _run_single_task(task) -> str | list[str]:
-    return task.run()
+def _run_single_task(task) -> list[str]:
+    result = task.run()
+    # Writers may return a single path or a list of paths.
+    return [result] if isinstance(result, str) else list(result)
 
 
 class ItemFilterer(Searcher):
@@ -177,7 +177,7 @@ class ItemFilterer(Searcher):
     we have already found when creating the tide data.
     """
 
-    def __init__(self, items: list[Item], year: str):
+    def __init__(self, items: Iterable[Item], year: str):
         """Create the object.
 
         Args:
@@ -186,33 +186,28 @@ class ItemFilterer(Searcher):
             year: A string in the format "<year>" or "<year>/<year>" containing
                 the years we need.
         """
-        self._items = []
-        for item in items:
-            # Account for multiple formats for the datetime property.
-            format_string = (
-                "%Y-%m-%dT%H:%M:%S.%fZ"
-                if "." in item.properties["datetime"]
-                else "%Y-%m-%dT%H:%M:%SZ"
-            )
-            # Perform the filtering
-            item_year = str(
-                datetime.strptime(item.properties["datetime"], format_string).year
-            )
-
-            if item_year in datetime_parser(year.replace("/", "_")):
-                self._items.append(item)
+        years = datetime_parser(year.replace("/", "_"))
+        self._items = [
+            item
+            for item in items
+            if item.datetime is not None and str(item.datetime.year) in years
+        ]
 
         if len(self._items) == 0:
             raise EmptyCollectionError
 
-    def search(self, *_) -> list[Item]:
+    # The base class's abstract search() has no return annotation, so pyright
+    # infers None for it.
+    def search(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self, area=None
+    ) -> list[Item]:
         """Perform the filter.
 
         Args:
-            *_: Ignored
+            area: Ignored; kept to match the Searcher interface.
 
         Returns:
-            A list of STAC Items, filtered to self.year.
+            The STAC Items that fall within the requested year(s).
 
         """
         return self._items
@@ -222,6 +217,8 @@ def main(
     row: str,
     column: str,
     version: str,
+    datetime: str = "1984/2024",
+    dataset_id: str = MOSAIC_DATASET_ID,
     load_before_write: bool = True,
     fail_on_read_error: bool = True,
 ):
@@ -232,6 +229,8 @@ def main(
         process_id(
             (int(column), int(row)),
             version,
+            datetime=datetime,
+            dataset_id=dataset_id,
             load_before_write=load_before_write,
             fail_on_read_error=fail_on_read_error,
         )
