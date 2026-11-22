@@ -71,7 +71,7 @@ spec:
       image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
       resources:
-        requests: 
+        requests:
           memory: 4Gi
           cpu: 2
       command: [ python ]
@@ -102,7 +102,7 @@ spec:
       image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
       resources:
-        requests: 
+        requests:
           cpu: 4
           memory: 32Gi
         limits:

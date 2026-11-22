@@ -29,9 +29,9 @@ spec:
       image: "ghcr.io/digitalearthpacific/dep-coastlines:{{ workflow.parameters.image-tag }}"
       imagePullPolicy: IfNotPresent
       resources:
-        requests: 
+        requests:
           memory: 32Gi
-          cpu: 4 
+          cpu: 4
       command: [ python ]
       args:
         - src/continental.py

@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install tippecanoe, needed for creating pmtiles file for tileserver
 RUN git clone https://github.com/mapbox/tippecanoe.git \
-  && cd tippecanoe \ 
+  && cd tippecanoe \
   && make -j \
   && make install
 
@@ -29,4 +29,3 @@ RUN python3 -m pip install --upgrade uv --break-system-packages && uv sync --no-
 RUN wget -nH -r --cut-dirs=1 -P data -i data/tide_data_urls.txt
 
 ENV PATH="/code/.venv/bin:$PATH"
-
