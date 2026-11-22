@@ -23,7 +23,6 @@ from xarray import DataArray
 
 import dep_coastlines.config as config
 
-# Dashes match how other outputs write versions in S3 paths, e.g. 0-8-1
 _grid_folder = (
     f"{config.BUCKET}/dep_ls_coastlines/raw/grid/"
     f"{config.GRID_VERSION.replace('.', '-')}"
@@ -36,18 +35,28 @@ aoi_raster_name = "coastlines_aoi.tif"
 remote_aoi_raster_path = f"{_grid_folder}/{aoi_raster_name}"
 
 
+@cache
 def buffered_grid() -> gpd.GeoDataFrame:
     """Load the analysis grid, indexed by (column, row).
 
-    The grid is read from S3 once and reused on later calls. Each call
-    returns a copy, so changes made by one caller don't reach others.
+    The grid is read from S3 once and every call returns that same object.
+    Don't modify it in place (e.g. adding columns or `inplace=True`), or the
+    change will show up for every other caller. Use `.copy()` first if needed.
 
     Raises:
         FileNotFoundError: If the grid is not on S3. The grid is never
             rebuilt without being asked, so existing outputs always match
             the grid they were made with.
     """
-    return _load_buffered_grid().copy()
+    _check_on_s3(buffered_grid_bucket_path)
+    # set_index keeps the GeoDataFrame at runtime, but pyright types its
+    # result as a plain DataFrame
+    return cast(
+        gpd.GeoDataFrame,
+        gpd.read_file(
+            S3FileSystem(anon=True).open(f"s3://{buffered_grid_bucket_path}")
+        ).set_index(["column", "row"]),
+    )
 
 
 def aoi_raster() -> DataArray:
@@ -241,20 +250,6 @@ def make_grid(
     )
     coastline_grid["geometry"] = coastline_grid.geometry.apply(fix_winding)
     return _assign_crs(cast(gpd.GeoDataFrame, coastline_grid))
-
-
-@cache
-def _load_buffered_grid() -> gpd.GeoDataFrame:
-    """Read the grid from S3. Cached, so callers must not change the result."""
-    _check_on_s3(buffered_grid_bucket_path)
-    # set_index keeps the GeoDataFrame at runtime, but pyright types its
-    # result as a plain DataFrame
-    return cast(
-        gpd.GeoDataFrame,
-        gpd.read_file(
-            S3FileSystem(anon=True).open(f"s3://{buffered_grid_bucket_path}")
-        ).set_index(["column", "row"]),
-    )
 
 
 # Cached because the raster is opened once per tile. A failed check raises,
