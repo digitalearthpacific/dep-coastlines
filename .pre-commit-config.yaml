@@ -1,4 +1,23 @@
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: debug-statements
+      - id: check-added-large-files
+        # The cloud model .joblib files are ~3 MB
+        args: ["--maxkb=5000"]
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.13.9
+    hooks:
+      - id: uv-lock
+
   - repo: https://github.com/psf/black-pre-commit-mirror
     rev: 25.9.0
     hooks:
