@@ -127,7 +127,7 @@ def create_mosaic(tile: str, year: str):
 
 @app.command()
 def tiles_and_years(
-    output_json: Annotated[str, typer.Option(parser=bool_parser)] = False,
+    output_json: Annotated[str, typer.Option(parser=bool_parser)] = "False",
 ):
     selected_tiles = [
         "59NLG",
