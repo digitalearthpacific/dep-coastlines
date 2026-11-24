@@ -2,6 +2,8 @@
 
 import json
 import sys
+from collections.abc import Callable
+from functools import partial
 from typing import Annotated, cast
 
 import pandas as pd
@@ -55,44 +57,38 @@ def print_ids(
         ``{"column": int, "row": int, "datetime": str}`` is written to stdout.
     """
     params = _task_params(
-        dataset_id=dataset_id,
-        version=version,
         periods=cast(list[str], datetime),
-        retry_errors=cast(bool, retry_errors),
-        overwrite_logs=cast(bool, overwrite_logs),
-        filter_using_log=cast(bool, filter_using_log),
-        filter_existing_stac_items=cast(bool, filter_existing_stac_items),
+        get_ids=partial(
+            _get_ids,
+            version=version,
+            dataset_id=dataset_id,
+            retry_errors=cast(bool, retry_errors),
+            delete_existing_log=cast(bool, overwrite_logs),
+            filter_using_log=cast(bool, filter_using_log),
+            filter_existing_stac_items=cast(bool, filter_existing_stac_items),
+        ),
     )
     json.dump(params, sys.stdout)
 
 
 def _task_params(
-    dataset_id: str,
-    version: str,
     periods: list[str],
-    retry_errors: bool = True,
-    overwrite_logs: bool = False,
-    filter_using_log: bool = True,
-    filter_existing_stac_items: bool = False,
+    get_ids: Callable[[str], list[tuple[int, int]]],
 ) -> list[dict[str, int | str]]:
-    """Build the task parameters for each tile and time period.
+    """Build the task parameters for each time period and tile.
 
-    See :func:`print_ids` for a description of the arguments.
+    Args:
+        periods: The time periods to process.
+        get_ids: Returns the (column, row) ids of the tiles to process for a
+            single time period, e.g. :func:`_get_ids` with its other
+            arguments filled in.
 
     Returns: A list of dictionaries with keys `column`, `row`, and `datetime`.
     """
     return [
-        {"column": tile_id[0], "row": tile_id[1], "datetime": period}
+        {"column": column, "row": row, "datetime": period}
         for period in periods
-        for tile_id in _get_ids(
-            datetime=period,
-            version=version,
-            dataset_id=dataset_id,
-            retry_errors=retry_errors,
-            delete_existing_log=overwrite_logs,
-            filter_using_log=filter_using_log,
-            filter_existing_stac_items=filter_existing_stac_items,
-        )
+        for column, row in get_ids(period)
     ]
 
 
